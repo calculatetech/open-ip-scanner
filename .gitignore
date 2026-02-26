@@ -54,3 +54,7 @@ ui_*.h
 Thumbs.db
 .vscode/
 .idea/
+
+# Packaging artifacts
+_CPack_Packages/
+*.deb
