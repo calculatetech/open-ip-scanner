@@ -1,5 +1,0 @@
-/home/mbeutler/Projects/Open IP Scanner/build-win/CMakeFiles/open_ip_scanner.dir
-/home/mbeutler/Projects/Open IP Scanner/build-win/CMakeFiles/edit_cache.dir
-/home/mbeutler/Projects/Open IP Scanner/build-win/CMakeFiles/rebuild_cache.dir
-/home/mbeutler/Projects/Open IP Scanner/build-win/CMakeFiles/open_ip_scanner_autogen_timestamp_deps.dir
-/home/mbeutler/Projects/Open IP Scanner/build-win/CMakeFiles/open_ip_scanner_autogen.dir
