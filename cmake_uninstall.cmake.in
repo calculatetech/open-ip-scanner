@@ -1,0 +1,53 @@
+set(_files_to_remove "")
+set(_manifest "@CMAKE_BINARY_DIR@/install_manifest.txt")
+
+if(EXISTS "${_manifest}")
+  file(READ "${_manifest}" _manifest_files)
+  string(REPLACE "\n" ";" _manifest_files "${_manifest_files}")
+  list(APPEND _files_to_remove ${_manifest_files})
+else()
+  message(WARNING "Install manifest not found: ${_manifest}")
+endif()
+
+# Optional explicit uninstall prefix:
+#   cmake -DUNINSTALL_PREFIX=$HOME/.local -P cmake_uninstall.cmake
+if(DEFINED UNINSTALL_PREFIX AND NOT UNINSTALL_PREFIX STREQUAL "")
+  list(APPEND _files_to_remove
+    "${UNINSTALL_PREFIX}/bin/open-ip-scanner"
+    "${UNINSTALL_PREFIX}/bin/open_ip_scanner"
+    "${UNINSTALL_PREFIX}/share/applications/open-ip-scanner.desktop"
+    "${UNINSTALL_PREFIX}/share/applications/open_ip_scanner.desktop"
+    "${UNINSTALL_PREFIX}/share/icons/hicolor/scalable/apps/open-ip-scanner.svg"
+    "${UNINSTALL_PREFIX}/share/icons/hicolor/scalable/apps/open_ip_scanner.svg"
+    "${UNINSTALL_PREFIX}/share/pixmaps/open-ip-scanner.svg"
+    "${UNINSTALL_PREFIX}/share/pixmaps/open_ip_scanner.svg"
+    "${UNINSTALL_PREFIX}/share/metainfo/open-ip-scanner.metainfo.xml")
+endif()
+
+# Common local install fallback for users who installed via:
+#   cmake --install build --prefix ~/.local
+if(DEFINED ENV{HOME} AND NOT "$ENV{HOME}" STREQUAL "")
+  set(_local_prefix "$ENV{HOME}/.local")
+  list(APPEND _files_to_remove
+    "${_local_prefix}/bin/open-ip-scanner"
+    "${_local_prefix}/bin/open_ip_scanner"
+    "${_local_prefix}/share/applications/open-ip-scanner.desktop"
+    "${_local_prefix}/share/applications/open_ip_scanner.desktop"
+    "${_local_prefix}/share/icons/hicolor/scalable/apps/open-ip-scanner.svg"
+    "${_local_prefix}/share/icons/hicolor/scalable/apps/open_ip_scanner.svg"
+    "${_local_prefix}/share/pixmaps/open-ip-scanner.svg"
+    "${_local_prefix}/share/pixmaps/open_ip_scanner.svg"
+    "${_local_prefix}/share/metainfo/open-ip-scanner.metainfo.xml")
+endif()
+
+list(REMOVE_DUPLICATES _files_to_remove)
+
+foreach(file ${_files_to_remove})
+  if(file STREQUAL "")
+    continue()
+  endif()
+  if(EXISTS "${file}" OR IS_SYMLINK "${file}")
+    message(STATUS "Removing ${file}")
+    file(REMOVE "${file}")
+  endif()
+endforeach()

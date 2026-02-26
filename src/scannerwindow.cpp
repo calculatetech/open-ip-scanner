@@ -75,6 +75,7 @@ constexpr int kMaxHostsToScan = 4096;
 constexpr int kMaxParallelProbes = 16;
 constexpr int kInterProbeDelayMs = 40;
 constexpr int kSettingsSchemaVersion = 1;
+// Default toolbar layout used on first launch and settings reset.
 const QStringList kToolbarDefaultOrder = {
     "targets_label", "target_input", "scan", "sep", "auto", "find", "terminal", "sep", "adapter_label", "adapter_combo", "refresh"
 };
@@ -85,6 +86,7 @@ const QSet<QString> kToolbarButtonIds = {"scan", "auto", "find", "terminal", "re
 
 QColor mutedServiceColor(const QString &serviceId)
 {
+    // Keep service tags distinct without creating a noisy color palette.
     if (serviceId == "http") return QColor("#476D78");
     if (serviceId == "https") return QColor("#3E6760");
     if (serviceId == "ssh") return QColor("#5A5872");
@@ -98,6 +100,7 @@ QColor mutedServiceColor(const QString &serviceId)
 
 QString serviceButtonStyle(const QColor &base)
 {
+    // Shared visual style for in-cell service action buttons.
     const QColor border = base.lighter(118);
     const QColor hover = base.lighter(112);
     const QColor press = base.darker(108);
@@ -802,6 +805,7 @@ QList<ScanResult> ScannerWindow::scanHosts(const AdapterInfo &adapter,
                                            const std::function<void(int, int)> &onProgress,
                                            const std::function<void(const ScanResult &)> &onResult) const
 {
+    // Shared, thread-safe accumulator for progressive per-host updates.
     QList<ScanResult> results;
     QMutex resultsMutex;
     QSet<QString> targetIps;
@@ -809,6 +813,7 @@ QList<ScanResult> ScannerWindow::scanHosts(const AdapterInfo &adapter,
         targetIps.insert(host.toString());
     }
     const auto publishResult = [&](const ScanResult &result) {
+        // Merge data by IP so later, higher-quality fields replace unknown values.
         bool shouldEmit = false;
         ScanResult emitResult = result;
         {
@@ -895,6 +900,7 @@ QList<ScanResult> ScannerWindow::scanHosts(const AdapterInfo &adapter,
     workers.reserve(workerCount);
 
     for (int worker = 0; worker < workerCount; ++worker) {
+        // Worker threads pull host indices atomically to avoid overlap.
         workers.append(QtConcurrent::run(&pool, [&, gatewayIp, cancelRequested]() {
             while (true) {
                 if (cancelRequested && cancelRequested->load()) {
@@ -973,6 +979,7 @@ QList<ScanResult> ScannerWindow::scanHosts(const AdapterInfo &adapter,
         worker.waitForFinished();
     }
 
+    // High-accuracy reconciliation pass for any targets missed in parallel probing.
     if (!(cancelRequested && cancelRequested->load()) && accuracyLevel_ >= 2) {
         QSet<QString> discoveredIps;
         {
@@ -1547,7 +1554,7 @@ void ScannerWindow::finishScan()
         table_->setSortingEnabled(false);
     }
 
-    // Rebuild from final authoritative results so no tail host is lost by incremental UI updates.
+    // Rebuild from final authoritative results to avoid UI race/drift from incremental updates.
     table_->setRowCount(0);
     servicesByIp_.clear();
     detailsByIp_.clear();
@@ -1624,6 +1631,7 @@ void ScannerWindow::addOrUpdateResultRow(const ScanResult &result)
         detailsByIp_[result.ip] = result.detailsText;
     }
 
+    // Temporarily disable sorting while mutating rows to keep row lookup stable.
     const bool sortingEnabled = table_->isSortingEnabled();
     int sortColumn = table_->horizontalHeader()->sortIndicatorSection();
     Qt::SortOrder sortOrder = table_->horizontalHeader()->sortIndicatorOrder();
@@ -1732,6 +1740,7 @@ void ScannerWindow::addOrUpdateResultRow(const ScanResult &result)
     }
 
     if (sortingEnabled) {
+        // Restore the user's active sort after row insert/update.
         table_->setSortingEnabled(true);
         table_->horizontalHeader()->setSortIndicator(sortColumn, sortOrder);
         table_->sortItems(sortColumn, sortOrder);
@@ -2076,6 +2085,7 @@ void ScannerWindow::printTable()
 
 void ScannerWindow::showSettingsDialog()
 {
+    // Category list + stacked pages keeps a large settings surface organized.
     QDialog dialog(this);
     dialog.setWindowTitle("Settings");
     dialog.resize(800, 560);
@@ -2616,6 +2626,7 @@ void ScannerWindow::loadSettings()
         return;
     }
 
+    // On Wayland, compositor controls window placement, so only restore size.
     const bool isWayland = QGuiApplication::platformName().contains("wayland", Qt::CaseInsensitive);
     const QByteArray savedGeometry = settings.value("window/geometry").toByteArray();
     const QSize savedSize = settings.value("window/size").toSize();
@@ -2825,6 +2836,7 @@ void ScannerWindow::rebuildMainToolbar()
         return;
     }
 
+    // Rebuild toolbar controls from persisted order/visibility config.
     while (QLayoutItem *item = toolbarLayout_->takeAt(0)) {
         if (QWidget *w = item->widget()) {
             w->setParent(nullptr);
@@ -2878,6 +2890,7 @@ void ScannerWindow::applyToolbarDisplayMode()
         return;
     }
 
+    // Per-action mode overrides global style (icon/text).
     const auto buttonMode = [this](const QString &id) {
         return std::clamp(toolbarItemDisplayModes_.value(id, toolbarDisplayMode_), 0, 2);
     };
@@ -3023,6 +3036,7 @@ QString ScannerWindow::csvEscape(const QString &text)
 
 QString ScannerWindow::normalizeOuiPrefix(const QString &prefix)
 {
+    // Normalize MAC/OUI input to uppercase hex and return the first 24 bits.
     QString normalized = prefix.toUpper();
     normalized.remove(':');
     normalized.remove('-');

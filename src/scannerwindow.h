@@ -34,18 +34,25 @@ class QCloseEvent;
 class QWidget;
 
 struct ServiceHit {
+    // Stable service identifier (e.g. "ssh", "https").
     QString id;
+    // User-facing label rendered in table/buttons.
     QString label;
+    // TCP port probed for this service.
     int port = 0;
+    // True when this service should be opened in a web browser.
     bool isWeb = false;
 };
 
 struct ScanResult {
+    // Core identity fields for a discovered host.
     QString ip;
     QString mac;
     QString vendor;
     QString hostname;
+    // Services found to be reachable on this host.
     QList<ServiceHit> services;
+    // Multiline detail text shown in the optional details pane.
     QString detailsText;
 };
 
@@ -78,6 +85,7 @@ private slots:
     void toggleSearchBar();
 
 private:
+    // Table column order and logical ids used across sorting/filtering/export.
     enum ColumnIndex {
         ColIp = 0,
         ColHostname = 1,
@@ -98,8 +106,10 @@ private:
     };
 
     struct NetworkTarget {
+        // Network base and prefix selected for scanning.
         QHostAddress baseAddress;
         int prefixLength = 24;
+        // Interface metadata used to route probes correctly.
         QString interfaceName;
         QString interfaceLabel;
         QString localIp;
@@ -107,6 +117,7 @@ private:
     };
 
     struct AdapterInfo {
+        // Interface identity and source address used for scans.
         QString interfaceName;
         QString interfaceLabel;
         QString localIp;
@@ -114,6 +125,7 @@ private:
     };
 
     struct ServiceDefinition {
+        // Static service config for probe UI and execution.
         QString id;
         QString label;
         int port = 0;
@@ -121,18 +133,24 @@ private:
         bool isWeb = false;
     };
 
+    // Detect routable IPv4 networks and build initial scan defaults.
     QList<NetworkTarget> detectDefaultNetworks() const;
     QList<AdapterInfo> buildAdapters(const QList<NetworkTarget> &targets) const;
     QString buildDefaultTargetText(const QList<NetworkTarget> &targets) const;
+
+    // Parse user target syntax (CIDR/range/single IP) into host addresses.
     QList<QHostAddress> parseTargetsInput(const QString &text, QString *error) const;
     QList<QHostAddress> hostsForCidr(const QHostAddress &base, int prefixLength) const;
     QList<QHostAddress> hostsForRangeToken(const QString &token, QString *error) const;
 
+    // Main worker entry point for host discovery and enrichment.
     QList<ScanResult> scanHosts(const AdapterInfo &adapter,
                                 const QList<QHostAddress> &hosts,
                                 const std::shared_ptr<std::atomic_bool> &cancelRequested,
                                 const std::function<void(int, int)> &onProgress,
                                 const std::function<void(const ScanResult &)> &onResult) const;
+
+    // Host discovery helpers.
     bool pingHost(const QHostAddress &address, const QString &interfaceName) const;
     QString lookupMacAddress(const QString &ip, const QString &interfaceName) const;
     QString lookupVendor(const QString &mac) const;
@@ -140,6 +158,7 @@ private:
     QString lookupMdnsHostname(const QString &ip) const;
     QString lookupGatewayIp(const QString &interfaceName) const;
 
+    // Service detection and details enrichment.
     QList<ServiceDefinition> availableServices() const;
     QList<ServiceHit> probeServices(const QString &ip,
                                     const std::shared_ptr<std::atomic_bool> &cancelRequested) const;
@@ -156,6 +175,7 @@ private:
     bool rowMatchesFilters(int row) const;
     void openService(const QString &ip, const ServiceHit &service);
 
+    // UI wiring/persistence helpers.
     void setupMenuBar();
     void loadOuiDatabase();
     QList<int> visibleColumnsInDisplayOrder() const;
@@ -182,6 +202,7 @@ private:
     QString preferredTerminalProgram() const;
     int findRowByIp(const QString &ip) const;
 
+    // Utility conversion helpers.
     static quint32 ipv4ToInt(const QHostAddress &address);
     static QHostAddress intToIpv4(quint32 value);
     static QString hexGatewayToIp(const QString &hexGateway);

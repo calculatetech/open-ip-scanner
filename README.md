@@ -67,7 +67,7 @@ cmake --build build -j$(nproc)
 Run:
 
 ```bash
-./build/open_ip_scanner
+./build/open-ip-scanner
 ```
 
 ## Install (local)
@@ -82,6 +82,25 @@ If icon/menu updates lag on KDE:
 gtk-update-icon-cache ~/.local/share/icons/hicolor
 update-desktop-database ~/.local/share/applications
 kbuildsycoca6
+```
+
+## Uninstall (local)
+
+```bash
+cmake --build build --target uninstall-local
+```
+
+Generic uninstall target (uses install manifest):
+
+```bash
+cmake --build build --target uninstall
+```
+
+If desktop/icon cache entries linger:
+
+```bash
+update-desktop-database ~/.local/share/applications
+kbuildsycoca6 --noincremental
 ```
 
 ## Debian Packaging
