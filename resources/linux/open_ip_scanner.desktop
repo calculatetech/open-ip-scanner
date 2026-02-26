@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Open IP Scanner
+Comment=Scan local networks for active hosts and services
+Exec=open_ip_scanner
+Icon=open_ip_scanner
+Terminal=false
+Categories=Network;Utility;
+Keywords=ip;network;scanner;lan;
+StartupNotify=true
+StartupWMClass=open_ip_scanner

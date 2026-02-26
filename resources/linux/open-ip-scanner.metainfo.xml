@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>open-ip-scanner.desktop</id>
+  <name>Open IP Scanner</name>
+  <summary>Scan local networks for active hosts and services</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <description>
+    <p>Open IP Scanner is a Qt-based desktop tool for scanning connected network ranges, detecting hosts, and probing common services.</p>
+  </description>
+  <launchable type="desktop-id">open-ip-scanner.desktop</launchable>
+  <categories>
+    <category>Network</category>
+    <category>Utility</category>
+  </categories>
+</component>

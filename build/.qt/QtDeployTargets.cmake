@@ -1,0 +1,2 @@
+set(__QT_DEPLOY_TARGET_open_ip_scanner_FILE /home/mbeutler/Projects/Open IP Scanner/build/open_ip_scanner)
+set(__QT_DEPLOY_TARGET_open_ip_scanner_TYPE EXECUTABLE)

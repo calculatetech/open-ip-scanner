@@ -1,0 +1,26 @@
+{
+	"BUILD_DIR" : "/home/mbeutler/Projects/Open IP Scanner/build/open_ip_scanner_autogen",
+	"CMAKE_BINARY_DIR" : "/home/mbeutler/Projects/Open IP Scanner/build",
+	"CMAKE_CURRENT_BINARY_DIR" : "/home/mbeutler/Projects/Open IP Scanner/build",
+	"CMAKE_CURRENT_SOURCE_DIR" : "/home/mbeutler/Projects/Open IP Scanner",
+	"CMAKE_SOURCE_DIR" : "/home/mbeutler/Projects/Open IP Scanner",
+	"CROSS_CONFIG" : false,
+	"GENERATOR" : "Unix Makefiles",
+	"INCLUDE_DIR" : "/home/mbeutler/Projects/Open IP Scanner/build/open_ip_scanner_autogen/include",
+	"INPUTS" : 
+	[
+		"/home/mbeutler/Projects/Open IP Scanner/data/oui.txt",
+		"/home/mbeutler/Projects/Open IP Scanner/resources/app_icon.svg"
+	],
+	"LOCK_FILE" : "/home/mbeutler/Projects/Open IP Scanner/build/CMakeFiles/open_ip_scanner_autogen.dir/AutoRcc_resources_3YJK5W5UP7_Lock.lock",
+	"MULTI_CONFIG" : false,
+	"OPTIONS" : [ "-name", "resources" ],
+	"OUTPUT_CHECKSUM" : "3YJK5W5UP7",
+	"OUTPUT_NAME" : "qrc_resources.cpp",
+	"RCC_EXECUTABLE" : "/usr/lib/qt6/libexec/rcc",
+	"RCC_LIST_OPTIONS" : [ "--list" ],
+	"SETTINGS_FILE" : "/home/mbeutler/Projects/Open IP Scanner/build/CMakeFiles/open_ip_scanner_autogen.dir/AutoRcc_resources_3YJK5W5UP7_Used.txt",
+	"SOURCE" : "/home/mbeutler/Projects/Open IP Scanner/resources/resources.qrc",
+	"USE_BETTER_GRAPH" : true,
+	"VERBOSITY" : 0
+}

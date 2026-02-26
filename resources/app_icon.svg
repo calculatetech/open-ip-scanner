@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#173248"/>
+      <stop offset="1" stop-color="#0f1f2e"/>
+    </linearGradient>
+    <radialGradient id="sweep" cx="0.5" cy="0.5" r="0.6">
+      <stop offset="0" stop-color="#63f1c4" stop-opacity="0.7"/>
+      <stop offset="1" stop-color="#63f1c4" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect x="14" y="14" width="228" height="228" rx="44" fill="url(#bg)"/>
+
+  <circle cx="128" cy="128" r="78" fill="none" stroke="#31566f" stroke-width="3"/>
+  <circle cx="128" cy="128" r="52" fill="none" stroke="#31566f" stroke-width="2.5"/>
+  <circle cx="128" cy="128" r="26" fill="none" stroke="#31566f" stroke-width="2"/>
+
+  <path d="M128 128 L198 72 A88 88 0 0 1 216 148 Z" fill="url(#sweep)"/>
+
+  <circle cx="128" cy="128" r="6" fill="#7ef7d0"/>
+  <circle cx="174" cy="98" r="5" fill="#8de8ff"/>
+  <circle cx="88" cy="166" r="5" fill="#8de8ff"/>
+  <circle cx="184" cy="148" r="4.5" fill="#8de8ff"/>
+
+  <line x1="128" y1="128" x2="174" y2="98" stroke="#7ad5e8" stroke-width="2" stroke-opacity="0.8"/>
+  <line x1="128" y1="128" x2="88" y2="166" stroke="#7ad5e8" stroke-width="2" stroke-opacity="0.7"/>
+  <line x1="128" y1="128" x2="184" y2="148" stroke="#7ad5e8" stroke-width="2" stroke-opacity="0.6"/>
+</svg>

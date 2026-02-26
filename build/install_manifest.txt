@@ -1,0 +1,8 @@
+/home/mbeutler/.local/bin/open_ip_scanner
+/home/mbeutler/.local/share/applications/open-ip-scanner.desktop
+/home/mbeutler/.local/share/applications/open_ip_scanner.desktop
+/home/mbeutler/.local/share/icons/hicolor/scalable/apps/open-ip-scanner.svg
+/home/mbeutler/.local/share/icons/hicolor/scalable/apps/open_ip_scanner.svg
+/home/mbeutler/.local/share/pixmaps/open-ip-scanner.svg
+/home/mbeutler/.local/share/pixmaps/open_ip_scanner.svg
+/home/mbeutler/.local/share/metainfo/open-ip-scanner.metainfo.xml
