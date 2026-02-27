@@ -78,6 +78,7 @@ private slots:
     void exportCsv();
     void printTable();
     void showSettingsDialog();
+    void showHelpDialog();
     void showAboutDialog();
     void updateWorkerLabel(int value);
     void handleTableDoubleClick(int row, int column);
@@ -122,6 +123,9 @@ private:
         QString interfaceLabel;
         QString localIp;
         QString localMac;
+        bool isPhysical = false;
+        bool isRoutable = false;
+        bool hasDefaultRoute = false;
     };
 
     struct ServiceDefinition {
@@ -135,8 +139,11 @@ private:
 
     // Detect routable IPv4 networks and build initial scan defaults.
     QList<NetworkTarget> detectDefaultNetworks() const;
-    QList<AdapterInfo> buildAdapters(const QList<NetworkTarget> &targets) const;
+    QList<AdapterInfo> buildAdapters() const;
     QString buildDefaultTargetText(const QList<NetworkTarget> &targets) const;
+    QString buildDefaultTargetTextForAdapter(const QString &interfaceName) const;
+    int resolveAdapterIndexForTargets(const QList<QHostAddress> &hosts) const;
+    int preferredAdapterIndex() const;
 
     // Parse user target syntax (CIDR/range/single IP) into host addresses.
     QList<QHostAddress> parseTargetsInput(const QString &text, QString *error) const;
@@ -200,9 +207,10 @@ private:
     void setDetailsPaneVisible(bool visible);
     void rebuildMainToolbar();
     void applyToolbarDisplayMode();
-    bool openPreferredTerminal(const QStringList &args = {}) const;
+    bool openPreferredTerminal(const QStringList &args = {}, QString *error = nullptr) const;
     QString preferredTerminalProgram() const;
     int findRowByIp(const QString &ip) const;
+    void validateTargetLimitFeedback(const QString &text);
 
     // Utility conversion helpers.
     static quint32 ipv4ToInt(const QHostAddress &address);
@@ -239,6 +247,9 @@ private:
     QList<AdapterInfo> adapters_;
     QString defaultTargetText_;
     bool userCustomizedTargets_ = false;
+    bool targetLimitWarningActive_ = false;
+    bool rememberLastTargetOnLaunch_ = false;
+    QString pendingLastTarget_;
 
     int maxParallelProbes_ = 4;
     int accuracyLevel_ = 2; // 0=Fast, 1=Balanced, 2=High, 3=Maximum
@@ -263,4 +274,5 @@ private:
     QCompleter *targetCompleter_ = nullptr;
     QStringListModel *targetHistoryModel_ = nullptr;
     QAction *showDetailsPaneAction_ = nullptr;
+    QAction *rememberLastTargetAction_ = nullptr;
 };
