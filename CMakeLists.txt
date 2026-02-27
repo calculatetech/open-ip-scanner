@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(OpenIpScanner VERSION 0.1.0 LANGUAGES CXX)
+project(OpenIpScanner VERSION 0.2.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -33,6 +33,10 @@ target_link_libraries(open_ip_scanner PRIVATE
     ${QT_PACKAGE}::Network
     ${QT_PACKAGE}::Concurrent
     ${QT_PACKAGE}::PrintSupport
+)
+
+target_compile_definitions(open_ip_scanner PRIVATE
+    OPEN_IP_SCANNER_VERSION="${PROJECT_VERSION}"
 )
 
 install(TARGETS open_ip_scanner

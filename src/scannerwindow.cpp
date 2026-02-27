@@ -13,6 +13,7 @@
 #include <QDialogButtonBox>
 #include <QFile>
 #include <QFileDialog>
+#include <QFileInfo>
 #include <QFrame>
 #include <QFontDatabase>
 #include <QFormLayout>
@@ -44,6 +45,7 @@
 #include <QRegularExpressionValidator>
 #include <QSet>
 #include <QSettings>
+#include <QSignalBlocker>
 #include <QShortcut>
 #include <QSlider>
 #include <QProcessEnvironment>
@@ -57,6 +59,7 @@
 #include <QTcpSocket>
 #include <QTextEdit>
 #include <QTextDocument>
+#include <QTextBrowser>
 #include <QPlainTextEdit>
 #include <QTextStream>
 #include <QThread>
@@ -84,6 +87,28 @@ const QSet<QString> kToolbarAllowedIds = {
 };
 const QSet<QString> kToolbarButtonIds = {"scan", "auto", "find", "terminal", "refresh"};
 
+class SortKeyTableWidgetItem : public QTableWidgetItem {
+public:
+    using QTableWidgetItem::QTableWidgetItem;
+
+    bool operator<(const QTableWidgetItem &other) const override
+    {
+        const QVariant lhs = data(Qt::UserRole);
+        const QVariant rhs = other.data(Qt::UserRole);
+        if (lhs.isValid() && rhs.isValid()) {
+            bool lhsOk = false;
+            bool rhsOk = false;
+            const qulonglong lhsNum = lhs.toULongLong(&lhsOk);
+            const qulonglong rhsNum = rhs.toULongLong(&rhsOk);
+            if (lhsOk && rhsOk) {
+                return lhsNum < rhsNum;
+            }
+            return QString::localeAwareCompare(lhs.toString(), rhs.toString()) < 0;
+        }
+        return QTableWidgetItem::operator<(other);
+    }
+};
+
 QColor mutedServiceColor(const QString &serviceId)
 {
     // Keep service tags distinct without creating a noisy color palette.
@@ -94,7 +119,9 @@ QColor mutedServiceColor(const QString &serviceId)
     if (serviceId == "ftp") return QColor("#586A55");
     if (serviceId == "telnet") return QColor("#6D5454");
     if (serviceId == "smb") return QColor("#5E5D48");
-    if (serviceId == "netbios") return QColor("#4F6168");
+    if (serviceId == "smtp25") return QColor("#5C5A47");
+    if (serviceId == "smtps465") return QColor("#4F6354");
+    if (serviceId == "smtp587") return QColor("#5A4F63");
     return QColor("#4E5A63");
 }
 
@@ -116,6 +143,61 @@ QString serviceButtonStyle(const QColor &base)
         "QPushButton:hover { background-color: %3; }"
         "QPushButton:pressed { background-color: %4; }")
         .arg(base.name(), border.name(), hover.name(), press.name());
+}
+
+bool isLinkLocalIpv4(quint32 value)
+{
+    return (value & 0xFFFF0000u) == 0xA9FE0000u;
+}
+
+bool hasDefaultRoute(const QString &interfaceName)
+{
+#ifdef Q_OS_LINUX
+    QFile routeFile("/proc/net/route");
+    if (!routeFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        return false;
+    }
+    while (!routeFile.atEnd()) {
+        const QString line = QString::fromUtf8(routeFile.readLine()).trimmed();
+        if (line.isEmpty() || line.startsWith("Iface")) {
+            continue;
+        }
+        const QStringList fields = line.split(QRegularExpression("\\s+"), Qt::SkipEmptyParts);
+        if (fields.size() < 2) {
+            continue;
+        }
+        if (fields[0] == interfaceName && fields[1] == "00000000") {
+            return true;
+        }
+    }
+#else
+    Q_UNUSED(interfaceName)
+#endif
+    return false;
+}
+
+bool isLikelyVirtualInterface(const QNetworkInterface &iface)
+{
+    const QString name = iface.name().toLower();
+    const QString label = iface.humanReadableName().toLower();
+    const QString blob = name + " " + label;
+    static const QStringList virtualHints = {
+        "docker", "veth", "virbr", "vmnet", "vbox", "virtual", "bridge", "br-", "tun", "tap", "wg", "zt"
+    };
+    for (const QString &hint : virtualHints) {
+        if (blob.contains(hint)) {
+            return true;
+        }
+    }
+    const auto flags = iface.flags();
+    if (flags & QNetworkInterface::IsPointToPoint) {
+        return true;
+    }
+    const QString mac = iface.hardwareAddress().trimmed();
+    if (mac.isEmpty() || mac == "00:00:00:00:00:00") {
+        return true;
+    }
+    return false;
 }
 }
 
@@ -293,12 +375,20 @@ ScannerWindow::ScannerWindow(QWidget *parent)
     setupMenuBar();
     loadSettings();
     refreshAdapters();
+    if (rememberLastTargetOnLaunch_ && !pendingLastTarget_.isEmpty()) {
+        targetInput_->setText(pendingLastTarget_);
+        userCustomizedTargets_ = true;
+        validateTargetLimitFeedback(targetInput_->text());
+    }
     applyTableColumnSizing();
 
     connect(scanButton_, &QPushButton::clicked, this, &ScannerWindow::startScan);
     connect(terminalButton_, &QPushButton::clicked, this, [this]() {
-        if (!openPreferredTerminal()) {
-            QMessageBox::warning(this, "Terminal", "Could not launch default terminal.");
+        QString error;
+        if (!openPreferredTerminal({}, &error)) {
+            const QString detail = error.isEmpty() ? "Could not launch default terminal." : error;
+            QMessageBox::warning(this, "Terminal", detail);
+            showStatusMessage(detail);
         }
     });
     connect(refreshAdaptersButton_, &QPushButton::clicked, this, &ScannerWindow::refreshAdapters);
@@ -306,6 +396,15 @@ ScannerWindow::ScannerWindow(QWidget *parent)
     connect(defaultsButton_, &QPushButton::clicked, this, &ScannerWindow::applyDefaultTargets);
     connect(targetInput_, &QLineEdit::textEdited, this, [this]() {
         userCustomizedTargets_ = true;
+    });
+    connect(targetInput_, &QLineEdit::textChanged, this, &ScannerWindow::validateTargetLimitFeedback);
+    connect(targetInput_, &QLineEdit::textChanged, this, [this](const QString &) {
+        if (rememberLastTargetOnLaunch_) {
+            saveSettings();
+        }
+    });
+    connect(adapterCombo_, &QComboBox::currentIndexChanged, this, [this](int) {
+        validateTargetLimitFeedback(targetInput_->text());
     });
     connect(targetInput_, &QLineEdit::returnPressed, this, &ScannerWindow::startScan);
     connect(&scanWatcher_, &QFutureWatcher<QList<ScanResult>>::finished, this, &ScannerWindow::finishScan);
@@ -345,6 +444,13 @@ void ScannerWindow::setupMenuBar()
     QMenu *settingsMenu = menuBar()->addMenu("Settings");
     QAction *settingsAction = settingsMenu->addAction("Preferences...");
     connect(settingsAction, &QAction::triggered, this, &ScannerWindow::showSettingsDialog);
+    rememberLastTargetAction_ = settingsMenu->addAction("Remember Last Target On Launch");
+    rememberLastTargetAction_->setCheckable(true);
+    rememberLastTargetAction_->setChecked(false);
+    connect(rememberLastTargetAction_, &QAction::toggled, this, [this](bool checked) {
+        rememberLastTargetOnLaunch_ = checked;
+        saveSettings();
+    });
     showDetailsPaneAction_ = settingsMenu->addAction("Show Details Pane");
     showDetailsPaneAction_->setCheckable(true);
     showDetailsPaneAction_->setChecked(false);
@@ -354,6 +460,8 @@ void ScannerWindow::setupMenuBar()
     });
 
     QMenu *helpMenu = menuBar()->addMenu("Help");
+    QAction *usageAction = helpMenu->addAction("Usage Guide");
+    connect(usageAction, &QAction::triggered, this, &ScannerWindow::showHelpDialog);
     QAction *aboutAction = helpMenu->addAction("About");
     connect(aboutAction, &QAction::triggered, this, &ScannerWindow::showAboutDialog);
 }
@@ -466,24 +574,67 @@ QList<ScannerWindow::NetworkTarget> ScannerWindow::detectDefaultNetworks() const
     return targets;
 }
 
-QList<ScannerWindow::AdapterInfo> ScannerWindow::buildAdapters(const QList<NetworkTarget> &targets) const
+QList<ScannerWindow::AdapterInfo> ScannerWindow::buildAdapters() const
 {
     QList<AdapterInfo> adapters;
-    QSet<QString> seen;
+    const auto interfaces = QNetworkInterface::allInterfaces();
+    for (const QNetworkInterface &iface : interfaces) {
+        const auto flags = iface.flags();
+        if (!(flags & QNetworkInterface::IsUp) ||
+            !(flags & QNetworkInterface::IsRunning) ||
+            (flags & QNetworkInterface::IsLoopBack)) {
+            continue;
+        }
 
-    for (const NetworkTarget &target : targets) {
-        if (seen.contains(target.interfaceName)) {
+        QString bestIp;
+        bool hasRoutable = false;
+        for (const QNetworkAddressEntry &entry : iface.addressEntries()) {
+            const QHostAddress ip = entry.ip();
+            if (ip.protocol() != QAbstractSocket::IPv4Protocol || ip.isNull() || ip.isLoopback() || ip.isMulticast()) {
+                continue;
+            }
+            const quint32 value = ipv4ToInt(ip);
+            const bool linkLocal = isLinkLocalIpv4(value);
+            if (bestIp.isEmpty() || (!linkLocal && !hasRoutable)) {
+                bestIp = ip.toString();
+            }
+            if (!linkLocal) {
+                hasRoutable = true;
+            }
+        }
+        if (bestIp.isEmpty()) {
             continue;
         }
 
         AdapterInfo adapter;
-        adapter.interfaceName = target.interfaceName;
-        adapter.interfaceLabel = target.interfaceLabel;
-        adapter.localIp = target.localIp;
-        adapter.localMac = target.localMac;
+        adapter.interfaceName = iface.name();
+        adapter.interfaceLabel = iface.humanReadableName();
+        adapter.localIp = bestIp;
+        adapter.localMac = iface.hardwareAddress().toUpper();
+        adapter.isPhysical = !isLikelyVirtualInterface(iface);
+        adapter.isRoutable = hasRoutable;
+        adapter.hasDefaultRoute = hasDefaultRoute(adapter.interfaceName);
         adapters.append(adapter);
-        seen.insert(target.interfaceName);
     }
+
+    auto rank = [](const AdapterInfo &adapter) {
+        if (adapter.isPhysical && adapter.isRoutable && adapter.hasDefaultRoute) return 0;
+        if (adapter.isPhysical && adapter.isRoutable) return 1;
+        if (adapter.isPhysical) return 2;
+        if (adapter.isRoutable) return 3;
+        return 4;
+    };
+    std::sort(adapters.begin(), adapters.end(), [&](const AdapterInfo &a, const AdapterInfo &b) {
+        const int ra = rank(a);
+        const int rb = rank(b);
+        if (ra != rb) {
+            return ra < rb;
+        }
+        if (a.interfaceLabel != b.interfaceLabel) {
+            return a.interfaceLabel < b.interfaceLabel;
+        }
+        return a.localIp < b.localIp;
+    });
 
     return adapters;
 }
@@ -498,6 +649,58 @@ QString ScannerWindow::buildDefaultTargetText(const QList<NetworkTarget> &target
     return cidrs.join(", ");
 }
 
+QString ScannerWindow::buildDefaultTargetTextForAdapter(const QString &interfaceName) const
+{
+    QStringList cidrs;
+    for (const NetworkTarget &target : networkTargets_) {
+        if (target.interfaceName == interfaceName) {
+            cidrs.append(QString("%1/%2").arg(target.baseAddress.toString()).arg(target.prefixLength));
+        }
+    }
+    cidrs.removeDuplicates();
+    return cidrs.join(", ");
+}
+
+int ScannerWindow::preferredAdapterIndex() const
+{
+    if (adapters_.isEmpty()) {
+        return -1;
+    }
+    return 0;
+}
+
+int ScannerWindow::resolveAdapterIndexForTargets(const QList<QHostAddress> &hosts) const
+{
+    if (adapters_.isEmpty()) {
+        return -1;
+    }
+    QHash<QString, int> matchesByIface;
+    for (const QHostAddress &host : hosts) {
+        const quint32 hostIp = ipv4ToInt(host);
+        for (const NetworkTarget &target : networkTargets_) {
+            const quint32 base = ipv4ToInt(target.baseAddress);
+            const quint32 mask = target.prefixLength == 0 ? 0 : (0xFFFFFFFFu << (32 - target.prefixLength));
+            if ((hostIp & mask) == (base & mask)) {
+                matchesByIface[target.interfaceName] += 1;
+            }
+        }
+    }
+
+    int bestIndex = -1;
+    int bestScore = -1;
+    for (int i = 0; i < adapters_.size(); ++i) {
+        const int score = matchesByIface.value(adapters_[i].interfaceName, 0);
+        if (score > bestScore) {
+            bestScore = score;
+            bestIndex = i;
+        }
+    }
+    if (bestScore <= 0) {
+        return preferredAdapterIndex();
+    }
+    return bestIndex;
+}
+
 void ScannerWindow::refreshAdapters()
 {
     QString previousAdapter;
@@ -507,23 +710,34 @@ void ScannerWindow::refreshAdapters()
     }
 
     networkTargets_ = detectDefaultNetworks();
-    adapters_ = buildAdapters(networkTargets_);
+    adapters_ = buildAdapters();
     defaultTargetText_ = buildDefaultTargetText(networkTargets_);
 
     adapterCombo_->clear();
+    adapterCombo_->addItem("Auto Select", -1);
     for (int i = 0; i < adapters_.size(); ++i) {
         const AdapterInfo &adapter = adapters_[i];
         const QString label = QString("%1 [%2]").arg(adapter.interfaceLabel, adapter.localIp);
         adapterCombo_->addItem(label, i);
     }
 
-    if (!previousAdapter.isEmpty()) {
+    bool restoredPrevious = false;
+    if (previousAdapter.isEmpty() && previousIndex == -1) {
+        const int preferred = preferredAdapterIndex();
+        adapterCombo_->setCurrentIndex((preferred >= 0) ? (preferred + 1) : 0);
+        restoredPrevious = true;
+    } else if (!previousAdapter.isEmpty()) {
         for (int i = 0; i < adapters_.size(); ++i) {
             if (adapters_[i].interfaceName == previousAdapter) {
-                adapterCombo_->setCurrentIndex(i);
+                adapterCombo_->setCurrentIndex(i + 1);
+                restoredPrevious = true;
                 break;
             }
         }
+    }
+    if (!restoredPrevious) {
+        const int preferred = preferredAdapterIndex();
+        adapterCombo_->setCurrentIndex((preferred >= 0) ? (preferred + 1) : 0);
     }
 
     if (targetInput_->text().trimmed().isEmpty() || !userCustomizedTargets_) {
@@ -534,7 +748,7 @@ void ScannerWindow::refreshAdapters()
     if (!scanWatcher_.isRunning()) {
         scanButton_->setEnabled(hasNetwork);
     }
-    defaultsButton_->setEnabled(!defaultTargetText_.isEmpty());
+    defaultsButton_->setEnabled(hasNetwork);
 
     if (!hasNetwork) {
         showStatusMessage("No connected routable IPv4 adapter detected.");
@@ -557,8 +771,21 @@ void ScannerWindow::closeEvent(QCloseEvent *event)
 
 void ScannerWindow::applyDefaultTargets()
 {
-    targetInput_->setText(defaultTargetText_);
+    const int selected = adapterCombo_->currentData().toInt();
+    if (selected == -1) {
+        targetInput_->setText(defaultTargetText_);
+    } else if (selected >= 0 && selected < adapters_.size()) {
+        const QString adapterTargets = buildDefaultTargetTextForAdapter(adapters_[selected].interfaceName);
+        if (!adapterTargets.isEmpty()) {
+            targetInput_->setText(adapterTargets);
+        } else {
+            targetInput_->setText(QString("%1/32").arg(adapters_[selected].localIp));
+        }
+    } else {
+        targetInput_->setText(defaultTargetText_);
+    }
     userCustomizedTargets_ = false;
+    validateTargetLimitFeedback(targetInput_->text());
 }
 
 void ScannerWindow::startScan()
@@ -568,12 +795,6 @@ void ScannerWindow::startScan()
             cancelRequested_->store(true);
             showStatusMessage("Stopping scan...");
         }
-        return;
-    }
-
-    const int adapterIdx = adapterCombo_->currentData().toInt();
-    if (adapterIdx < 0 || adapterIdx >= adapters_.size()) {
-        showStatusMessage("Select a valid adapter.");
         return;
     }
 
@@ -594,9 +815,37 @@ void ScannerWindow::startScan()
         showStatusMessage("No scan targets resolved.");
         return;
     }
+    const int selectedAdapterData = adapterCombo_->currentData().toInt();
+    int adapterIdx = selectedAdapterData;
+    if (selectedAdapterData == -1) {
+        adapterIdx = resolveAdapterIndexForTargets(hosts);
+        if (adapterIdx < 0) {
+            showStatusMessage("No suitable adapter found for selected targets.");
+            return;
+        }
+    }
+    if (adapterIdx < 0 || adapterIdx >= adapters_.size()) {
+        showStatusMessage("Select a valid adapter.");
+        return;
+    }
     recordTargetHistory(targetText);
 
     const AdapterInfo adapter = adapters_[adapterIdx];
+    QHostAddress bindAddress;
+    if (!bindAddress.setAddress(adapter.localIp) || bindAddress.protocol() != QAbstractSocket::IPv4Protocol) {
+        showStatusMessage(QString("Adapter binding failed: '%1' has invalid local IPv4 (%2).")
+                              .arg(adapter.interfaceLabel, adapter.localIp));
+        return;
+    }
+    {
+        QTcpSocket bindProbe;
+        if (!bindProbe.bind(bindAddress, 0)) {
+            showStatusMessage(QString("Adapter binding failed on '%1' (%2).")
+                                  .arg(adapter.interfaceLabel, adapter.localIp));
+            return;
+        }
+        bindProbe.abort();
+    }
 
     servicesByIp_.clear();
     detailsByIp_.clear();
@@ -673,6 +922,21 @@ QList<QHostAddress> ScannerWindow::parseTargetsInput(const QString &text, QStrin
                 return {};
             }
 
+            quint64 cidrHostCount = 0;
+            if (prefix == 32) {
+                cidrHostCount = 1;
+            } else if (prefix == 31) {
+                cidrHostCount = 2;
+            } else {
+                const int hostBits = 32 - prefix;
+                cidrHostCount = (1ULL << hostBits) - 2ULL;
+            }
+            if (cidrHostCount > static_cast<quint64>(kMaxHostsToScan)) {
+                if (error) {
+                    *error = QString("Too many targets (%1 max). Narrow the range.").arg(kMaxHostsToScan);
+                }
+                return {};
+            }
             parsed = hostsForCidr(ip, prefix);
         } else if (token.contains('-')) {
             parsed = hostsForRangeToken(token, error);
@@ -787,6 +1051,14 @@ QList<QHostAddress> ScannerWindow::hostsForRangeToken(const QString &token, QStr
         std::swap(start, end);
     }
 
+    const quint64 hostCount = static_cast<quint64>(end) - static_cast<quint64>(start) + 1ULL;
+    if (hostCount > static_cast<quint64>(kMaxHostsToScan)) {
+        if (error) {
+            *error = QString("Too many targets (%1 max). Narrow the range.").arg(kMaxHostsToScan);
+        }
+        return {};
+    }
+
     QList<QHostAddress> hosts;
     hosts.reserve(static_cast<int>(end - start + 1));
     for (quint32 value = start; value <= end; ++value) {
@@ -864,8 +1136,8 @@ QList<ScanResult> ScannerWindow::scanHosts(const AdapterInfo &adapter,
         if (selfResult.hostname.isEmpty()) {
             selfResult.hostname = "Unknown";
         }
-        selfResult.services = probeServices(selfResult.ip, cancelRequested);
-        selfResult.detailsText = collectDeviceDetails(selfResult);
+        selfResult.services = probeServices(selfResult.ip, adapter.localIp, cancelRequested);
+        selfResult.detailsText = collectDeviceDetails(selfResult, adapter.localIp);
         publishResult(selfResult);
     }
 
@@ -882,8 +1154,8 @@ QList<ScanResult> ScannerWindow::scanHosts(const AdapterInfo &adapter,
         if (gatewayResult.hostname.isEmpty()) {
             gatewayResult.hostname = "Unknown";
         }
-        gatewayResult.services = probeServices(gatewayResult.ip, cancelRequested);
-        gatewayResult.detailsText = collectDeviceDetails(gatewayResult);
+        gatewayResult.services = probeServices(gatewayResult.ip, adapter.localIp, cancelRequested);
+        gatewayResult.detailsText = collectDeviceDetails(gatewayResult, adapter.localIp);
         publishResult(gatewayResult);
     }
 
@@ -932,7 +1204,7 @@ QList<ScanResult> ScannerWindow::scanHosts(const AdapterInfo &adapter,
                             if (!enabledServiceIds_.contains(def.id)) {
                                 continue;
                             }
-                            if (isPortOpen(ipString, def.port, std::max(120, serviceTimeoutMs() / 2))) {
+                            if (isPortOpen(ipString, def.port, adapter.localIp, std::max(120, serviceTimeoutMs() / 2))) {
                                 alive = true;
                                 break;
                             }
@@ -957,8 +1229,8 @@ QList<ScanResult> ScannerWindow::scanHosts(const AdapterInfo &adapter,
                     if (result.hostname.isEmpty()) {
                         result.hostname = "Unknown";
                     }
-                    result.services = probeServices(ipString, cancelRequested);
-                    result.detailsText = collectDeviceDetails(result);
+                    result.services = probeServices(ipString, adapter.localIp, cancelRequested);
+                    result.detailsText = collectDeviceDetails(result, adapter.localIp);
                     publishResult(result);
                 }
 
@@ -1007,7 +1279,7 @@ QList<ScanResult> ScannerWindow::scanHosts(const AdapterInfo &adapter,
             }
             QList<ServiceHit> services;
             if (!alive) {
-                services = probeServices(ipString, cancelRequested);
+                services = probeServices(ipString, adapter.localIp, cancelRequested);
                 alive = !services.isEmpty();
             }
             if (!alive) {
@@ -1029,10 +1301,10 @@ QList<ScanResult> ScannerWindow::scanHosts(const AdapterInfo &adapter,
                 result.hostname = "Unknown";
             }
             if (services.isEmpty()) {
-                services = probeServices(ipString, cancelRequested);
+                services = probeServices(ipString, adapter.localIp, cancelRequested);
             }
             result.services = services;
-            result.detailsText = collectDeviceDetails(result);
+            result.detailsText = collectDeviceDetails(result, adapter.localIp);
             publishResult(result);
             discoveredIps.insert(ipString);
         }
@@ -1073,8 +1345,8 @@ bool ScannerWindow::pingHost(const QHostAddress &address, const QString &interfa
         return false;
     };
 
-    if (!interfaceName.isEmpty() && runPing({"-I", interfaceName})) {
-        return true;
+    if (!interfaceName.isEmpty()) {
+        return runPing({"-I", interfaceName});
     }
     return runPing({});
 #else
@@ -1240,11 +1512,14 @@ QList<ScannerWindow::ServiceDefinition> ScannerWindow::availableServices() const
         {"ftp", "FTP", 21, false, false},
         {"telnet", "Telnet", 23, false, false},
         {"smb", "SMB", 445, false, false},
-        {"netbios", "NetBIOS", 139, false, false}
+        {"smtp25", "SMTP", 25, false, false},
+        {"smtps465", "SMTPS", 465, false, false},
+        {"smtp587", "SMTP-STARTTLS", 587, false, false}
     };
 }
 
 QList<ServiceHit> ScannerWindow::probeServices(const QString &ip,
+                                               const QString &localBindIp,
                                                const std::shared_ptr<std::atomic_bool> &cancelRequested) const
 {
     QList<ServiceHit> hits;
@@ -1258,7 +1533,7 @@ QList<ServiceHit> ScannerWindow::probeServices(const QString &ip,
             break;
         }
 
-        if (isPortOpen(ip, def.port, serviceTimeoutMs())) {
+        if (isPortOpen(ip, def.port, localBindIp, serviceTimeoutMs())) {
             ServiceHit hit;
             hit.id = def.id;
             hit.label = def.label;
@@ -1271,10 +1546,18 @@ QList<ServiceHit> ScannerWindow::probeServices(const QString &ip,
     return hits;
 }
 
-bool ScannerWindow::isPortOpen(const QString &ip, int port, int timeoutMs) const
+bool ScannerWindow::isPortOpen(const QString &ip, int port, const QString &localBindIp, int timeoutMs) const
 {
     for (int attempt = 0; attempt < serviceAttempts(); ++attempt) {
         QTcpSocket socket;
+        if (!localBindIp.isEmpty()) {
+            QHostAddress bindAddress;
+            if (!bindAddress.setAddress(localBindIp) ||
+                bindAddress.protocol() != QAbstractSocket::IPv4Protocol ||
+                !socket.bind(bindAddress, 0)) {
+                return false;
+            }
+        }
         socket.connectToHost(ip, static_cast<quint16>(port));
         const bool connected = socket.waitForConnected(timeoutMs);
         socket.abort();
@@ -1357,14 +1640,27 @@ void ScannerWindow::refreshDisplayedMacAddresses()
             continue;
         }
         macItem->setFont(mono);
-        macItem->setText(formatMacForDisplay(macItem->text()));
+        const QString formatted = formatMacForDisplay(macItem->text());
+        macItem->setText(formatted);
+        bool ok = false;
+        const qulonglong sortKey = normalizeMacHex12(formatted).toULongLong(&ok, 16);
+        macItem->setData(Qt::UserRole, ok ? QVariant(sortKey) : QVariant());
     }
     applyTableColumnSizing();
 }
 
-QString ScannerWindow::fetchTcpBanner(const QString &ip, int port, int timeoutMs, const QByteArray &prologue) const
+QString ScannerWindow::fetchTcpBanner(const QString &ip, int port, int timeoutMs,
+                                      const QString &localBindIp, const QByteArray &prologue) const
 {
     QTcpSocket socket;
+    if (!localBindIp.isEmpty()) {
+        QHostAddress bindAddress;
+        if (!bindAddress.setAddress(localBindIp) ||
+            bindAddress.protocol() != QAbstractSocket::IPv4Protocol ||
+            !socket.bind(bindAddress, 0)) {
+            return {};
+        }
+    }
     socket.connectToHost(ip, static_cast<quint16>(port));
     if (!socket.waitForConnected(timeoutMs)) {
         return {};
@@ -1410,7 +1706,7 @@ QString ScannerWindow::inferOsFromSignals(const QStringList &signalList) const
     return "Unknown";
 }
 
-QString ScannerWindow::collectDeviceDetails(const ScanResult &result) const
+QString ScannerWindow::collectDeviceDetails(const ScanResult &result, const QString &localBindIp) const
 {
     QStringList lines;
     QStringList signalList;
@@ -1424,7 +1720,8 @@ QString ScannerWindow::collectDeviceDetails(const ScanResult &result) const
     for (const ServiceHit &service : result.services) {
         if (service.id == "http") {
             const QString response = fetchTcpBanner(
-                result.ip, 80, serviceTimeoutMs(), QByteArray("HEAD / HTTP/1.0\r\nHost: " + result.ip.toUtf8() + "\r\n\r\n"));
+                result.ip, 80, serviceTimeoutMs(), localBindIp,
+                QByteArray("HEAD / HTTP/1.0\r\nHost: " + result.ip.toUtf8() + "\r\n\r\n"));
             const QString server = extractHttpServerHeader(response);
             if (!server.isEmpty()) {
                 lines << QString("Web server (80): %1").arg(server);
@@ -1433,7 +1730,7 @@ QString ScannerWindow::collectDeviceDetails(const ScanResult &result) const
             continue;
         }
         if (service.id == "ssh") {
-            const QString banner = fetchTcpBanner(result.ip, 22, serviceTimeoutMs());
+            const QString banner = fetchTcpBanner(result.ip, 22, serviceTimeoutMs(), localBindIp);
             if (!banner.isEmpty()) {
                 lines << QString("SSH banner: %1").arg(banner.left(180));
                 signalList << banner;
@@ -1441,7 +1738,7 @@ QString ScannerWindow::collectDeviceDetails(const ScanResult &result) const
             continue;
         }
         if (service.id == "ftp") {
-            const QString banner = fetchTcpBanner(result.ip, 21, serviceTimeoutMs());
+            const QString banner = fetchTcpBanner(result.ip, 21, serviceTimeoutMs(), localBindIp);
             if (!banner.isEmpty()) {
                 lines << QString("FTP banner: %1").arg(banner.left(180));
                 signalList << banner;
@@ -1449,7 +1746,7 @@ QString ScannerWindow::collectDeviceDetails(const ScanResult &result) const
             continue;
         }
         if (service.id == "telnet") {
-            const QString banner = fetchTcpBanner(result.ip, 23, serviceTimeoutMs());
+            const QString banner = fetchTcpBanner(result.ip, 23, serviceTimeoutMs(), localBindIp);
             if (!banner.isEmpty()) {
                 lines << QString("Telnet banner: %1").arg(banner.left(180));
                 signalList << banner;
@@ -1485,19 +1782,45 @@ QString ScannerWindow::preferredTerminalProgram() const
     return "xterm";
 }
 
-bool ScannerWindow::openPreferredTerminal(const QStringList &args) const
+bool ScannerWindow::openPreferredTerminal(const QStringList &args, QString *error) const
 {
+    auto resolvedExecutable = [](const QString &program) {
+        if (program.isEmpty()) {
+            return QString();
+        }
+        if (program.contains('/')) {
+            QFileInfo fi(program);
+            return (fi.exists() && fi.isFile() && fi.isExecutable()) ? fi.absoluteFilePath() : QString();
+        }
+        return QStandardPaths::findExecutable(program);
+    };
+
+    auto tryStart = [&](const QString &program) {
+        const QString resolved = resolvedExecutable(program);
+        if (resolved.isEmpty()) {
+            return false;
+        }
+        if (QProcess::startDetached(resolved, args)) {
+            return true;
+        }
+        if (error != nullptr) {
+            *error = QString("Failed to launch terminal command: %1").arg(program);
+        }
+        return false;
+    };
+
     const QString preferred = preferredTerminalProgram();
-    if (!QStandardPaths::findExecutable(preferred).isEmpty() && QProcess::startDetached(preferred, args)) {
+    if (tryStart(preferred)) {
         return true;
     }
-    if (preferred != "konsole" && !QStandardPaths::findExecutable("konsole").isEmpty() && QProcess::startDetached("konsole", args)) {
+    if (preferred != "konsole" && tryStart("konsole")) {
         return true;
     }
-    if (preferred != "x-terminal-emulator" &&
-        !QStandardPaths::findExecutable("x-terminal-emulator").isEmpty() &&
-        QProcess::startDetached("x-terminal-emulator", args)) {
+    if (preferred != "x-terminal-emulator" && tryStart("x-terminal-emulator")) {
         return true;
+    }
+    if (error != nullptr && error->isEmpty()) {
+        *error = QString("No runnable terminal command found (tried: %1, konsole, x-terminal-emulator).").arg(preferred);
     }
     return false;
 }
@@ -1506,7 +1829,12 @@ void ScannerWindow::openService(const QString &ip, const ServiceHit &service)
 {
     if (service.isWeb) {
         const QString scheme = (service.id == "https") ? "https" : "http";
-        QDesktopServices::openUrl(QUrl(QString("%1://%2").arg(scheme, ip)));
+        const QUrl url(QString("%1://%2").arg(scheme, ip));
+        if (!QDesktopServices::openUrl(url)) {
+            const QString message = QString("Failed to open URL: %1").arg(url.toString());
+            QMessageBox::warning(this, "Open Service", message);
+            showStatusMessage(message);
+        }
         return;
     }
 
@@ -1533,10 +1861,32 @@ void ScannerWindow::openService(const QString &ip, const ServiceHit &service)
         return;
     }
 
-    const QString program = parts.first();
+    const QString programToken = parts.first();
     const QStringList args = parts.mid(1);
-    if (!QProcess::startDetached(program, args)) {
-        QMessageBox::warning(this, "Open Service", QString("Failed to run command: %1").arg(command));
+    QString resolvedProgram;
+    if (programToken.contains('/')) {
+        QFileInfo fi(programToken);
+        if (fi.exists() && fi.isFile() && fi.isExecutable()) {
+            resolvedProgram = fi.absoluteFilePath();
+        }
+    } else {
+        resolvedProgram = QStandardPaths::findExecutable(programToken);
+    }
+
+    if (resolvedProgram.isEmpty()) {
+        const QString message = QString(
+            "Cannot start service command.\nMissing executable: %1\nCommand: %2")
+                                    .arg(programToken, command);
+        QMessageBox::warning(this, "Open Service", message);
+        showStatusMessage(QString("Service launch failed: missing executable '%1'.").arg(programToken));
+        return;
+    }
+
+    if (!QProcess::startDetached(resolvedProgram, args)) {
+        const QString message = QString("Failed to run command:\n%1\nResolved executable: %2")
+                                    .arg(command, resolvedProgram);
+        QMessageBox::warning(this, "Open Service", message);
+        showStatusMessage(QString("Service launch failed: %1").arg(command));
     }
 }
 
@@ -1624,6 +1974,13 @@ void ScannerWindow::addOrUpdateResultRow(const ScanResult &result)
     const QString hostnameText = result.hostname.isEmpty() ? QString("Unknown") : result.hostname;
     const QString macText = formatMacForDisplay(result.mac);
     const QString vendorText = result.vendor.isEmpty() ? QString("Unknown") : result.vendor;
+    const qulonglong ipSortKey = static_cast<qulonglong>(ipv4ToInt(QHostAddress(result.ip)));
+    qulonglong macSortKey = 0;
+    bool hasMacSortKey = false;
+    const QString macHex = normalizeMacHex12(result.mac);
+    if (!macHex.isEmpty()) {
+        macSortKey = macHex.toULongLong(&hasMacSortKey, 16);
+    }
     if (!result.services.isEmpty() || !servicesByIp_.contains(result.ip)) {
         servicesByIp_[result.ip] = result.services;
     }
@@ -1654,13 +2011,19 @@ void ScannerWindow::addOrUpdateResultRow(const ScanResult &result)
         QTableWidgetItem *macItem = table_->item(row, ColMac);
         QTableWidgetItem *vendorItem = table_->item(row, ColVendor);
         QTableWidgetItem *svcItem = table_->item(row, ColServices);
+        QTableWidgetItem *ipItem = table_->item(row, ColIp);
 
+        if (ipItem == nullptr) {
+            ipItem = new SortKeyTableWidgetItem(result.ip);
+            ipItem->setFont(mono);
+            table_->setItem(row, ColIp, ipItem);
+        }
         if (hostItem == nullptr) {
             hostItem = new QTableWidgetItem;
             table_->setItem(row, ColHostname, hostItem);
         }
         if (macItem == nullptr) {
-            macItem = new QTableWidgetItem;
+            macItem = new SortKeyTableWidgetItem;
             macItem->setFont(mono);
             table_->setItem(row, ColMac, macItem);
         }
@@ -1673,12 +2036,15 @@ void ScannerWindow::addOrUpdateResultRow(const ScanResult &result)
             table_->setItem(row, ColServices, svcItem);
         }
 
+        ipItem->setText(result.ip);
+        ipItem->setData(Qt::UserRole, ipSortKey);
         if ((hostItem->text().isEmpty() || hostItem->text() == "Unknown") && hostnameText != "Unknown") {
             hostItem->setText(hostnameText);
         }
         if ((macItem->text().isEmpty() || macItem->text() == "Unknown") && macText != "Unknown") {
             macItem->setText(macText);
         }
+        macItem->setData(Qt::UserRole, hasMacSortKey ? QVariant(macSortKey) : QVariant());
         if ((vendorItem->text().isEmpty() || vendorItem->text() == "Unknown") && vendorText != "Unknown") {
             vendorItem->setText(vendorText);
         }
@@ -1709,12 +2075,14 @@ void ScannerWindow::addOrUpdateResultRow(const ScanResult &result)
     } else {
         const int row = table_->rowCount();
         table_->insertRow(row);
-        auto *ipItem = new QTableWidgetItem(result.ip);
+        auto *ipItem = new SortKeyTableWidgetItem(result.ip);
         ipItem->setFont(mono);
+        ipItem->setData(Qt::UserRole, ipSortKey);
         table_->setItem(row, ColIp, ipItem);
         table_->setItem(row, ColHostname, new QTableWidgetItem(hostnameText));
-        auto *macItem = new QTableWidgetItem(macText);
+        auto *macItem = new SortKeyTableWidgetItem(macText);
         macItem->setFont(mono);
+        macItem->setData(Qt::UserRole, hasMacSortKey ? QVariant(macSortKey) : QVariant());
         table_->setItem(row, ColMac, macItem);
         table_->setItem(row, ColVendor, new QTableWidgetItem(vendorText));
         table_->setItem(row, ColServices, new QTableWidgetItem(QString()));
@@ -2515,11 +2883,48 @@ void ScannerWindow::showSettingsDialog()
 
 void ScannerWindow::showAboutDialog()
 {
+    const QString version = QCoreApplication::applicationVersion().isEmpty()
+                                ? QString("Unknown")
+                                : QCoreApplication::applicationVersion();
     QMessageBox::about(this,
                        "About Open IP Scanner",
-                       "Open IP Scanner\n\n"
+                       QString("Open IP Scanner v%1\n\n").arg(version) +
                        "Qt6 desktop IP scanner with adapter-aware scanning, custom target parsing,"
                        " service probing, and CSV export.");
+}
+
+void ScannerWindow::showHelpDialog()
+{
+    QDialog dialog(this);
+    dialog.setWindowTitle("Usage Guide");
+    dialog.resize(760, 520);
+    auto *layout = new QVBoxLayout(&dialog);
+    auto *browser = new QTextBrowser(&dialog);
+    browser->setOpenExternalLinks(true);
+    browser->setHtml(
+        "<h2>Open IP Scanner Usage</h2>"
+        "<p><b>Targets:</b> Enter CIDR, ranges, or single IPs. Examples:<br>"
+        "<code>192.168.1.0/24</code>, <code>10.0.0.10-10.0.0.50</code>, "
+        "<code>10.0.0.10-50</code>, <code>10.0.0.20</code>.</p>"
+        "<p><b>Adapter selection:</b> Choose an adapter manually or use <b>Auto Select</b> "
+        "to match entered targets to detected connected networks.</p>"
+        "<p><b>Auto button:</b> Fills targets from connected routable networks. "
+        "For a specific adapter, it fills only that adapter's detected network range(s).</p>"
+        "<h3>Advanced</h3>"
+        "<p><b>Performance:</b> Worker count controls parallel host probing. "
+        "Higher values scan faster but increase network load.</p>"
+        "<p><b>Accuracy:</b> Increases retries and service timeout depth to find hosts that "
+        "drop ICMP or respond intermittently.</p>"
+        "<p><b>Services:</b> Enable/disable per-port probing and configure launch commands in "
+        "Settings &rarr; Programs.</p>"
+        "<p><b>Filtering:</b> Use Find to filter by IP, hostname, MAC, vendor, services, or OUI prefix.</p>"
+        "<p><b>Safety:</b> Scan only networks you own or are authorized to test.</p>");
+    layout->addWidget(browser, 1);
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close, &dialog);
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    layout->addWidget(buttons);
+    dialog.exec();
 }
 
 void ScannerWindow::updateWorkerLabel(int value)
@@ -2589,7 +2994,9 @@ int ScannerWindow::serviceTimeoutMs() const
 void ScannerWindow::applyDefaultSettings()
 {
     maxParallelProbes_ = 4;
-    accuracyLevel_ = 2;
+    accuracyLevel_ = 1;
+    rememberLastTargetOnLaunch_ = false;
+    pendingLastTarget_.clear();
     toolbarDisplayMode_ = 0;
     macDisplayFormat_ = MacColonUpper;
     toolbarItemDisplayModes_.clear();
@@ -2604,7 +3011,7 @@ void ScannerWindow::applyDefaultSettings()
     customCommands_.clear();
     const QString terminal = preferredTerminalProgram();
     customCommands_.insert("ssh", QString("%1 -e ssh {host}").arg(terminal));
-    customCommands_.insert("rdp", "xfreerdp /v:{host}");
+    customCommands_.insert("rdp", "xdg-open rdp://{host}:3389");
     customCommands_.insert("ftp", "xdg-open ftp://{host}");
     customCommands_.insert("telnet", QString("%1 -e telnet {host}").arg(terminal));
     customCommands_.insert("smb", "xdg-open smb://{host}");
@@ -2641,7 +3048,13 @@ void ScannerWindow::loadSettings()
     }
 
     maxParallelProbes_ = std::clamp(settings.value("performance/max_parallel_probes", 4).toInt(), 1, kMaxParallelProbes);
-    accuracyLevel_ = std::clamp(settings.value("performance/accuracy_level", 2).toInt(), 0, 3);
+    accuracyLevel_ = std::clamp(settings.value("performance/accuracy_level", 1).toInt(), 0, 3);
+    rememberLastTargetOnLaunch_ = settings.value("targets/remember_last", false).toBool();
+    pendingLastTarget_.clear();
+    if (rememberLastTargetAction_ != nullptr) {
+        const QSignalBlocker blocker(rememberLastTargetAction_);
+        rememberLastTargetAction_->setChecked(rememberLastTargetOnLaunch_);
+    }
     toolbarDisplayMode_ = std::clamp(settings.value("toolbar/display_mode", 0).toInt(), 0, 2);
     macDisplayFormat_ = std::clamp(settings.value("appearance/mac_display_format", static_cast<int>(MacColonUpper)).toInt(),
                                    static_cast<int>(MacColonUpper),
@@ -2693,6 +3106,10 @@ void ScannerWindow::loadSettings()
     if (customCommands_.value("telnet").trimmed() == "x-terminal-emulator -e telnet {host}") {
         customCommands_["telnet"] = QString("%1 -e telnet {host}").arg(preferredTerminal);
     }
+    if (customCommands_.value("rdp").trimmed() == "xfreerdp /v:{host}" ||
+        customCommands_.value("rdp").trimmed() == "xfreerdp /v:{host} /cert:ignore") {
+        customCommands_["rdp"] = "xdg-open rdp://{host}:3389";
+    }
 
     const QStringList savedOrder = settings.value("toolbar/order").toStringList();
     if (!savedOrder.isEmpty()) {
@@ -2732,6 +3149,15 @@ void ScannerWindow::loadSettings()
         targetHistory_.removeLast();
     }
     targetHistoryModel_->setStringList(targetHistory_);
+    if (rememberLastTargetOnLaunch_) {
+        const QString savedTarget = settings.value("targets/last_input").toString().trimmed();
+        if (!savedTarget.isEmpty() && isSafeTextInput(savedTarget, 2048)) {
+            pendingLastTarget_ = savedTarget;
+            targetInput_->setText(savedTarget);
+            userCustomizedTargets_ = true;
+            validateTargetLimitFeedback(savedTarget);
+        }
+    }
 
     customOuiVendors_.clear();
     const int count = settings.beginReadArray("oui/custom_entries");
@@ -2772,6 +3198,8 @@ void ScannerWindow::saveSettings() const
         settings.setValue(QString("programs/%1").arg(it.key()), it.value());
     }
     settings.setValue("targets/history", targetHistory_);
+    settings.setValue("targets/remember_last", rememberLastTargetOnLaunch_);
+    settings.setValue("targets/last_input", targetInput_->text().trimmed());
 
     settings.beginWriteArray("oui/custom_entries");
     int index = 0;
@@ -2828,6 +3256,27 @@ QList<int> ScannerWindow::visibleColumnsInDisplayOrder() const
 void ScannerWindow::showStatusMessage(const QString &text)
 {
     statusTextLabel_->setText(text);
+}
+
+void ScannerWindow::validateTargetLimitFeedback(const QString &text)
+{
+    QString error;
+    const QString trimmed = text.trimmed();
+    if (!trimmed.isEmpty() && isSafeTextInput(trimmed, 2048)) {
+        parseTargetsInput(trimmed, &error);
+    }
+
+    if (error.startsWith("Too many targets")) {
+        targetInput_->setStyleSheet("QLineEdit { color: #D9534F; }");
+        targetLimitWarningActive_ = true;
+        showStatusMessage(error);
+    } else {
+        targetInput_->setStyleSheet({});
+        if (targetLimitWarningActive_ && !scanInProgress_) {
+            showStatusMessage("Ready.");
+        }
+        targetLimitWarningActive_ = false;
+    }
 }
 
 void ScannerWindow::rebuildMainToolbar()
