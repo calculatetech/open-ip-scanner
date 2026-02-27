@@ -161,13 +161,15 @@ private:
     // Service detection and details enrichment.
     QList<ServiceDefinition> availableServices() const;
     QList<ServiceHit> probeServices(const QString &ip,
+                                    const QString &localBindIp,
                                     const std::shared_ptr<std::atomic_bool> &cancelRequested) const;
-    QString collectDeviceDetails(const ScanResult &result) const;
-    QString fetchTcpBanner(const QString &ip, int port, int timeoutMs, const QByteArray &prologue = {}) const;
+    QString collectDeviceDetails(const ScanResult &result, const QString &localBindIp) const;
+    QString fetchTcpBanner(const QString &ip, int port, int timeoutMs,
+                           const QString &localBindIp, const QByteArray &prologue = {}) const;
     QString extractHttpServerHeader(const QString &rawResponse) const;
     QString inferOsFromSignals(const QStringList &signalList) const;
     void updateDetailsPaneForCurrentSelection();
-    bool isPortOpen(const QString &ip, int port, int timeoutMs = 280) const;
+    bool isPortOpen(const QString &ip, int port, const QString &localBindIp, int timeoutMs = 280) const;
     QString serviceText(const QList<ServiceHit> &services) const;
     QString formatMacForDisplay(const QString &mac) const;
     void refreshDisplayedMacAddresses();
