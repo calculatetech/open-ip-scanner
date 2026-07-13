@@ -108,7 +108,7 @@ Several independent conditions produce the same visible `Unknown`:
 5. The scanned device is the local machine or pre-published gateway. Avahi can run later, but its better result is discarded when the earlier hostname is already non-`Unknown`.
 6. Avahi did succeed, but the table has no field provenance, so an Avahi hostname and a system-resolver hostname look identical.
 
-The required correction is itemized in [ROADMAP-008](roadmap.md#roadmap-008), [ROADMAP-009](roadmap.md#roadmap-009), and [ROADMAP-010](roadmap.md#roadmap-010).
+The required correction is itemized in [MDNS-RESOLVER](roadmap.md#mdns-resolver), [ENRICHMENT-PROVENANCE](roadmap.md#enrichment-provenance), and [MDNS-TESTS](roadmap.md#mdns-tests).
 
 ## Findings summary
 
@@ -132,135 +132,135 @@ The required correction is itemized in [ROADMAP-008](roadmap.md#roadmap-008), [R
 
 - **MDNS-01 — Reverse lookup is not DNS-SD discovery or service enrichment.** `Medium · Confirmed scope gap`
 
-  `lookupMdnsHostname()` can supply only one name for an address the scanner already knows. It cannot enumerate service instances, import advertised ports or TXT attributes, or add a DNS-SD-only device. The fixed TCP probe table is unrelated to Avahi. This explains why no advertised service data appears, but the current README promises only optional “mDNS hostname resolution,” so full DNS-SD browsing is clarified future scope rather than a 1.0 defect. See post-1.0 [ROADMAP-029](roadmap.md#roadmap-029).
+  `lookupMdnsHostname()` can supply only one name for an address the scanner already knows. It cannot enumerate service instances, import advertised ports or TXT attributes, or add a DNS-SD-only device. The fixed TCP probe table is unrelated to Avahi. This explains why no advertised service data appears, but the current README promises only optional “mDNS hostname resolution,” so full DNS-SD browsing is clarified future scope rather than a 1.0 defect. See post-1.0 [DNS-SD-DISCOVERY](roadmap.md#dns-sd-discovery).
 
 - **MDNS-02 — A successful local Avahi name is discarded by merge precedence.** `High · Confirmed and observed`
 
-  Hostname lookup occurs only after ping, neighbor lookup, or selected TCP probes mark a target alive (`src/scannerwindow.cpp:1191-1235`, `1275-1309`). The self row is also published early with `QHostInfo::localHostName()` (`1131-1142`), but the normal worker does not skip it: tracing captured `avahi-resolve-address -4 10.10.30.34`. The controlled scan still displayed `minidebian` instead of Avahi’s `minidebian.local` because `publishResult()` will not replace one non-`Unknown` hostname with a better one (`1109-1112`). See [ROADMAP-008](roadmap.md#roadmap-008) and [ROADMAP-009](roadmap.md#roadmap-009).
+  Hostname lookup occurs only after ping, neighbor lookup, or selected TCP probes mark a target alive (`src/scannerwindow.cpp:1191-1235`, `1275-1309`). The self row is also published early with `QHostInfo::localHostName()` (`1131-1142`), but the normal worker does not skip it: tracing captured `avahi-resolve-address -4 10.10.30.34`. The controlled scan still displayed `minidebian` instead of Avahi’s `minidebian.local` because `publishResult()` will not replace one non-`Unknown` hostname with a better one (`1109-1112`). See [MDNS-RESOLVER](roadmap.md#mdns-resolver) and [ENRICHMENT-PROVENANCE](roadmap.md#enrichment-provenance).
 
 - **MDNS-03 — Every failure and every success source is opaque.** `High · Confirmed`
 
-  Missing executable, start failure, daemon failure, timeout, nonzero exit, empty output, and malformed output all return an empty string without a log or status (`src/scannerwindow.cpp:1439-1462`). The synchronous system reverse resolver then runs and may also become `Unknown` (`1416-1433`); depending on host NSS configuration, that resolver may itself consult files, mDNS, or unicast DNS. `ScanResult` stores no source (`src/scannerwindow.h:47-57`), so even success cannot be identified as Avahi. See [ROADMAP-009](roadmap.md#roadmap-009) and [ROADMAP-017](roadmap.md#roadmap-017).
+  Missing executable, start failure, daemon failure, timeout, nonzero exit, empty output, and malformed output all return an empty string without a log or status (`src/scannerwindow.cpp:1439-1462`). The synchronous system reverse resolver then runs and may also become `Unknown` (`1416-1433`); depending on host NSS configuration, that resolver may itself consult files, mDNS, or unicast DNS. `ScanResult` stores no source (`src/scannerwindow.h:47-57`), so even success cannot be identified as Avahi. See [ENRICHMENT-PROVENANCE](roadmap.md#enrichment-provenance) and [DIAGNOSTICS](roadmap.md#diagnostics).
 
 - **MDNS-04 — The resolver is per-host, hard-deadlined, unscoped, and not cancellable.** `High · Confirmed with observed timing`
 
-  Each live remote host spawns a child process and waits up to 1,200 ms (`src/scannerwindow.cpp:1444-1448`). The selected interface is not passed into hostname lookup (`1223`, `1294`, `1436-1445`), and neither the Avahi nor `QHostInfo::fromName()` call receives the cancellation token. At four workers, 254 live devices without reverse records can consume about 76 seconds in application-side Avahi waits alone. Multi-homed and overlapping-address correctness is undefined. See [ROADMAP-002](roadmap.md#roadmap-002), [ROADMAP-008](roadmap.md#roadmap-008), and [ROADMAP-009](roadmap.md#roadmap-009).
+  Each live remote host spawns a child process and waits up to 1,200 ms (`src/scannerwindow.cpp:1444-1448`). The selected interface is not passed into hostname lookup (`1223`, `1294`, `1436-1445`), and neither the Avahi nor `QHostInfo::fromName()` call receives the cancellation token. At four workers, 254 live devices without reverse records can consume about 76 seconds in application-side Avahi waits alone. Multi-homed and overlapping-address correctness is undefined. See [SCAN-CANCELLATION](roadmap.md#scan-cancellation), [MDNS-RESOLVER](roadmap.md#mdns-resolver), and [ENRICHMENT-PROVENANCE](roadmap.md#enrichment-provenance).
 
 - **MDNS-05 — There is no controlled compatibility test or adequate operational contract.** `High · Confirmed`
 
-  CMake has no tests. The Debian package only recommends `avahi-utils` (`CMakeLists.txt:101-102`), and README calls it optional without explaining daemon state, multicast/firewall constraints, the reverse-record limitation, expected UI evidence, or troubleshooting (`README.md:32-39`). The audit LAN had no remote advertisement, demonstrating why opportunistic developer testing is insufficient. See [ROADMAP-010](roadmap.md#roadmap-010), [ROADMAP-019](roadmap.md#roadmap-019), and [ROADMAP-024](roadmap.md#roadmap-024).
+  CMake has no tests. The Debian package only recommends `avahi-utils` (`CMakeLists.txt:101-102`), and README calls it optional without explaining daemon state, multicast/firewall constraints, the reverse-record limitation, expected UI evidence, or troubleshooting (`README.md:32-39`). The audit LAN had no remote advertisement, demonstrating why opportunistic developer testing is insufficient. See [MDNS-TESTS](roadmap.md#mdns-tests), [DEBIAN-PACKAGING](roadmap.md#debian-packaging), and [RELEASE-DOCS](roadmap.md#release-docs).
 
 ### Core scan engine
 
 - **CORE-01 — Preferences can race active workers and cause undefined behavior.** `Blocker · Confirmed`
 
-  The Settings menu remains active during a scan. Accepting the dialog writes `maxParallelProbes_`, `accuracyLevel_`, `macDisplayFormat_`, `enabledServiceIds_`, and `customOuiVendors_` (`src/scannerwindow.cpp:2805-2855`) while scan code reads those same fields and containers (`1168`, `1177-1234`, `1404-1413`, `1522-1547`, `1598-1633`, `2936-2992`). There is no shared lock, atomic wrapper, immutable snapshot, or UI exclusion. Qt documents its ordinary implicitly shared value containers as reentrant, not safe for simultaneous access to the same instance; unsynchronized C++ scalar access is also a data race. A crash is not required for this to be a release blocker. See [ROADMAP-001](roadmap.md#roadmap-001).
+  The Settings menu remains active during a scan. Accepting the dialog writes `maxParallelProbes_`, `accuracyLevel_`, `macDisplayFormat_`, `enabledServiceIds_`, and `customOuiVendors_` (`src/scannerwindow.cpp:2805-2855`) while scan code reads those same fields and containers (`1168`, `1177-1234`, `1404-1413`, `1522-1547`, `1598-1633`, `2936-2992`). There is no shared lock, atomic wrapper, immutable snapshot, or UI exclusion. Qt documents its ordinary implicitly shared value containers as reentrant, not safe for simultaneous access to the same instance; unsynchronized C++ scalar access is also a data race. A crash is not required for this to be a release blocker. See [SCAN-CONFIGURATION](roadmap.md#scan-configuration).
 
 - **CORE-02 — Stop and close are not bounded.** `High · Confirmed`
 
-  Cancellation is checked only between blocking pings, process waits, socket waits, DNS lookups, detail probes, and hosts. `closeEvent()` then blocks the GUI thread in `scanWatcher_.waitForFinished()` (`src/scannerwindow.cpp:761-768`). At Maximum accuracy, one ping helper alone may wait four times for as much as 5.5 seconds before checking cancellation (`1327-1345`, `2962-2969`). The window can look hung during shutdown. See [ROADMAP-002](roadmap.md#roadmap-002).
+  Cancellation is checked only between blocking pings, process waits, socket waits, DNS lookups, detail probes, and hosts. `closeEvent()` then blocks the GUI thread in `scanWatcher_.waitForFinished()` (`src/scannerwindow.cpp:761-768`). At Maximum accuracy, one ping helper alone may wait four times for as much as 5.5 seconds before checking cancellation (`1327-1345`, `2962-2969`). The window can look hung during shutdown. See [SCAN-CANCELLATION](roadmap.md#scan-cancellation).
 
 - **CORE-03 — High and Maximum accuracy repeat missed hosts serially.** `High · Confirmed`
 
-  After the parallel pass, accuracy levels 2 and 3 loop over every missed host on one thread and repeat ping, neighbor, and service probes (`src/scannerwindow.cpp:1255-1311`). This defeats the worker setting and duplicates traffic. From the code’s enforced process/socket deadlines, a fully unresponsive 4,096-target Maximum scan at the default four workers has a source-derived upper bound measured in tens of hours; any hosts eventually found can then add blocking system-resolver work. Exact live time depends on early OS errors, but the algorithmic failure is deterministic. See [ROADMAP-003](roadmap.md#roadmap-003).
+  After the parallel pass, accuracy levels 2 and 3 loop over every missed host on one thread and repeat ping, neighbor, and service probes (`src/scannerwindow.cpp:1255-1311`). This defeats the worker setting and duplicates traffic. From the code’s enforced process/socket deadlines, a fully unresponsive 4,096-target Maximum scan at the default four workers has a source-derived upper bound measured in tens of hours; any hosts eventually found can then add blocking system-resolver work. Exact live time depends on early OS errors, but the algorithmic failure is deterministic. See [SCAN-BUDGETS](roadmap.md#scan-budgets).
 
 - **CORE-04 — Auto can generate targets that Scan immediately rejects.** `High · Confirmed`
 
-  Default-network detection accepts prefixes from `/1` through `/30` and emits the whole CIDR (`src/scannerwindow.cpp:514-575`, `643-650`). Parsing rejects any CIDR with more than 4,096 usable hosts (`926-940`). A common `/16` therefore produces a red, unusable default; multiple otherwise valid networks can also exceed the cumulative cap. Valid `/31` links are excluded from defaults. See [ROADMAP-004](roadmap.md#roadmap-004).
+  Default-network detection accepts prefixes from `/1` through `/30` and emits the whole CIDR (`src/scannerwindow.cpp:514-575`, `643-650`). Parsing rejects any CIDR with more than 4,096 usable hosts (`926-940`). A common `/16` therefore produces a red, unusable default; multiple otherwise valid networks can also exceed the cumulative cap. Valid `/31` links are excluded from defaults. See [TARGET-DEFAULTS](roadmap.md#target-defaults).
 
 - **CORE-05 — Incomplete ARP entries can become false-positive devices.** `High · Confirmed`
 
-  `/proc/net/arp` results are accepted by matching only IP and interface, without checking flags or rejecting the all-zero MAC (`src/scannerwindow.cpp:1363-1379`). Any nonempty string then makes a ping-failed target “alive” (`1197-1201`, `1277-1280`). Neighbor state, freshness, and link identity are not modeled. See [ROADMAP-005](roadmap.md#roadmap-005).
+  `/proc/net/arp` results are accepted by matching only IP and interface, without checking flags or rejecting the all-zero MAC (`src/scannerwindow.cpp:1363-1379`). Any nonempty string then makes a ping-failed target “alive” (`1197-1201`, `1277-1280`). Neighbor state, freshness, and link identity are not modeled. See [NEIGHBOR-VALIDATION](roadmap.md#neighbor-validation).
 
 - **CORE-06 — An open port is presented as a verified service, and details overclaim evidence.** `High · Confirmed`
 
-  A successful TCP connect to a conventional port creates labels such as HTTPS, SSH, RDP, or SMTP without a protocol handshake (`src/scannerwindow.cpp:1506-1569`). `collectDeviceDetails()` runs for every result, and for hosts already found to expose HTTP, SSH, FTP, or Telnet it performs extra HTTP/banner requests even when the pane is hidden (`1216-1235`, `1710-1760`). It also labels a weak string heuristic as “OS signature.” This can misinform users and generate under-disclosed traffic for service-positive hosts. See [ROADMAP-006](roadmap.md#roadmap-006).
+  A successful TCP connect to a conventional port creates labels such as HTTPS, SSH, RDP, or SMTP without a protocol handshake (`src/scannerwindow.cpp:1506-1569`). `collectDeviceDetails()` runs for every result, and for hosts already found to expose HTTP, SSH, FTP, or Telnet it performs extra HTTP/banner requests even when the pane is hidden (`1216-1235`, `1710-1760`). It also labels a weak string heuristic as “OS signature.” This can misinform users and generate under-disclosed traffic for service-positive hosts. See [SERVICE-EVIDENCE](roadmap.md#service-evidence).
 
 - **CORE-07 — The result table has quadratic-style update work and broken service sorting.** `High · Source-supported risk`
 
-  Every result linearly searches rows, may sort the whole table, filters every row, and resizes columns to contents (`src/scannerwindow.cpp:1968-2125`, `2300-2305`, `3374-3382`, `3419-3441`). `finishScan()` rebuilds every result through the same path (`1908-1914`). Service cells retain empty item text while buttons carry the visible data (`2052-2075`, `2089-2108`), so sorting the Services column compares empty cells. No 4,096-row stress test exists. See [ROADMAP-007](roadmap.md#roadmap-007).
+  Every result linearly searches rows, may sort the whole table, filters every row, and resizes columns to contents (`src/scannerwindow.cpp:1968-2125`, `2300-2305`, `3374-3382`, `3419-3441`). `finishScan()` rebuilds every result through the same path (`1908-1914`). Service cells retain empty item text while buttons carry the visible data (`2052-2075`, `2089-2108`), so sorting the Services column compares empty cells. No 4,096-row stress test exists. See [RESULT-SCALING](roadmap.md#result-scaling).
 
 ### Settings, data, and export
 
 - **DATA-01 — “Disable all service probes” does not survive restart.** `High · Confirmed`
 
-  Saving an empty enabled-service set is valid, but loading clears defaults only if the stored list is nonempty (`src/scannerwindow.cpp:3087-3095`). After a user disables every probe, the next launch silently restores HTTP, HTTPS, SSH, and RDP defaults from `applyDefaultSettings()` (`2995-3011`). This is both a correctness and scan-intent violation. See [ROADMAP-011](roadmap.md#roadmap-011).
+  Saving an empty enabled-service set is valid, but loading clears defaults only if the stored list is nonempty (`src/scannerwindow.cpp:3087-3095`). After a user disables every probe, the next launch silently restores HTTP, HTTPS, SSH, and RDP defaults from `applyDefaultSettings()` (`2995-3011`). This is both a correctness and scan-intent violation. See [SETTINGS-MIGRATIONS](roadmap.md#settings-migrations).
 
 - **DATA-02 — Toolbar “Default” does not inherit the global style.** `Medium · Confirmed`
 
-  The UI represents Default as `-1` (`src/scannerwindow.cpp:2601-2607`, `2754-2781`), but rendering clamps it to icon-only (`3344-3347`) and loading clamps persisted `-1` to `0` (`3064-3069`). Defaults also prepopulate every button with an explicit icon-only override (`3003-3008`), making the global display choice ineffective for those actions. See [ROADMAP-011](roadmap.md#roadmap-011).
+  The UI represents Default as `-1` (`src/scannerwindow.cpp:2601-2607`, `2754-2781`), but rendering clamps it to icon-only (`3344-3347`) and loading clamps persisted `-1` to `0` (`3064-3069`). Defaults also prepopulate every button with an explicit icon-only override (`3003-3008`), making the global display choice ineffective for those actions. See [SETTINGS-MIGRATIONS](roadmap.md#settings-migrations).
 
 - **DATA-03 — Merged rows can retain stale details.** `Medium · Confirmed`
 
-  `publishResult()` upgrades MAC, vendor, hostname, and services independently, but replaces details only when the old details string is empty (`src/scannerwindow.cpp:1088-1123`). A gateway or duplicate result can therefore display improved columns while its details pane still says `Unknown` or lists an earlier service set. See [ROADMAP-006](roadmap.md#roadmap-006).
+  `publishResult()` upgrades MAC, vendor, hostname, and services independently, but replaces details only when the old details string is empty (`src/scannerwindow.cpp:1088-1123`). A gateway or duplicate result can therefore display improved columns while its details pane still says `Unknown` or lists an earlier service set. See [SERVICE-EVIDENCE](roadmap.md#service-evidence).
 
 - **DATA-04 — CSV export lacks spreadsheet and write-failure defenses.** `High · Confirmed code path / source-supported exploit risk`
 
-  `csvEscape()` only quotes and doubles quote characters (`src/scannerwindow.cpp:3481-3486`); spreadsheet formula sigils are preserved. Network-derived or custom vendor text can therefore become an active formula when opened in common spreadsheet software. Export also reports success without checking `QTextStream` status, flush/close errors, or disk-full behavior (`2380-2417`), and silently includes filtered-out rows while exporting only visible columns. See [ROADMAP-012](roadmap.md#roadmap-012).
+  `csvEscape()` only quotes and doubles quote characters (`src/scannerwindow.cpp:3481-3486`); spreadsheet formula sigils are preserved. Network-derived or custom vendor text can therefore become an active formula when opened in common spreadsheet software. Export also reports success without checking `QTextStream` status, flush/close errors, or disk-full behavior (`2380-2417`), and silently includes filtered-out rows while exporting only visible columns. See [CSV-EXPORT](roadmap.md#csv-export).
 
 - **DATA-05 — The OUI database has no auditable supply or correctness lifecycle.** `High · Confirmed`
 
-  A 6.3 MB IEEE-style MA-L text dump was committed once with no source URL, retrieval date, checksum, update script, or redistribution notice. The parser supports only six-hex-digit prefixes (`src/scannerwindow.cpp:470-512`, `3488-3498`), accepts non-hex custom prefixes, and does not distinguish locally administered/randomized addresses before assigning a vendor. The generated Debian package also omits all copyright files. See [ROADMAP-018](roadmap.md#roadmap-018) and [ROADMAP-019](roadmap.md#roadmap-019).
+  A 6.3 MB IEEE-style MA-L text dump was committed once with no source URL, retrieval date, checksum, update script, or redistribution notice. The parser supports only six-hex-digit prefixes (`src/scannerwindow.cpp:470-512`, `3488-3498`), accepts non-hex custom prefixes, and does not distinguish locally administered/randomized addresses before assigning a vendor. The generated Debian package also omits all copyright files. See [VENDOR-DATABASE](roadmap.md#vendor-database) and [DEBIAN-PACKAGING](roadmap.md#debian-packaging).
 
 ### Platform contract
 
 - **PLATFORM-01 — The advertised Windows and Qt 5 support is not implemented or tested.** `High · Confirmed`
 
-  README advertises Linux and Windows builds and CMake falls back to any discoverable Qt 5 (`README.md:3`, `CMakeLists.txt:12-18`). On non-Linux, ping always returns false, MAC lookup and gateway lookup return empty, and Avahi returns empty (`src/scannerwindow.cpp:1321-1357`, `1360-1401`, `1436-1474`, `1477-1504`). At the default Balanced accuracy, remote devices are not rescued by TCP discovery. About also says “Qt6” even in a Qt 5 build (`2885-2894`). No Windows or Qt 5 CI exists. See [ROADMAP-016](roadmap.md#roadmap-016) and post-1.0 [ROADMAP-026](roadmap.md#roadmap-026).
+  README advertises Linux and Windows builds and CMake falls back to any discoverable Qt 5 (`README.md:3`, `CMakeLists.txt:12-18`). On non-Linux, ping always returns false, MAC lookup and gateway lookup return empty, and Avahi returns empty (`src/scannerwindow.cpp:1321-1357`, `1360-1401`, `1436-1474`, `1477-1504`). At the default Balanced accuracy, remote devices are not rescued by TCP discovery. About also says “Qt6” even in a Qt 5 build (`2885-2894`). No Windows or Qt 5 CI exists. See [PLATFORM-SUPPORT](roadmap.md#platform-support) and post-1.0 [CROSS-PLATFORM-BACKENDS](roadmap.md#cross-platform-backends).
 
 - **PLATFORM-02 — The product is IPv4-only and does not state that contract clearly.** `Medium · Confirmed`
 
-  Target validation, interface selection, masks, sorting, ping, neighbor lookup, binding, and Avahi explicitly reject or skip IPv6 (`src/scannerwindow.cpp:518-545`, `888-1008`, `1439-1446`). IPv6 multicast groups being available on the audit host cannot help. Scope 1.0 truthfully to IPv4 and defer complete IPv6 work rather than partially enabling a field. See [ROADMAP-016](roadmap.md#roadmap-016) and post-1.0 [ROADMAP-025](roadmap.md#roadmap-025).
+  Target validation, interface selection, masks, sorting, ping, neighbor lookup, binding, and Avahi explicitly reject or skip IPv6 (`src/scannerwindow.cpp:518-545`, `888-1008`, `1439-1446`). IPv6 multicast groups being available on the audit host cannot help. Scope 1.0 truthfully to IPv4 and defer complete IPv6 work rather than partially enabling a field. See [PLATFORM-SUPPORT](roadmap.md#platform-support) and post-1.0 [IPV6-SUPPORT](roadmap.md#ipv6-support).
 
 ### Quality architecture and operations
 
 - **QUALITY-01 — There are zero automated tests, no lint target, and no CI.** `Blocker · Observed`
 
-  CMake defines only the executable, install, package, and uninstall targets (`CMakeLists.txt:1-120`). `ctest --test-dir build-audit -N` reported `Total Tests: 0`; target help listed no lint target; the repository has no CI configuration. A manually enabled strict GCC build linked but emitted four project warnings. The current mDNS, parser, settings, cancellation, concurrency, UI, export, install, and package behavior can all regress without a gate. See [ROADMAP-010](roadmap.md#roadmap-010), [ROADMAP-014](roadmap.md#roadmap-014), and [ROADMAP-015](roadmap.md#roadmap-015).
+  CMake defines only the executable, install, package, and uninstall targets (`CMakeLists.txt:1-120`). `ctest --test-dir build-audit -N` reported `Total Tests: 0`; target help listed no lint target; the repository has no CI configuration. A manually enabled strict GCC build linked but emitted four project warnings. The current mDNS, parser, settings, cancellation, concurrency, UI, export, install, and package behavior can all regress without a gate. See [MDNS-TESTS](roadmap.md#mdns-tests), [APPLICATION-LAYERS](roadmap.md#application-layers), and [QUALITY-GATE](roadmap.md#quality-gate).
 
 - **QUALITY-02 — Almost the entire product is one window implementation.** `Medium · Confirmed`
 
-  `src/scannerwindow.cpp` is 3,534 lines and owns UI, target parsing, routing, process execution, scan scheduling, concurrency, DNS, mDNS, ARP, ports, banners, OS inference, settings, vendor data, export, print, and launcher behavior. Private methods directly depend on UI-owned state, which is why deterministic tests and safe worker ownership are difficult. See [ROADMAP-014](roadmap.md#roadmap-014).
+  `src/scannerwindow.cpp` is 3,534 lines and owns UI, target parsing, routing, process execution, scan scheduling, concurrency, DNS, mDNS, ARP, ports, banners, OS inference, settings, vendor data, export, print, and launcher behavior. Private methods directly depend on UI-owned state, which is why deterministic tests and safe worker ownership are difficult. See [APPLICATION-LAYERS](roadmap.md#application-layers).
 
 - **OPS-01 — External dependency and scan failures are operationally invisible.** `High · Confirmed`
 
-  Failed or missing `ping`, `ip`, Avahi, DNS, and most socket probes collapse into false/empty values. Final status usually says only that no responding hosts were detected (`src/scannerwindow.cpp:1321-1474`, `1947-1957`). There is no log level, per-method count, capability check, diagnostic export, or distinction between “no host” and “scanner backend failed.” See [ROADMAP-017](roadmap.md#roadmap-017).
+  Failed or missing `ping`, `ip`, Avahi, DNS, and most socket probes collapse into false/empty values. Final status usually says only that no responding hosts were detected (`src/scannerwindow.cpp:1321-1474`, `1947-1957`). There is no log level, per-method count, capability check, diagnostic export, or distinction between “no host” and “scanner backend failed.” See [DIAGNOSTICS](roadmap.md#diagnostics).
 
 ### Packaging and release
 
 - **PACKAGE-01 — The generated Debian package fails basic policy and license checks.** `Blocker · Observed`
 
-  CPack successfully generated `open-ip-scanner_0.2.0_amd64.deb`, but Lintian reported five errors, twelve warnings, and one informational hardening issue. Errors were empty extended description, missing changelog, missing copyright file, malformed maintainer phrase, and unstripped binary. Ten installed directories were mode `0775`; warnings also covered failed AppStream metadata and no manual page. Omitting the MIT notice from the binary package also defeats the repository license’s redistribution condition. See [ROADMAP-019](roadmap.md#roadmap-019).
+  CPack successfully generated `open-ip-scanner_0.2.0_amd64.deb`, but Lintian reported five errors, twelve warnings, and one informational hardening issue. Errors were empty extended description, missing changelog, missing copyright file, malformed maintainer phrase, and unstripped binary. Ten installed directories were mode `0775`; warnings also covered failed AppStream metadata and no manual page. Omitting the MIT notice from the binary package also defeats the repository license’s redistribution condition. See [DEBIAN-PACKAGING](roadmap.md#debian-packaging).
 
 - **PACKAGE-02 — AppStream metadata does not pass validation.** `High · Observed`
 
-  `desktop-file-validate` and XML well-formedness passed, but `appstreamcli validate --no-net` exited 3. It reported a non-reverse-DNS component ID and missing homepage, plus informational omissions for content rating and developer information. The file also has no release history, screenshots, or version linkage (`resources/linux/open-ip-scanner.metainfo.xml:1-16`). See [ROADMAP-020](roadmap.md#roadmap-020).
+  `desktop-file-validate` and XML well-formedness passed, but `appstreamcli validate --no-net` exited 3. It reported a non-reverse-DNS component ID and missing homepage, plus informational omissions for content rating and developer information. The file also has no release history, screenshots, or version linkage (`resources/linux/open-ip-scanner.metainfo.xml:1-16`). See [DESKTOP-METADATA](roadmap.md#desktop-metadata).
 
 - **PACKAGE-03 — Release hardening and provenance do not exist.** `High · Observed and confirmed`
 
-  CMake defines no warning, hardening, reproducibility, or release-policy flags. `hardening-check` found no immediate binding, stack-protector symbol, or fortified functions in the Release binary; `readelf` confirmed no `BIND_NOW`. There is no release workflow, clean-tree guard, SBOM, checksum/signature generation, build provenance, or compatibility build matrix. The package built on Debian 13 requires its newer Qt symbol set, but no oldest-supported distribution is defined. See [ROADMAP-015](roadmap.md#roadmap-015) and [ROADMAP-021](roadmap.md#roadmap-021).
+  CMake defines no warning, hardening, reproducibility, or release-policy flags. `hardening-check` found no immediate binding, stack-protector symbol, or fortified functions in the Release binary; `readelf` confirmed no `BIND_NOW`. There is no release workflow, clean-tree guard, SBOM, checksum/signature generation, build provenance, or compatibility build matrix. The package built on Debian 13 requires its newer Qt symbol set, but no oldest-supported distribution is defined. See [QUALITY-GATE](roadmap.md#quality-gate) and [ARTIFACT-PROVENANCE](roadmap.md#artifact-provenance).
 
 - **PACKAGE-04 — Uninstall can remove a separate local installation.** `High · Confirmed`
 
-  The uninstall script always appends `~/.local` files when `$HOME` exists (`cmake_uninstall.cmake.in:27-41`), even when the install manifest refers to a system or different prefix. Running generic uninstall can therefore delete both the manifest installation and an unrelated local copy. Install-time cache refresh can also invoke desktop tools in the installing user/root context (`CMakeLists.txt:76-89`) rather than relying on package triggers. See [ROADMAP-022](roadmap.md#roadmap-022).
+  The uninstall script always appends `~/.local` files when `$HOME` exists (`cmake_uninstall.cmake.in:27-41`), even when the install manifest refers to a system or different prefix. Running generic uninstall can therefore delete both the manifest installation and an unrelated local copy. Install-time cache refresh can also invoke desktop tools in the installing user/root context (`CMakeLists.txt:76-89`) rather than relying on package triggers. See [PREFIX-SAFETY](roadmap.md#prefix-safety).
 
 ### UX, accessibility, privacy, and documentation
 
 - **UX-01 — Clean Qt 6 startup emits a high-DPI policy-order warning.** `Medium · Observed`
 
-  `main.cpp:11-14` writes `QT_SCALE_FACTOR_ROUNDING_POLICY` immediately before constructing `QApplication`, but Qt 6.8.2 emitted `setHighDpiScaleFactorRoundingPolicy must be called before creating the QGuiApplication instance` on every offscreen startup. A valid policy supplied externally produced the same application startup warning path. Use the supported pre-application API or remove the override. See [ROADMAP-023](roadmap.md#roadmap-023).
+  `main.cpp:11-14` writes `QT_SCALE_FACTOR_ROUNDING_POLICY` immediately before constructing `QApplication`, but Qt 6.8.2 emitted `setHighDpiScaleFactorRoundingPolicy must be called before creating the QGuiApplication instance` on every offscreen startup. A valid policy supplied externally produced the same application startup warning path. Use the supported pre-application API or remove the override. See [ACCESSIBILITY](roadmap.md#accessibility).
 
 - **UX-02 — Accessibility and theme behavior have no acceptance evidence.** `Medium · Source-supported risk`
 
-  Main actions default to icon-only text removal, with no explicit accessible names in source (`src/scannerwindow.cpp:3338-3371`). Selection and service colors are hard-coded (`113-146`, `275-293`) rather than derived entirely from palette roles, and dense settings pages have no scroll container. User-facing strings are hard-coded rather than translatable. No keyboard-only, screen-reader, contrast, or high-scale test exists. See [ROADMAP-023](roadmap.md#roadmap-023) and post-1.0 [ROADMAP-028](roadmap.md#roadmap-028).
+  Main actions default to icon-only text removal, with no explicit accessible names in source (`src/scannerwindow.cpp:3338-3371`). Selection and service colors are hard-coded (`113-146`, `275-293`) rather than derived entirely from palette roles, and dense settings pages have no scroll container. User-facing strings are hard-coded rather than translatable. No keyboard-only, screen-reader, contrast, or high-scale test exists. See [ACCESSIBILITY](roadmap.md#accessibility) and post-1.0 [LOCALIZATION](roadmap.md#localization).
 
 - **PRIVACY-01 — Persistent target data and extra active probes are under-disclosed.** `Medium · Confirmed`
 
-  Every scan saves target history, and `saveSettings()` writes the last target even when “Remember Last Target On Launch” is false (`src/scannerwindow.cpp:3229-3243`, `3177-3214`). There is no clear-history or disable-history control. For hosts with detected HTTP, SSH, FTP, or Telnet, details collection sends an HTTP HEAD or reads an application banner whether the pane is shown or not (`1710-1760`). The authorization warning exists only in README and Help (`README.md:120-122`, `src/scannerwindow.cpp:2922`). See [ROADMAP-006](roadmap.md#roadmap-006) and [ROADMAP-013](roadmap.md#roadmap-013).
+  Every scan saves target history, and `saveSettings()` writes the last target even when “Remember Last Target On Launch” is false (`src/scannerwindow.cpp:3229-3243`, `3177-3214`). There is no clear-history or disable-history control. For hosts with detected HTTP, SSH, FTP, or Telnet, details collection sends an HTTP HEAD or reads an application banner whether the pane is shown or not (`1710-1760`). The authorization warning exists only in README and Help (`README.md:120-122`, `src/scannerwindow.cpp:2922`). See [SERVICE-EVIDENCE](roadmap.md#service-evidence) and [SCAN-PRIVACY](roadmap.md#scan-privacy).
 
 - **DOCS-01 — Product claims and release/support documentation drift from behavior.** `Medium · Confirmed`
 
-  Windows and Qt 5 claims conflict with Linux-only backends and a Qt6-only About message. CHANGELOG says the RDP launcher includes `:3389`, while the default command does not (`CHANGELOG.md:21`, `src/scannerwindow.cpp:3015-3017`). There is no support matrix, mDNS troubleshooting, privacy/traffic description, security-reporting policy, release checklist, known-limitations document, or complete changelog history. See [ROADMAP-016](roadmap.md#roadmap-016) and [ROADMAP-024](roadmap.md#roadmap-024).
+  Windows and Qt 5 claims conflict with Linux-only backends and a Qt6-only About message. CHANGELOG says the RDP launcher includes `:3389`, while the default command does not (`CHANGELOG.md:21`, `src/scannerwindow.cpp:3015-3017`). There is no support matrix, mDNS troubleshooting, privacy/traffic description, security-reporting policy, release checklist, known-limitations document, or complete changelog history. See [PLATFORM-SUPPORT](roadmap.md#platform-support) and [RELEASE-DOCS](roadmap.md#release-docs).
 
 ## Validation results
 
@@ -283,7 +283,7 @@ The required correction is itemized in [ROADMAP-008](roadmap.md#roadmap-008), [R
 | Lintian | Fail | 5 errors, 12 warnings, 1 info |
 | Binary hardening inspection | Fail against a production baseline | PIE and RELRO present; immediate binding absent; no detected stack protector or fortification |
 
-The build and audit commands, including the disposable self-scan harness, are preserved in `docs/execplans/1.0-production-readiness-audit.md` and should become automated targets through [ROADMAP-015](roadmap.md#roadmap-015).
+The build and audit commands, including the disposable self-scan harness, are preserved in `docs/execplans/1.0-production-readiness-audit.md` and should become automated targets through [QUALITY-GATE](roadmap.md#quality-gate).
 
 ## What is already sound
 

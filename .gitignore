@@ -58,3 +58,6 @@ Thumbs.db
 # Packaging artifacts
 _CPack_Packages/
 *.deb
+
+# Local agent validation evidence
+.agent/test-results/

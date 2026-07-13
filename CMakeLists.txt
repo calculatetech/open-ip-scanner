@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(OpenIpScanner VERSION 0.2.0 LANGUAGES CXX)
+project(OpenIpScanner VERSION 0.3.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -19,10 +19,23 @@ endif()
 
 add_executable(open_ip_scanner
     src/main.cpp
+    src/scanoptions.h
     src/scannerwindow.h
     src/scannerwindow.cpp
     resources/resources.qrc
 )
+
+include(CTest)
+
+if(BUILD_TESTING)
+    add_executable(scan_options_test
+        tests/scanoptions_test.cpp
+        src/scanoptions.h
+    )
+    target_include_directories(scan_options_test PRIVATE src)
+    target_link_libraries(scan_options_test PRIVATE ${QT_PACKAGE}::Core)
+    add_test(NAME scan_options_snapshot_isolation COMMAND scan_options_test)
+endif()
 
 set_target_properties(open_ip_scanner PROPERTIES
     OUTPUT_NAME "open-ip-scanner"
