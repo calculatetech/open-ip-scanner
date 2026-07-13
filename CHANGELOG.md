@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.3.0] - 2026-07-13
+
+### Changed
+- Replaced numeric roadmap identifiers with descriptive milestone names.
+- Began SCAN-CONFIGURATION by capturing worker policy, adapter identity, timeouts, enabled probes, and vendor data in a value-owned `ScanOptions` snapshot before launch.
+- Ensured active scan workers no longer read UI-owned mutable scan preferences or the window-owned cancellation pointer.
+
+### Added
+- Added concurrent snapshot-isolation coverage for every captured scan option, including a ThreadSanitizer validation path.
+- Added repository rules for milestone versioning, branch isolation, human verification before merge, and automatic commit/push after successful review.
+
 ## [0.2.0] - 2026-02-27
 
 ### Added

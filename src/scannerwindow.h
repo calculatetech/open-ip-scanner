@@ -16,6 +16,8 @@
 #include <functional>
 #include <memory>
 
+#include "scanoptions.h"
+
 class QComboBox;
 class QCompleter;
 class QLabel;
@@ -151,16 +153,16 @@ private:
     QList<QHostAddress> hostsForRangeToken(const QString &token, QString *error) const;
 
     // Main worker entry point for host discovery and enrichment.
-    QList<ScanResult> scanHosts(const AdapterInfo &adapter,
+    QList<ScanResult> scanHosts(const ScanOptions &options,
                                 const QList<QHostAddress> &hosts,
                                 const std::shared_ptr<std::atomic_bool> &cancelRequested,
                                 const std::function<void(int, int)> &onProgress,
                                 const std::function<void(const ScanResult &)> &onResult) const;
 
     // Host discovery helpers.
-    bool pingHost(const QHostAddress &address, const QString &interfaceName) const;
+    bool pingHost(const QHostAddress &address, const ScanOptions &options) const;
     QString lookupMacAddress(const QString &ip, const QString &interfaceName) const;
-    QString lookupVendor(const QString &mac) const;
+    QString lookupVendor(const QString &mac, const ScanOptions &options) const;
     QString lookupHostname(const QString &ip) const;
     QString lookupMdnsHostname(const QString &ip) const;
     QString lookupGatewayIp(const QString &interfaceName) const;
@@ -169,16 +171,24 @@ private:
     QList<ServiceDefinition> availableServices() const;
     QList<ServiceHit> probeServices(const QString &ip,
                                     const QString &localBindIp,
-                                    const std::shared_ptr<std::atomic_bool> &cancelRequested) const;
-    QString collectDeviceDetails(const ScanResult &result, const QString &localBindIp) const;
+                                    const std::shared_ptr<std::atomic_bool> &cancelRequested,
+                                    const ScanOptions &options) const;
+    QString collectDeviceDetails(const ScanResult &result,
+                                 const QString &localBindIp,
+                                 const ScanOptions &options) const;
     QString fetchTcpBanner(const QString &ip, int port, int timeoutMs,
                            const QString &localBindIp, const QByteArray &prologue = {}) const;
     QString extractHttpServerHeader(const QString &rawResponse) const;
     QString inferOsFromSignals(const QStringList &signalList) const;
     void updateDetailsPaneForCurrentSelection();
-    bool isPortOpen(const QString &ip, int port, const QString &localBindIp, int timeoutMs = 280) const;
+    bool isPortOpen(const QString &ip,
+                    int port,
+                    const QString &localBindIp,
+                    int timeoutMs,
+                    int attempts) const;
     QString serviceText(const QList<ServiceHit> &services) const;
     QString formatMacForDisplay(const QString &mac) const;
+    QString formatMacForDisplay(const QString &mac, int displayFormat) const;
     void refreshDisplayedMacAddresses();
     void applyTableFilters();
     bool rowMatchesFilters(int row) const;
@@ -199,6 +209,7 @@ private:
     int pingTimeoutSeconds() const;
     int serviceAttempts() const;
     int serviceTimeoutMs() const;
+    ScanOptions captureScanOptions(const AdapterInfo &adapter) const;
     void applyDefaultSettings();
     void loadSettings();
     void saveSettings() const;
