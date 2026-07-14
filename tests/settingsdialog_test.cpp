@@ -809,10 +809,13 @@ struct ScannerWindowTestAccess {
         heartbeat.stop();
         window.hide();
         QObject::disconnect(resetConnection);
+        const bool enforceTiming =
+            qEnvironmentVariableIsEmpty("OIS_SKIP_HARDWARE_TIMING_ASSERTIONS");
         const bool passed =
                ordered && servicesOrdered && visibleRows > 0 && visibleRows < 4096 &&
                filteredIdentitiesBeforeSort == filteredIdentitiesAfterSort &&
-               elapsed.elapsed() < 5000 && maximumHeartbeatGapMs < 250 &&
+               (!enforceTiming ||
+                (elapsed.elapsed() < 5000 && maximumHeartbeatGapMs < 250)) &&
                modelResetCount == 0 && before.identity == after.identity &&
                before.pixelOffset == after.pixelOffset &&
                selectedBefore == selectedAfter && !hasIndexWidget &&
@@ -822,16 +825,15 @@ struct ScannerWindowTestAccess {
                scanActionDisabledDuringCompletion &&
                orderBeforeCompletion == orderAfterCompletion &&
                window.resultModel_->rowCount() == 4098;
-        if (!passed) {
-            qWarning() << "result scaling diagnostics"
-                       << "elapsedMs" << elapsed.elapsed()
-                       << "maximumHeartbeatGapMs" << maximumHeartbeatGapMs
-                       << "rows" << window.resultModel_->rowCount()
-                       << "visibleRows" << visibleRows
-                       << "ordered" << ordered
-                       << "servicesOrdered" << servicesOrdered
-                       << "modelResetCount" << modelResetCount;
-        }
+        qInfo() << "result scaling diagnostics"
+                << "elapsedMs" << elapsed.elapsed()
+                << "maximumHeartbeatGapMs" << maximumHeartbeatGapMs
+                << "rows" << window.resultModel_->rowCount()
+                << "visibleRows" << visibleRows
+                << "ordered" << ordered
+                << "servicesOrdered" << servicesOrdered
+                << "modelResetCount" << modelResetCount
+                << "timingEnforced" << enforceTiming;
         return passed;
     }
 

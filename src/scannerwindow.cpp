@@ -1370,7 +1370,7 @@ void ScannerWindow::queueResultForDisplay(const ScanResult &result)
 
 void ScannerWindow::flushPendingResults()
 {
-    constexpr int kMaximumRowsPerUiTurn = 32;
+    constexpr int kMaximumRowsPerUiTurn = 16;
     if (pendingDisplayResults_.isEmpty()) {
         return;
     }
@@ -1380,7 +1380,9 @@ void ScannerWindow::flushPendingResults()
     for (int i = 0; i < count; ++i) {
         resultModel_->upsertResult(pendingDisplayResults_.takeLast());
     }
-    applyTableFilters();
+    if (searchInput_ != nullptr && !searchInput_->text().trimmed().isEmpty()) {
+        applyTableFilters();
+    }
     restoreViewportAnchor(anchor);
     updateDetailsPaneForCurrentSelection();
     if (!pendingDisplayResults_.isEmpty()) {
