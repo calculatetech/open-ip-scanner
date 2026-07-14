@@ -2,6 +2,21 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.5.13] - 2026-07-14
+
+### Changed
+
+- Moved interface-scoped Linux `ip -j neigh` execution, identity selection,
+  budget handling, cancellation, and accuracy-dependent active confirmation
+  from `ScannerWindow` into `LinuxNeighborProbe`.
+- Wired the production host backend to one shared stateless neighbor probe while
+  retaining the existing conservative NUD-state policy.
+
+### Added
+
+- Added a window-free injected neighbor-probe contract for delayed confirmation,
+  immediate cutoffs, cancellation, budget expiry, and non-evidentiary input.
+
 ## [0.5.12] - 2026-07-14
 
 ### Fixed

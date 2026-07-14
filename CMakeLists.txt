@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.28)
-project(OpenIpScanner VERSION 0.5.12 LANGUAGES CXX)
+project(OpenIpScanner VERSION 0.5.13 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -23,6 +23,7 @@ add_library(ois_core STATIC
     src/ouidatabase.cpp
     src/resolverdiagnostics.h
     src/resolverdiagnostics.cpp
+    src/scanbudget.h
     src/serviceevidence.h
     src/serviceevidence.cpp
     src/settingsstore.h
@@ -38,7 +39,6 @@ target_link_libraries(ois_core PUBLIC Qt6::Core Qt6::Network)
 add_library(ois_scan STATIC
     src/debugscanfixture.h
     src/debugscanfixture.cpp
-    src/scanbudget.h
     src/scanengine.h
     src/scanengine.cpp
     src/productionhostscanbackend.h
@@ -54,13 +54,15 @@ target_link_libraries(ois_scan PUBLIC ois_core Qt6::Core Qt6::Network)
 add_library(ois_linux STATIC
     src/cancellablewait.h
     src/cancellablewait.cpp
+    src/linuxneighborprobe.h
+    src/linuxneighborprobe.cpp
     src/mdnsresolver.h
     src/mdnsresolver.cpp
 )
 target_include_directories(ois_linux PUBLIC src)
 target_link_libraries(ois_linux
-    PUBLIC Qt6::Core Qt6::Network
-    PRIVATE ois_core Qt6::DBus)
+    PUBLIC ois_core Qt6::Core Qt6::Network
+    PRIVATE Qt6::DBus)
 
 add_library(ois_ui STATIC
     src/resulttablemodel.h
@@ -138,6 +140,10 @@ if(BUILD_TESTING)
     add_executable(scan_cancellation_test tests/scancancellation_test.cpp)
     target_link_libraries(scan_cancellation_test PRIVATE ois_linux)
     add_test(NAME scan_cancellation_deadlines COMMAND scan_cancellation_test)
+
+    add_executable(linux_neighbor_probe_test tests/linuxneighborprobe_test.cpp)
+    target_link_libraries(linux_neighbor_probe_test PRIVATE ois_linux)
+    add_test(NAME linux_neighbor_probe_contract COMMAND linux_neighbor_probe_test)
 
     add_executable(scan_budget_test tests/scanbudget_test.cpp)
     target_link_libraries(scan_budget_test PRIVATE ois_scan)

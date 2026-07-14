@@ -2,6 +2,7 @@
 #include "mdnsresolver.h"
 #include "settingslayout.h"
 #include "scannerwindow.h"
+#include "linuxneighborprobe.h"
 #include "scansession.h"
 #include "resulttablemodel.h"
 
@@ -901,6 +902,7 @@ struct ScannerWindowTestAccess {
 
     static bool confirmsDelayedNeighbor(ScannerWindow &window)
     {
+        Q_UNUSED(window)
         QTemporaryDir tools;
         if (!tools.isValid()) {
             return false;
@@ -929,8 +931,14 @@ struct ScannerWindowTestAccess {
         ScanOptions options;
         options.neighborConfirmationMs = 1000;
         const TargetBudget budget(2000);
-        const NeighborObservation confirmed = window.confirmNeighborLiveness(
-            initial, initial.ip, initial.interfaceName, options, budget, {});
+        const LinuxNeighborProbe probe;
+        const NeighborObservation confirmed = probe.confirmLiveness(
+            initial,
+            initial.ip,
+            initial.interfaceName,
+            options.neighborConfirmationMs,
+            budget,
+            {});
         qputenv("PATH", previousPath);
         return confirmed.establishesLiveness() && confirmed.mac == initial.mac;
     }

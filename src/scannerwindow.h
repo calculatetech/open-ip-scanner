@@ -175,17 +175,6 @@ private:
                   const ScanOptions &options,
                   const TargetBudget &budget,
                   const std::shared_ptr<std::atomic_bool> &cancelRequested) const;
-    NeighborObservation lookupNeighbor(const QString &ip,
-                                       const QString &interfaceName,
-                                       const TargetBudget &budget,
-                                       const std::shared_ptr<std::atomic_bool> &cancelRequested) const;
-    NeighborObservation confirmNeighborLiveness(
-        const NeighborObservation &initial,
-        const QString &ip,
-        const QString &interfaceName,
-        const ScanOptions &options,
-        const TargetBudget &budget,
-        const std::shared_ptr<std::atomic_bool> &cancelRequested) const;
     QString lookupVendor(const QString &mac, const ScanOptions &options) const;
     HostnameScanResolution lookupHostname(
         const QString &ip,

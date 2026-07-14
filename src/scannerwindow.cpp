@@ -3,6 +3,7 @@
 #include "csvexporter.h"
 #include "debugscanfixture.h"
 #include "mdnsresolver.h"
+#include "linuxneighborprobe.h"
 #include "ouidatabase.h"
 #include "resulttablemodel.h"
 #include "servicetagdelegate.h"
@@ -1147,6 +1148,7 @@ QList<ScanResult> ScannerWindow::scanHosts(const ScanOptions &options,
         options.interfaceName);
     auto mdnsResolver = std::make_shared<ScanMdnsResolver>(
         interfaceIndex, cancelRequested, createAvahiDbusBackend());
+    auto neighborProbe = std::make_shared<LinuxNeighborProbe>();
     ProductionHostScanDependencies dependencies;
     dependencies.ping = [this](const QHostAddress &host,
                                const ScanOptions &scanOptions,
@@ -1161,24 +1163,25 @@ QList<ScanResult> ScannerWindow::scanHosts(const ScanOptions &options,
                                    const ScanOptions &scanOptions) {
         return probeServices(ip, localIp, budget, cancellation, scanOptions);
     };
-    dependencies.neighbor = [this](const QString &ip,
-                                   const QString &interfaceName,
-                                   const TargetBudget &budget,
-                                   const auto &cancellation) {
-        return lookupNeighbor(ip, interfaceName, budget, cancellation);
+    dependencies.neighbor = [neighborProbe](const QString &ip,
+                                            const QString &interfaceName,
+                                            const TargetBudget &budget,
+                                            const auto &cancellation) {
+        return neighborProbe->lookup(ip, interfaceName, budget, cancellation);
     };
-    dependencies.confirmNeighbor = [this](const NeighborObservation &initial,
-                                          const QString &ip,
-                                          const QString &interfaceName,
-                                          const ScanOptions &scanOptions,
-                                          const TargetBudget &budget,
-                                          const auto &cancellation) {
-        return confirmNeighborLiveness(initial,
-                                       ip,
-                                       interfaceName,
-                                       scanOptions,
-                                       budget,
-                                       cancellation);
+    dependencies.confirmNeighbor = [neighborProbe](
+                                               const NeighborObservation &initial,
+                                               const QString &ip,
+                                               const QString &interfaceName,
+                                               const ScanOptions &scanOptions,
+                                               const TargetBudget &budget,
+                                               const auto &cancellation) {
+        return neighborProbe->confirmLiveness(initial,
+                                              ip,
+                                              interfaceName,
+                                              scanOptions.neighborConfirmationMs,
+                                              budget,
+                                              cancellation);
     };
     dependencies.vendor = [this](const QString &mac,
                                  const ScanOptions &scanOptions) {
@@ -1262,85 +1265,6 @@ bool ScannerWindow::pingHost(const QHostAddress &address,
     Q_UNUSED(cancelRequested)
     return false;
 #endif
-}
-
-NeighborObservation ScannerWindow::lookupNeighbor(
-    const QString &ip,
-    const QString &interfaceName,
-    const TargetBudget &budget,
-    const std::shared_ptr<std::atomic_bool> &cancelRequested) const
-{
-#ifdef Q_OS_LINUX
-    if (cancellable::isCancelled(cancelRequested) || budget.expired()) {
-        return {};
-    }
-    QProcess ipNeigh;
-    QStringList args{"-j", "neigh", "show", ip};
-    if (!interfaceName.isEmpty()) {
-        args << "dev" << interfaceName;
-    }
-    ipNeigh.start("ip", args);
-    if (cancellable::waitForProcess(
-            ipNeigh,
-            budget.clampTimeout(1000, kProcessCleanupReserveMs),
-            cancelRequested,
-            [&budget]() { return budget.remainingMs(); }) ==
-            cancellable::WaitResult::Completed &&
-        ipNeigh.exitStatus() == QProcess::NormalExit && ipNeigh.exitCode() == 0) {
-        const QList<NeighborObservation> observations =
-            parseLinuxNeighborJson(ipNeigh.readAllStandardOutput(), interfaceName);
-        const QString expectedKey = neighborIdentityKey(interfaceName, ip);
-        for (const NeighborObservation &observation : observations) {
-            if (interfaceName.isEmpty() ? observation.ip == ip
-                                        : observation.identityKey() == expectedKey) {
-                return observation;
-            }
-        }
-    }
-#else
-    Q_UNUSED(ip)
-    Q_UNUSED(interfaceName)
-    Q_UNUSED(budget)
-    Q_UNUSED(cancelRequested)
-#endif
-    return {};
-}
-
-NeighborObservation ScannerWindow::confirmNeighborLiveness(
-    const NeighborObservation &initial,
-    const QString &ip,
-    const QString &interfaceName,
-    const ScanOptions &options,
-    const TargetBudget &budget,
-    const std::shared_ptr<std::atomic_bool> &cancelRequested) const
-{
-    NeighborObservation latest = initial;
-    if (!latest.suppliesMacMetadata() || latest.establishesLiveness() ||
-        options.neighborConfirmationMs <= 0 || budget.expired()) {
-        return latest;
-    }
-
-    QElapsedTimer confirmation;
-    confirmation.start();
-    while (confirmation.elapsed() < options.neighborConfirmationMs && !budget.expired()) {
-        const int confirmationRemaining = options.neighborConfirmationMs -
-                                          static_cast<int>(confirmation.elapsed());
-        const int waitMs = std::min({250, confirmationRemaining, budget.remainingMs()});
-        if (waitMs <= 0 ||
-            cancellable::waitForDelay(waitMs, cancelRequested) !=
-                cancellable::WaitResult::Completed) {
-            break;
-        }
-        const NeighborObservation candidate =
-            lookupNeighbor(ip, interfaceName, budget, cancelRequested);
-        if (candidate.suppliesMacMetadata()) {
-            latest = candidate;
-        }
-        if (candidate.establishesLiveness()) {
-            return candidate;
-        }
-    }
-    return latest;
 }
 
 QString ScannerWindow::lookupVendor(const QString &mac, const ScanOptions &options) const
