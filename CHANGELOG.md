@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.3.1] - 2026-07-13
+
+### Changed
+- Made ping, neighbor command, Avahi, system hostname, TCP connect, and banner waits observe scan cancellation in short bounded intervals.
+- Changed window close during a scan to request cancellation and finish asynchronously instead of blocking the GUI thread.
+- Suppressed queued progress and result publication after cancellation.
+
+### Added
+- Added deterministic cancellation deadline tests for active child processes, TCP reads, TCP connects, and hostname lookup entry.
+
 ## [0.3.0] - 2026-07-13
 
 ### Changed

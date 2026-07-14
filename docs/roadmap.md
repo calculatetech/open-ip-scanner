@@ -2,7 +2,7 @@
 
 This file is the single source of truth for unfinished product, engineering, documentation, and release work. Detailed evidence for why each 1.0 item exists is in [the production-readiness audit](production-readiness-audit.md). New ideas belong here rather than in a second backlog.
 
-The audited baseline is `0.2.0` at commit `91e0a7a`; the current development increment is `0.3.0`. Version 1.0 is not ready. Every unchecked item under “Required for 1.0” is a release gate; the post-1.0 section is explicitly outside the first production release.
+The audited baseline is `0.2.0` at commit `91e0a7a`; the current development increment is `0.3.1`. Version 1.0 is not ready. Every unchecked item under “Required for 1.0” is a release gate; the post-1.0 section is explicitly outside the first production release.
 
 ## Priority definitions
 
@@ -26,7 +26,8 @@ Priority matches the most severe audit finding an item closes. All items in the 
 - [ ] **SCAN-CANCELLATION — Make Stop and window close bounded and cancellation-aware.** `High`
   - Replace uninterruptible helper calls with cancellable operations. Track and terminate child processes, abort sockets and asynchronous name lookups, and stop scheduling reconciliation work after cancellation.
   - Do not block the GUI thread in `closeEvent()` while waiting for network deadlines. Show a short shutdown state and complete cleanup asynchronously or enforce a documented hard deadline.
-  - Done when deterministic tests cancel during ping, TCP connect, Avahi lookup, system-resolver lookup, and result publication; Stop reacts immediately and closing finishes within two seconds in every injected-timeout case.
+  - Current progress: shared bounded waits now cancel child processes, TCP connect/read/write operations, and asynchronous system lookups; queued publications are discarded after cancellation; window close waits asynchronously. Deterministic process and socket deadline tests complete in under 500 ms.
+  - Remaining for completion: injectable production-path tests must distinguish ping and Avahi cancellation, exercise an active delayed system lookup, prove queued-publication suppression, and measure Stop and window close under every injected timeout within two seconds.
 
 <a id="scan-budgets"></a>
 - [ ] **SCAN-BUDGETS — Replace the duplicate accuracy pass with a budgeted scan engine.** `High`
