@@ -849,7 +849,6 @@ void ScannerWindow::refreshAdapters()
 
     bool restoredPrevious = false;
     if (previousAdapter.isEmpty() && previousIndex == -1) {
-        const int preferred = preferredAdapterIndex();
         adapterCombo_->setCurrentIndex((preferred >= 0) ? (preferred + 1) : 0);
         restoredPrevious = true;
     } else if (!previousAdapter.isEmpty()) {
@@ -862,7 +861,6 @@ void ScannerWindow::refreshAdapters()
         }
     }
     if (!restoredPrevious) {
-        const int preferred = preferredAdapterIndex();
         adapterCombo_->setCurrentIndex((preferred >= 0) ? (preferred + 1) : 0);
     }
 
@@ -1005,7 +1003,9 @@ void ScannerWindow::startScan()
     }
     const bool targetRetained = recordTargetHistory(targetText);
     const qint64 estimatedMs = estimatedScanUpperBoundMs(
-        hosts.size(), scanOptions.maxParallelProbes, scanOptions.targetDeadlineMs);
+        static_cast<int>(hosts.size()),
+        scanOptions.maxParallelProbes,
+        scanOptions.targetDeadlineMs);
     const qint64 estimatedSeconds = (estimatedMs + 999) / 1000;
     const QString estimateText = estimatedSeconds >= 60
                                      ? QString("%1m %2s")
@@ -1047,7 +1047,7 @@ void ScannerWindow::startScan()
     showStatusMessage(QString("Scanning %1 host(s) via %2...")
                           .arg(hosts.size())
                           .arg(adapter.interfaceLabel));
-    statusProgressBar_->setRange(0, hosts.size());
+    statusProgressBar_->setRange(0, static_cast<int>(hosts.size()));
     statusProgressBar_->setValue(0);
     statusProgressBar_->setVisible(true);
 
@@ -1370,7 +1370,7 @@ void ScannerWindow::queueResultForDisplay(const ScanResult &result)
 
 void ScannerWindow::flushPendingResults()
 {
-    constexpr int kMaximumRowsPerUiTurn = 64;
+    constexpr int kMaximumRowsPerUiTurn = 32;
     if (pendingDisplayResults_.isEmpty()) {
         return;
     }
@@ -1703,10 +1703,10 @@ void ScannerWindow::exportCsv()
         return;
     }
 
-    const CsvExportData data = CsvExporter::selectTable(
+    const CsvExportData exportData = CsvExporter::selectTable(
         headers, rows, rowVisible, columns, filteredRows->isChecked());
 
-    const CsvExportOutcome outcome = CsvExporter::exportFile(path, data);
+    const CsvExportOutcome outcome = CsvExporter::exportFile(path, exportData);
     if (outcome.status != CsvExportStatus::Success) {
         QMessageBox::warning(this, "Export CSV", outcome.error);
         return;

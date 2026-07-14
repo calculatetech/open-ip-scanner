@@ -106,12 +106,12 @@ QList<ScanResult> ScanEngine::run(
         return true;
     };
 
-    const int total = hosts.size();
+    const int total = static_cast<int>(hosts.size());
     std::atomic<int> nextIndex{0};
     std::atomic<int> completed{0};
     const int workerCount = std::clamp(maximumWorkers, 1, 16);
     std::vector<std::thread> workers;
-    workers.reserve(workerCount);
+    workers.reserve(static_cast<std::size_t>(workerCount));
     try {
         for (int worker = 0; worker < workerCount; ++worker) {
             workers.emplace_back([&]() {

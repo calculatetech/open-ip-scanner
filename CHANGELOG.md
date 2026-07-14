@@ -2,6 +2,22 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.6.0] - 2026-07-14
+
+### Added
+
+- Added one local quality-gate command with fast, full, and release modes for
+  clean builds, CTest, strict warnings, supported sanitizers, optional
+  Clang-Tidy, and Debian package creation.
+- Added a stable full `quality` GitHub Actions check for pushes and pull
+  requests on the Ubuntu 24.04 compatibility floor.
+
+### Changed
+
+- Enabled an opt-in strict compiler profile that promotes project conversion,
+  sign-conversion, shadowing, format, and standard warnings to errors.
+- Corrected the existing integer boundaries exposed by the strict profile.
+
 ## [0.5.18] - 2026-07-14
 
 ### Changed

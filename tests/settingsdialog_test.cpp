@@ -11,6 +11,7 @@
 #include <QComboBox>
 #include <QDialog>
 #include <QDialogButtonBox>
+#include <QDebug>
 #include <QElapsedTimer>
 #include <QEventLoop>
 #include <QFile>
@@ -808,7 +809,8 @@ struct ScannerWindowTestAccess {
         heartbeat.stop();
         window.hide();
         QObject::disconnect(resetConnection);
-        return ordered && servicesOrdered && visibleRows > 0 && visibleRows < 4096 &&
+        const bool passed =
+               ordered && servicesOrdered && visibleRows > 0 && visibleRows < 4096 &&
                filteredIdentitiesBeforeSort == filteredIdentitiesAfterSort &&
                elapsed.elapsed() < 5000 && maximumHeartbeatGapMs < 250 &&
                modelResetCount == 0 && before.identity == after.identity &&
@@ -820,6 +822,17 @@ struct ScannerWindowTestAccess {
                scanActionDisabledDuringCompletion &&
                orderBeforeCompletion == orderAfterCompletion &&
                window.resultModel_->rowCount() == 4098;
+        if (!passed) {
+            qWarning() << "result scaling diagnostics"
+                       << "elapsedMs" << elapsed.elapsed()
+                       << "maximumHeartbeatGapMs" << maximumHeartbeatGapMs
+                       << "rows" << window.resultModel_->rowCount()
+                       << "visibleRows" << visibleRows
+                       << "ordered" << ordered
+                       << "servicesOrdered" << servicesOrdered
+                       << "modelResetCount" << modelResetCount;
+        }
+        return passed;
     }
 
     static bool debugScanContract(ScannerWindow &window)
@@ -828,7 +841,7 @@ struct ScannerWindowTestAccess {
         const int originalAccuracy = window.accuracyLevel_;
         const QList<ScannerWindow::AdapterInfo> originalAdapters = window.adapters_;
         QString validatedTarget = "test";
-        int validatorPosition = validatedTarget.size();
+        int validatorPosition = static_cast<int>(validatedTarget.size());
         if (window.targetInput_->validator()->validate(validatedTarget, validatorPosition) !=
             QValidator::Acceptable) {
             return false;

@@ -49,7 +49,8 @@ HostScanOutcome ProductionHostScanBackend::scan(
             return {};
         }
         if (shouldProbeServicesForDiscovery(
-                alive, options_.enabledServiceIds.size()) && !budget.expired()) {
+                alive, static_cast<int>(options_.enabledServiceIds.size())) &&
+            !budget.expired()) {
             servicesProbed = true;
             discoveredServices = dependencies_.services(
                 ipString, options_.localIp, budget, cancellation, options_);

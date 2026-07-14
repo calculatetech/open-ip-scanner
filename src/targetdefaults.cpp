@@ -298,8 +298,8 @@ DefaultTargetPlan buildDefaultTargetPlan(const QList<DefaultNetworkInput> &netwo
         }
         rangeText = serializeRanges(bounded);
         cidrText = serializeCidrs(bounded);
-        for (int index = acceptedOrder.size() - 1;
-             index >= keepCount;
+        for (qsizetype index = acceptedOrder.size() - 1;
+             index >= static_cast<qsizetype>(keepCount);
              --index) {
             appendOmittedInterface(
                 &plan, acceptedLabels.value(acceptedOrder[index]));
@@ -307,6 +307,6 @@ DefaultTargetPlan buildDefaultTargetPlan(const QList<DefaultNetworkInput> &netwo
         accepted = std::move(bounded);
     }
     plan.targetText = format == TargetTextFormat::Cidr ? cidrText : rangeText;
-    plan.uniqueHostCount = accepted.size();
+    plan.uniqueHostCount = static_cast<int>(accepted.size());
     return plan;
 }

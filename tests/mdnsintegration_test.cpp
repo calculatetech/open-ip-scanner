@@ -24,7 +24,7 @@ void requireAt(bool condition, int line)
 
 QString argumentValue(const QStringList &arguments, const QString &name)
 {
-    const int index = arguments.indexOf(name);
+    const qsizetype index = arguments.indexOf(name);
     return index >= 0 && index + 1 < arguments.size()
                ? arguments.at(index + 1)
                : QString();

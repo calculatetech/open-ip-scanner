@@ -47,7 +47,7 @@ bool OuiDatabase::parseOverrides(const QString &text,
         if (line.isEmpty() || line.startsWith('#')) {
             continue;
         }
-        const int separator = line.indexOf('=');
+        const qsizetype separator = line.indexOf('=');
         if (separator <= 0 || separator != line.lastIndexOf('=')) {
             if (error != nullptr) {
                 *error = QString("Line %1 must use PREFIX=Vendor.").arg(index + 1);

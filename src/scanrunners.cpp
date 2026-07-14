@@ -93,12 +93,12 @@ QList<ScanResult> runProductionScan(
         environment.gatewayLookup = linuxGatewayIp;
     }
     if (!environment.dependencyFactory) {
-        environment.dependencyFactory = [](const ScanOptions &scanOptions,
-                                           const ScanCancellation &activeCancellation) {
+        environment.dependencyFactory = [](const ScanOptions &factoryOptions,
+                                           const ScanCancellation &factoryCancellation) {
             const int interfaceIndex = QNetworkInterface::interfaceIndexFromName(
-                scanOptions.interfaceName);
+                factoryOptions.interfaceName);
             auto mdnsResolver = std::make_shared<ScanMdnsResolver>(
-                interfaceIndex, activeCancellation, createAvahiDbusBackend());
+                interfaceIndex, factoryCancellation, createAvahiDbusBackend());
             auto hostnameResolver = std::make_shared<HostnameResolver>(mdnsResolver);
             auto neighborProbe = std::make_shared<LinuxNeighborProbe>();
             auto pingProbe = std::make_shared<LinuxPingProbe>();

@@ -11,7 +11,7 @@ ResultTableModel::ResultTableModel(QObject *parent) : QAbstractTableModel(parent
 
 int ResultTableModel::rowCount(const QModelIndex &parent) const
 {
-    return parent.isValid() ? 0 : rows_.size();
+    return parent.isValid() ? 0 : static_cast<int>(rows_.size());
 }
 
 int ResultTableModel::columnCount(const QModelIndex &parent) const
@@ -72,7 +72,7 @@ void ResultTableModel::clear()
     if (rows_.isEmpty()) {
         return;
     }
-    beginRemoveRows({}, 0, rows_.size() - 1);
+    beginRemoveRows({}, 0, static_cast<int>(rows_.size()) - 1);
     rows_.clear();
     identityRows_.clear();
     endRemoveRows();
@@ -112,7 +112,7 @@ void ResultTableModel::setMacFormatter(std::function<QString(const QString &)> f
 void ResultTableModel::notifyMacFormatChanged()
 {
     if (!rows_.isEmpty()) {
-        emit dataChanged(index(0, Mac), index(rows_.size() - 1, Mac),
+        emit dataChanged(index(0, Mac), index(static_cast<int>(rows_.size()) - 1, Mac),
                          {Qt::DisplayRole, SortRole});
     }
 }
