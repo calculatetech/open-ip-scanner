@@ -175,7 +175,7 @@ struct ScannerWindowTestAccess {
                                                  Qt::DisplayRole)
                                           .toString();
         const QString html = result.detailsText;
-        return tableHostname == "fixture.example" &&
+        return tableHostname == "fixture" &&
                !tableHostname.contains("PTR") &&
                html.count("Hostname(s):") == 1 &&
                html.contains("fixture.example (PTR)") &&
@@ -215,6 +215,36 @@ struct ScannerWindowTestAccess {
                merged.hostnameEvidence.size() == 2 &&
                html.contains("fixture.example") && html.contains("(PTR)") &&
                html.contains("fixture.local") && html.contains("(mDNS)");
+    }
+
+    static bool tableHostnamePresentation(ScannerWindow &window)
+    {
+        ScanResult dns;
+        dns.ip = "192.0.2.30";
+        dns.interfaceName = "fixture0";
+        dns.hostname = "long-device-name.example.test";
+        dns.hostnameSource = HostnameSource::DnsPtr;
+        dns.hostnameEvidence = {{dns.hostname, dns.hostnameSource}};
+
+        ScanResult mdns;
+        mdns.ip = "192.0.2.31";
+        mdns.interfaceName = "fixture0";
+        mdns.hostname = "mdns-device.local";
+        mdns.hostnameSource = HostnameSource::AvahiMdns;
+        mdns.hostnameEvidence = {{mdns.hostname, mdns.hostnameSource}};
+
+        window.resultModel_->clear();
+        window.resultModel_->upsertResult(dns);
+        window.resultModel_->upsertResult(mdns);
+        const QString first = window.resultModel_->data(
+            window.resultModel_->index(0, ScannerWindow::ColHostname),
+            Qt::DisplayRole).toString();
+        const QString second = window.resultModel_->data(
+            window.resultModel_->index(1, ScannerWindow::ColHostname),
+            Qt::DisplayRole).toString();
+        return first == "long-device-name" && second == "mdns-device.local" &&
+               !window.table_->wordWrap() &&
+               window.table_->textElideMode() == Qt::ElideRight;
     }
 
     static bool resolverSupportBundleIsRedacted(ScannerWindow &window)
@@ -736,6 +766,7 @@ int main(int argc, char **argv)
     REQUIRE(ScannerWindowTestAccess::parsesAdapterDnsDomains());
     REQUIRE(ScannerWindowTestAccess::rendersConciseHostnameProvenance(window));
     REQUIRE(ScannerWindowTestAccess::rendersMergedHostnameEvidence(window));
+    REQUIRE(ScannerWindowTestAccess::tableHostnamePresentation(window));
     REQUIRE(ScannerWindowTestAccess::resolverSupportBundleIsRedacted(window));
     REQUIRE(ScannerWindowTestAccess::resultScalingContract(window));
     REQUIRE(ScannerWindowTestAccess::debugScanContract(window));

@@ -47,7 +47,7 @@ QVariant ResultTableModel::data(const QModelIndex &index, int role) const
     }
     switch (index.column()) {
     case Ip: return result.ip;
-    case Hostname: return result.hostname.trimmed().isEmpty() ? QString("Unknown") : result.hostname;
+    case Hostname: return tableHostname(result);
     case Mac:
         return macFormatter_ ? macFormatter_(result.mac)
                              : (result.mac.trimmed().isEmpty() ? QString("Unknown") : result.mac);
@@ -147,6 +147,19 @@ QString ResultTableModel::normalizedText(const QString &value)
     return value.trimmed().toCaseFolded();
 }
 
+QString ResultTableModel::tableHostname(const ScanResult &result)
+{
+    const QString hostname = result.hostname.trimmed();
+    if (hostname.isEmpty()) {
+        return "Unknown";
+    }
+    if (result.hostnameSource == HostnameSource::AvahiMdns) {
+        return hostname;
+    }
+    const QString shortName = hostname.section('.', 0, 0);
+    return shortName.isEmpty() ? hostname : shortName;
+}
+
 QString ResultTableModel::servicesText(const QList<ServiceHit> &services)
 {
     QStringList parts;
@@ -176,7 +189,7 @@ QVariant ResultTableModel::sortValue(const ScanResult &result, int column) const
 {
     switch (column) {
     case Ip: return ipKey(result.ip);
-    case Hostname: return normalizedText(result.hostname);
+    case Hostname: return normalizedText(tableHostname(result));
     case Mac: return macKey(result.mac);
     case Vendor: return normalizedText(result.vendor);
     case Services: return normalizedText(servicesText(result.services));

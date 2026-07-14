@@ -5,6 +5,7 @@ All notable changes to this project are documented in this file.
 ## [0.5.1] - 2026-07-14
 
 - Capture the selected adapter's assigned DNS search suffixes, prefer the explicit PTR record matching that scope, qualify a short PTR when necessary, retain `.local` mDNS evidence separately, and place source labels directly after each hostname in Details.
+- Keep DNS suffixes in Details but omit them from non-mDNS table hostnames, and elide long table text at the cell's character boundary without word wrapping.
 
 ### Changed
 

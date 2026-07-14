@@ -221,6 +221,8 @@ ScannerWindow::ScannerWindow(QWidget *parent)
     table_->setEditTriggers(QAbstractItemView::NoEditTriggers);
     table_->setContextMenuPolicy(Qt::CustomContextMenu);
     table_->setSortingEnabled(true);
+    table_->setWordWrap(false);
+    table_->setTextElideMode(Qt::ElideRight);
     table_->horizontalHeader()->setSortIndicatorShown(true);
     table_->sortByColumn(ColIp, Qt::AscendingOrder);
     table_->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);

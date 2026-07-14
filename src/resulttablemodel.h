@@ -39,6 +39,7 @@ public:
 private:
     static QString identityFor(const ScanResult &result);
     static QString normalizedText(const QString &value);
+    static QString tableHostname(const ScanResult &result);
     static QString servicesText(const QList<ServiceHit> &services);
     static qulonglong ipKey(const QString &ip);
     static QVariant macKey(const QString &mac);
