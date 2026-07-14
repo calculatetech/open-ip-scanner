@@ -3,9 +3,12 @@
 #include "csvexporter.h"
 #include "debugscanfixture.h"
 #include "mdnsresolver.h"
+#include "ouidatabase.h"
 #include "resulttablemodel.h"
 #include "servicetagdelegate.h"
 #include "settingslayout.h"
+#include "settingsstore.h"
+#include "targetparser.h"
 
 #include <QAction>
 #include <QAbstractButton>
@@ -1158,189 +1161,11 @@ QList<ScanResult> ScannerWindow::runDebugScan(
 
 QList<QHostAddress> ScannerWindow::parseTargetsInput(const QString &text, QString *error) const
 {
-    QSet<quint32> unique;
-
-    const QStringList tokens = text.split(',', Qt::SkipEmptyParts);
-    if (tokens.isEmpty()) {
-        if (error) {
-            *error = "Enter at least one target (CIDR, range, or IP).";
-        }
-        return {};
+    const TargetParseResult result = TargetParser::parse(text, kMaxHostsToScan);
+    if (error != nullptr) {
+        *error = result.error;
     }
-
-    for (const QString &rawToken : tokens) {
-        const QString token = rawToken.trimmed();
-        if (token.isEmpty()) {
-            continue;
-        }
-
-        QList<QHostAddress> parsed;
-        if (token.contains('/')) {
-            const QStringList parts = token.split('/');
-            if (parts.size() != 2) {
-                if (error) {
-                    *error = QString("Invalid CIDR: %1").arg(token);
-                }
-                return {};
-            }
-
-            bool ok = false;
-            const int prefix = parts[1].toInt(&ok);
-            QHostAddress ip;
-            if (!ok || !ip.setAddress(parts[0]) || ip.protocol() != QAbstractSocket::IPv4Protocol || prefix < 1 || prefix > 32) {
-                if (error) {
-                    *error = QString("Invalid CIDR: %1").arg(token);
-                }
-                return {};
-            }
-
-            quint64 cidrHostCount = 0;
-            if (prefix == 32) {
-                cidrHostCount = 1;
-            } else if (prefix == 31) {
-                cidrHostCount = 2;
-            } else {
-                const int hostBits = 32 - prefix;
-                cidrHostCount = (1ULL << hostBits) - 2ULL;
-            }
-            if (cidrHostCount > static_cast<quint64>(kMaxHostsToScan)) {
-                if (error) {
-                    *error = QString("Too many targets (%1 max). Narrow the range.").arg(kMaxHostsToScan);
-                }
-                return {};
-            }
-            parsed = hostsForCidr(ip, prefix);
-        } else if (token.contains('-')) {
-            parsed = hostsForRangeToken(token, error);
-            if (parsed.isEmpty() && error && !error->isEmpty()) {
-                return {};
-            }
-        } else {
-            quint32 value = 0;
-            if (!parseIpv4(token, &value)) {
-                if (error) {
-                    *error = QString("Invalid IP address: %1").arg(token);
-                }
-                return {};
-            }
-            parsed.append(intToIpv4(value));
-        }
-
-        for (const QHostAddress &host : parsed) {
-            unique.insert(ipv4ToInt(host));
-            if (unique.size() > kMaxHostsToScan) {
-                if (error) {
-                    *error = QString("Too many targets (%1 max). Narrow the range.").arg(kMaxHostsToScan);
-                }
-                return {};
-            }
-        }
-    }
-
-    QList<quint32> values = unique.values();
-    std::sort(values.begin(), values.end());
-
-    QList<QHostAddress> hosts;
-    hosts.reserve(values.size());
-    for (quint32 value : values) {
-        hosts.append(intToIpv4(value));
-    }
-
-    return hosts;
-}
-
-QList<QHostAddress> ScannerWindow::hostsForCidr(const QHostAddress &base, int prefixLength) const
-{
-    QList<QHostAddress> hosts;
-
-    const quint32 value = ipv4ToInt(base);
-    const int hostBits = 32 - prefixLength;
-    const quint32 mask = prefixLength == 0 ? 0 : (0xFFFFFFFFu << hostBits);
-    const quint32 network = value & mask;
-
-    if (prefixLength == 32) {
-        hosts.append(intToIpv4(network));
-        return hosts;
-    }
-
-    if (prefixLength == 31) {
-        hosts.append(intToIpv4(network));
-        hosts.append(intToIpv4(network + 1));
-        return hosts;
-    }
-
-    const quint32 count = (hostBits >= 31) ? 0x7FFFFFFFu : (1u << hostBits);
-    const quint32 usable = count >= 2 ? count - 2 : 0;
-    for (quint32 i = 0; i < usable; ++i) {
-        hosts.append(intToIpv4(network + 1 + i));
-    }
-
-    return hosts;
-}
-
-QList<QHostAddress> ScannerWindow::hostsForRangeToken(const QString &token, QString *error) const
-{
-    const QStringList parts = token.split('-');
-    if (parts.size() != 2) {
-        if (error) {
-            *error = QString("Invalid range: %1").arg(token);
-        }
-        return {};
-    }
-
-    const QString left = parts[0].trimmed();
-    const QString right = parts[1].trimmed();
-
-    quint32 start = 0;
-    if (!parseIpv4(left, &start)) {
-        if (error) {
-            *error = QString("Invalid range start: %1").arg(left);
-        }
-        return {};
-    }
-
-    quint32 end = 0;
-    if (right.contains('.')) {
-        if (!parseIpv4(right, &end)) {
-            if (error) {
-                *error = QString("Invalid range end: %1").arg(right);
-            }
-            return {};
-        }
-    } else {
-        bool ok = false;
-        const int lastOctet = right.toInt(&ok);
-        if (!ok || lastOctet < 0 || lastOctet > 255) {
-            if (error) {
-                *error = QString("Invalid range end: %1").arg(right);
-            }
-            return {};
-        }
-        end = (start & 0xFFFFFF00u) | static_cast<quint32>(lastOctet);
-    }
-
-    if (start > end) {
-        std::swap(start, end);
-    }
-
-    const quint64 hostCount = static_cast<quint64>(end) - static_cast<quint64>(start) + 1ULL;
-    if (hostCount > static_cast<quint64>(kMaxHostsToScan)) {
-        if (error) {
-            *error = QString("Too many targets (%1 max). Narrow the range.").arg(kMaxHostsToScan);
-        }
-        return {};
-    }
-
-    QList<QHostAddress> hosts;
-    hosts.reserve(static_cast<int>(end - start + 1));
-    for (quint32 value = start; value <= end; ++value) {
-        hosts.append(intToIpv4(value));
-        if (value == 0xFFFFFFFFu) {
-            break;
-        }
-    }
-
-    return hosts;
+    return result.hosts;
 }
 
 QList<ScanResult> ScannerWindow::scanHosts(const ScanOptions &options,
@@ -1716,14 +1541,8 @@ NeighborObservation ScannerWindow::confirmNeighborLiveness(
 
 QString ScannerWindow::lookupVendor(const QString &mac, const ScanOptions &options) const
 {
-    const QString prefix = normalizeOuiPrefix(mac);
-    if (prefix.isEmpty()) {
-        return "Unknown";
-    }
-    if (options.customOuiVendors.contains(prefix)) {
-        return options.customOuiVendors.value(prefix);
-    }
-    return options.builtInOuiVendors.value(prefix, "Unknown");
+    return OuiDatabase::lookup(
+        mac, options.customOuiVendors, options.builtInOuiVendors);
 }
 
 ScannerWindow::HostnameResolution ScannerWindow::lookupHostname(
@@ -3694,40 +3513,7 @@ void ScannerWindow::applyDefaultSettings()
 
 bool ScannerWindow::migrateSettings(QSettings &settings, QString *error)
 {
-    const int schema = settings.value("settings/schema_version", 0).toInt();
-    if (schema >= kSettingsSchemaVersion) {
-        if (error != nullptr) {
-            error->clear();
-        }
-        return true;
-    }
-
-    // Schema 2 made history private by default. Schema 3 separates retention
-    // from launch restoration while preserving an explicit legacy opt-in.
-    const bool legacyRetention =
-        settings.value("targets/remember_last", false).toBool();
-    if (schema < 3 && !settings.contains("targets/save_history")) {
-        settings.setValue("targets/save_history", legacyRetention);
-    }
-    if (!settings.value("targets/save_history", false).toBool()) {
-        if (!clearRetainedTargetSettings(settings, true, error)) {
-            return false;
-        }
-    }
-    settings.setValue("settings/schema_version", kSettingsSchemaVersion);
-    settings.sync();
-    if (settings.status() != QSettings::NoError ||
-        settings.value("settings/schema_version", 0).toInt() !=
-            kSettingsSchemaVersion) {
-        if (error != nullptr) {
-            *error = "Could not complete the settings privacy migration. Check settings-file permissions and restart.";
-        }
-        return false;
-    }
-    if (error != nullptr) {
-        error->clear();
-    }
-    return true;
+    return SettingsStore::migrate(settings, error);
 }
 
 void ScannerWindow::loadSettings()
@@ -3963,52 +3749,7 @@ bool ScannerWindow::parseCustomOuiOverrides(
     QHash<QString, QString> *vendors,
     QString *error)
 {
-    if (vendors == nullptr) {
-        return false;
-    }
-    vendors->clear();
-    const QStringList lines = text.split('\n');
-    for (int index = 0; index < lines.size(); ++index) {
-        const QString line = lines[index].trimmed();
-        if (line.isEmpty() || line.startsWith('#')) {
-            continue;
-        }
-        const int separator = line.indexOf('=');
-        if (separator <= 0 || separator != line.lastIndexOf('=')) {
-            if (error != nullptr) {
-                *error = QString("Line %1 must use PREFIX=Vendor.").arg(index + 1);
-            }
-            vendors->clear();
-            return false;
-        }
-        QString rawPrefix = line.left(separator).trimmed().toUpper();
-        rawPrefix.remove(':');
-        rawPrefix.remove('-');
-        rawPrefix.remove('.');
-        const QString vendor = line.mid(separator + 1).trimmed();
-        static const QRegularExpression prefixPattern("^[0-9A-F]{6}$");
-        if (!prefixPattern.match(rawPrefix).hasMatch()) {
-            if (error != nullptr) {
-                *error = QString("Line %1 has an invalid 24-bit hexadecimal OUI prefix.")
-                             .arg(index + 1);
-            }
-            vendors->clear();
-            return false;
-        }
-        if (vendor.isEmpty() || !isSafeTextInput(vendor, 120)) {
-            if (error != nullptr) {
-                *error = QString("Line %1 has an empty or invalid vendor name.")
-                             .arg(index + 1);
-            }
-            vendors->clear();
-            return false;
-        }
-        vendors->insert(rawPrefix, vendor);
-    }
-    if (error != nullptr) {
-        error->clear();
-    }
-    return true;
+    return OuiDatabase::parseOverrides(text, vendors, error);
 }
 
 bool ScannerWindow::isSafeTextInput(const QString &text, int maxLength)
@@ -4121,28 +3862,7 @@ bool ScannerWindow::clearRetainedTargetSettings(QSettings &settings,
                                                 bool disableRetention,
                                                 QString *error)
 {
-    settings.remove("targets/history");
-    settings.remove("targets/last_input");
-    settings.setValue("targets/remember_last", false);
-    if (disableRetention) {
-        settings.setValue("targets/save_history", false);
-    }
-    settings.sync();
-    const bool failed = settings.status() != QSettings::NoError ||
-                        settings.contains("targets/history") ||
-                        settings.contains("targets/last_input") ||
-                        (disableRetention &&
-                         settings.value("targets/save_history", true).toBool());
-    if (!failed) {
-        if (error != nullptr) {
-            error->clear();
-        }
-        return true;
-    }
-    if (error != nullptr) {
-        *error = "Could not remove saved target data. Check settings-file permissions and try again.";
-    }
-    return false;
+    return SettingsStore::clearRetainedTargets(settings, disableRetention, error);
 }
 
 bool ScannerWindow::persistTargetHistorySettings(QSettings &settings,
@@ -4151,35 +3871,8 @@ bool ScannerWindow::persistTargetHistorySettings(QSettings &settings,
                                                  bool rememberLast,
                                                  QString *error)
 {
-    settings.setValue("targets/save_history", true);
-    settings.setValue("targets/remember_last", rememberLast);
-    if (history.isEmpty()) {
-        settings.remove("targets/history");
-    } else {
-        settings.setValue("targets/history", history);
-    }
-    if (rememberLast && !lastInput.isEmpty()) {
-        settings.setValue("targets/last_input", lastInput);
-    } else {
-        settings.remove("targets/last_input");
-    }
-    settings.sync();
-    const bool failed = settings.status() != QSettings::NoError ||
-                        settings.value("targets/save_history", false).toBool() != true ||
-                        settings.value("targets/history").toStringList() != history ||
-                        (rememberLast &&
-                         settings.value("targets/last_input").toString() != lastInput) ||
-                        (!rememberLast && settings.contains("targets/last_input"));
-    if (!failed) {
-        if (error != nullptr) {
-            error->clear();
-        }
-        return true;
-    }
-    if (error != nullptr) {
-        *error = "Could not save target history. Check settings-file permissions; this scan target was not retained.";
-    }
-    return false;
+    return SettingsStore::persistTargetHistory(
+        settings, history, lastInput, rememberLast, error);
 }
 
 QList<int> ScannerWindow::visibleColumnsInDisplayOrder() const
@@ -4515,16 +4208,7 @@ bool ScannerWindow::parseIpv4(const QString &text, quint32 *out)
 
 QString ScannerWindow::normalizeOuiPrefix(const QString &prefix)
 {
-    // Normalize MAC/OUI input to uppercase hex and return the first 24 bits.
-    QString normalized = prefix.toUpper();
-    normalized.remove(':');
-    normalized.remove('-');
-    normalized.remove('.');
-    static const QRegularExpression hexPattern("^[0-9A-F]+$");
-    if (normalized.size() < 6 || !hexPattern.match(normalized).hasMatch()) {
-        return {};
-    }
-    return normalized.left(6);
+    return OuiDatabase::normalizePrefix(prefix);
 }
 
 QIcon ScannerWindow::createPlayIcon()

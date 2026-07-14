@@ -159,8 +159,6 @@ private:
 
     // Parse user target syntax (CIDR/range/single IP) into host addresses.
     QList<QHostAddress> parseTargetsInput(const QString &text, QString *error) const;
-    QList<QHostAddress> hostsForCidr(const QHostAddress &base, int prefixLength) const;
-    QList<QHostAddress> hostsForRangeToken(const QString &token, QString *error) const;
 
     // Main worker entry point for host discovery and enrichment.
     QList<ScanResult> scanHosts(const ScanOptions &options,

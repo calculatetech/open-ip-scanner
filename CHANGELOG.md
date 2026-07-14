@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.5.8] - 2026-07-14
+
+### Changed
+
+- Extracted target parsing, OUI normalization and override precedence, settings
+  migration, and target-history persistence from `ScannerWindow` into the core
+  library.
+- Added window-free contracts for supported target syntax, cumulative host
+  limits, privacy-preserving settings migration, persistence failures, and OUI
+  policy.
+
 ## [0.5.7] - 2026-07-14
 
 ### Changed

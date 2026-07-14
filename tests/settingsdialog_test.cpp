@@ -320,7 +320,8 @@ struct ScannerWindowTestAccess {
         }
         if (ScannerWindow::parseCustomOuiOverrides(
                 "00163E=Valid\nGG1122=Invalid", &vendors, &error) ||
-            !vendors.isEmpty() || !error.startsWith("Line 2")) {
+            vendors.size() != 2 || vendors.value("00163E") != "Lab vendor" ||
+            !error.startsWith("Line 2")) {
             return false;
         }
         if (ScannerWindow::parseCustomOuiOverrides(

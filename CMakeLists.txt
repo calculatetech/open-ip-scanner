@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.28)
-project(OpenIpScanner VERSION 0.5.7 LANGUAGES CXX)
+project(OpenIpScanner VERSION 0.5.8 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -19,10 +19,16 @@ add_library(ois_core STATIC
     src/hostnameevidence.cpp
     src/neighborentry.h
     src/neighborentry.cpp
+    src/ouidatabase.h
+    src/ouidatabase.cpp
     src/resolverdiagnostics.h
     src/resolverdiagnostics.cpp
     src/serviceevidence.h
     src/serviceevidence.cpp
+    src/settingsstore.h
+    src/settingsstore.cpp
+    src/targetparser.h
+    src/targetparser.cpp
     src/targetdefaults.h
     src/targetdefaults.cpp
 )
@@ -124,6 +130,14 @@ if(BUILD_TESTING)
     add_executable(target_defaults_test tests/targetdefaults_test.cpp)
     target_link_libraries(target_defaults_test PRIVATE ois_core)
     add_test(NAME target_default_planning COMMAND target_defaults_test)
+
+    add_executable(target_parser_test tests/targetparser_test.cpp)
+    target_link_libraries(target_parser_test PRIVATE ois_core)
+    add_test(NAME target_parser_contract COMMAND target_parser_test)
+
+    add_executable(core_policy_test tests/corepolicy_test.cpp)
+    target_link_libraries(core_policy_test PRIVATE ois_core)
+    add_test(NAME core_policy_contract COMMAND core_policy_test)
 
     add_executable(neighbor_entry_test tests/neighborentry_test.cpp)
     target_link_libraries(neighbor_entry_test PRIVATE ois_core)
