@@ -2,7 +2,7 @@
 
 This file is the single source of truth for unfinished product, engineering, documentation, and release work. Detailed evidence for why each 1.0 item exists is in [the production-readiness audit](production-readiness-audit.md). New ideas belong here rather than in a second backlog.
 
-The audited baseline is `0.2.0` at commit `91e0a7a`; `0.4.4` is the latest human-verified version on `main`, and `0.4.5` is the active implementation branch. Version 1.0 is not ready. Every unchecked item under “Required for 1.0” is a release gate; the post-1.0 section is explicitly outside the first production release.
+The audited baseline is `0.2.0` at commit `91e0a7a`; `0.4.5` is the latest human-verified version on `main`. Version 1.0 is not ready. Every unchecked item under “Required for 1.0” is a release gate; the post-1.0 section is explicitly outside the first production release.
 
 ## Delivered implementation increments
 
@@ -16,6 +16,7 @@ The unchecked milestone boxes below mean their complete acceptance criteria are 
 - `0.4.2` — **NEIGHBOR-VALIDATION:** validated interface-scoped Linux neighbor evidence, applied conservative kernel-state freshness rules, and preserved interface-plus-IP result identity.
 - `0.4.3` — **SERVICE-EVIDENCE:** separated open ports from confirmed protocols, removed hidden detail traffic and OS guesses, restored all-accuracy TCP discovery, and corrected protocol-aware target budgeting.
 - `0.4.4` — **RESULT-SCALING:** replaced per-cell widgets with a keyed live result model, preserved deterministic ordering and viewport stability, and added accuracy-scaled active confirmation for slow cached neighbors.
+- `0.4.5` — **DEBUG-SCAN-FIXTURE:** added the hidden adapter-free `test` target with 768 deterministic, Accuracy-paced devices for repeatable table stability and performance checks.
 
 **RESULT-SCALING** is human-verified on version `0.4.4`. DUPLICATE-IP-CONFLICTS remains Post-1.0.
 
@@ -151,12 +152,12 @@ Priority matches the most severe audit finding an item closes. All items in the 
 
 #### DEBUG-SCAN-FIXTURE
 
-- [ ] **Provide a hidden, deterministic high-volume scan fixture.** `Medium`
+- [x] **Provide a hidden, deterministic high-volume scan fixture.** `Medium`
   - Treat the exact target token `test` as an internal fixture trigger. It must bypass adapter, bind, parser, and network-probe paths and must not be advertised as an ordinary target format.
   - Publish hundreds of unique benchmark-network devices through the production result queue. Cover every configured service type with both confirmed and `Unknown:<port>` evidence, known-vendor and unknown MAC addresses, known and unknown hostnames, varied service counts, and stable details.
   - Pace fixture publication by Accuracy: Fast is quickest, followed by Balanced, High, and Maximum. Stop and close must cancel promptly, while the normal result ordering, filtering, selection, and viewport invariants remain in force.
   - Current progress on `0.4.5`: the exact case-sensitive `test` token is accepted by the target control and enables scanning even without an adapter. It bypasses parsing and network setup, then publishes 768 deterministic `198.18.0.0/15` benchmark devices through the ordinary asynchronous result queue. The data covers every configured service ID with both confirmed and `Unknown:<port>` evidence, known and unknown vendors and hostnames, varied service counts, and stable details. Accuracy selects strictly increasing per-result delays, and the ordinary Stop path interrupts those delays.
-  - Validation evidence: normal and strict-warning builds pass all 9 tests. The generator contract proves uniqueness, deterministic data, exact-trigger isolation, benchmark-only addressing, every service/evidence combination, mixed vendor/hostname knowledge, and pacing order. The production GUI contract proves adapter-free launch, incremental publication, all 768 final rows, and sub-second cancellation at Maximum. The eight non-rendering tests pass under ThreadSanitizer; the previously documented Qt offscreen-rendering limitation remains unchanged. A fresh adversarial review found no actionable issue; human validation remains before completion.
+  - Completion evidence: normal and strict-warning builds pass all 9 tests. The generator contract proves uniqueness, deterministic data, exact-trigger isolation, benchmark-only addressing, every service/evidence combination, mixed vendor/hostname knowledge, and pacing order. The production GUI contract proves adapter-free launch, incremental publication, all 768 final rows, and sub-second cancellation at Maximum. The eight non-rendering tests pass under ThreadSanitizer; the previously documented Qt offscreen-rendering limitation remains unchanged. A fresh adversarial review found no actionable issue, and human validation confirmed expected fixture behavior.
   - Done when deterministic tests prove data coverage, uniqueness, pacing order, no real-network dependency, cancellation, exact-trigger isolation, and stable progressive GUI presentation; human validation confirms the fixture is useful for table stability and performance checks.
 
 #### APPLICATION-LAYERS
