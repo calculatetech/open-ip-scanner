@@ -77,5 +77,5 @@ QString serviceEvidenceText(const QString &label, int port, ServiceEvidenceLevel
     if (evidence == ServiceEvidenceLevel::VerifiedProtocol) {
         return QString("%1:%2").arg(label).arg(port);
     }
-    return QString("Port %1 open (probable %2)").arg(port).arg(label);
+    return QString("Unknown:%1").arg(port);
 }

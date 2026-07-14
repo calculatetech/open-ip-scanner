@@ -40,8 +40,8 @@ int main()
     REQUIRE(serviceEvidenceText("SSH", 2222, ServiceEvidenceLevel::VerifiedProtocol) ==
             "SSH:2222");
     REQUIRE(serviceEvidenceText("SSH", 22, ServiceEvidenceLevel::OpenPort) ==
-            "Port 22 open (probable SSH)");
+            "Unknown:22");
     REQUIRE(serviceEvidenceText("HTTP", 8080, ServiceEvidenceLevel::OpenPort) ==
-            "Port 8080 open (probable HTTP)");
+            "Unknown:8080");
     return EXIT_SUCCESS;
 }
