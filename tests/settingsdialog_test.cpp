@@ -1,3 +1,4 @@
+#include "debugscanfixture.h"
 #include "settingslayout.h"
 #include "scannerwindow.h"
 #include "resulttablemodel.h"
@@ -18,6 +19,7 @@
 #include <QTableView>
 #include <QTemporaryDir>
 #include <QTimer>
+#include <QValidator>
 
 #include <arpa/inet.h>
 #include <poll.h>
@@ -293,6 +295,85 @@ struct ScannerWindowTestAccess {
                window.resultModel_->rowCount() == 4098;
     }
 
+    static bool debugScanContract(ScannerWindow &window)
+    {
+        const QString originalTarget = window.targetInput_->text();
+        const int originalAccuracy = window.accuracyLevel_;
+        const QList<ScannerWindow::AdapterInfo> originalAdapters = window.adapters_;
+        QString validatedTarget = "test";
+        int validatorPosition = validatedTarget.size();
+        if (window.targetInput_->validator()->validate(validatedTarget, validatorPosition) !=
+            QValidator::Acceptable) {
+            return false;
+        }
+        QString parserError;
+        const QList<QHostAddress> parsedTestTarget =
+            window.parseTargetsInput("test", &parserError);
+        if (!parsedTestTarget.isEmpty() || parserError.isEmpty()) {
+            return false;
+        }
+
+        window.adapters_.clear();
+        window.targetInput_->setText("test");
+        const bool availableWithoutAdapter = window.scanButton_->isEnabled();
+        window.accuracyLevel_ = 0;
+        window.startScan();
+        QElapsedTimer fastTimer;
+        fastTimer.start();
+        bool observedIncrementalPublication = false;
+        while ((window.scanInProgress_ || window.scanCompletionPending_ ||
+                window.scanWatcher_.isRunning()) && fastTimer.elapsed() < 6000) {
+            QApplication::processEvents(QEventLoop::AllEvents, 20);
+            const int rows = window.resultModel_->rowCount();
+            observedIncrementalPublication = observedIncrementalPublication ||
+                                             (rows > 0 &&
+                                              rows < debugScanFixtureResultCount());
+        }
+        const bool completedFixture = !window.scanInProgress_ &&
+                                      !window.scanCompletionPending_ &&
+                                      !window.scanWatcher_.isRunning() &&
+                                      window.resultModel_->rowCount() ==
+                                          debugScanFixtureResultCount();
+        const bool endpointsPresent =
+            window.resultModel_->resultForIdentity(
+                neighborIdentityKey("debug-fixture", "198.18.0.1")).ip ==
+                "198.18.0.1" &&
+            window.resultModel_->resultForIdentity(
+                neighborIdentityKey("debug-fixture", "198.18.3.0")).ip ==
+                "198.18.3.0";
+
+        window.accuracyLevel_ = 3;
+        window.startScan();
+        QElapsedTimer publicationTimer;
+        publicationTimer.start();
+        while (window.resultModel_->rowCount() < 3 &&
+               window.scanWatcher_.isRunning() && publicationTimer.elapsed() < 2000) {
+            QApplication::processEvents(QEventLoop::AllEvents, 20);
+        }
+        const int rowsBeforeCancellation = window.resultModel_->rowCount();
+        QElapsedTimer cancellationTimer;
+        cancellationTimer.start();
+        window.startScan();
+        while ((window.scanInProgress_ || window.scanCompletionPending_ ||
+                window.scanWatcher_.isRunning()) && cancellationTimer.elapsed() < 2000) {
+            QApplication::processEvents(QEventLoop::AllEvents, 20);
+        }
+        const bool canceledPromptly = !window.scanInProgress_ &&
+                                      !window.scanCompletionPending_ &&
+                                      !window.scanWatcher_.isRunning() &&
+                                      cancellationTimer.elapsed() < 1000 &&
+                                      rowsBeforeCancellation > 0 &&
+                                      window.resultModel_->rowCount() <
+                                          debugScanFixtureResultCount();
+
+        window.targetInput_->setText(originalTarget);
+        window.accuracyLevel_ = originalAccuracy;
+        window.adapters_ = originalAdapters;
+        window.scanButton_->setEnabled(!window.adapters_.isEmpty());
+        return availableWithoutAdapter && observedIncrementalPublication &&
+               completedFixture && endpointsPresent && canceledPromptly;
+    }
+
     static bool confirmsDelayedNeighbor(ScannerWindow &window)
     {
         QTemporaryDir tools;
@@ -538,6 +619,7 @@ int main(int argc, char **argv)
     REQUIRE(ScannerWindowTestAccess::preservesInterfaceIdentity(window));
     REQUIRE(ScannerWindowTestAccess::capturesAllScanOptions(window));
     REQUIRE(ScannerWindowTestAccess::resultScalingContract(window));
+    REQUIRE(ScannerWindowTestAccess::debugScanContract(window));
     REQUIRE(ScannerWindowTestAccess::confirmsDelayedNeighbor(window));
 
     const auto verifiedSsh = probeMockEndpoint(window, "ssh", "SSH-2.0-fixture\r\n");

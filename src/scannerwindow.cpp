@@ -1,5 +1,6 @@
 #include "scannerwindow.h"
 #include "cancellablewait.h"
+#include "debugscanfixture.h"
 #include "resulttablemodel.h"
 #include "servicetagdelegate.h"
 #include "settingslayout.h"
@@ -168,7 +169,7 @@ ScannerWindow::ScannerWindow(QWidget *parent)
     targetInput_->setPlaceholderText("Examples: 192.168.1.0/24, 10.0.0.10-10.0.0.50, 10.0.0.10-50, 10.0.1.20");
     targetInput_->setMaxLength(2048);
     targetInput_->setValidator(new QRegularExpressionValidator(
-        QRegularExpression("^[0-9.,/\\-\\s]*$"), targetInput_));
+        QRegularExpression("^(?:[0-9.,/\\-\\s]*|test)$"), targetInput_));
     targetHistoryModel_ = new QStringListModel(this);
     targetCompleter_ = new QCompleter(targetHistoryModel_, this);
     targetCompleter_->setCaseSensitivity(Qt::CaseInsensitive);
@@ -360,9 +361,13 @@ ScannerWindow::ScannerWindow(QWidget *parent)
         userCustomizedTargets_ = true;
     });
     connect(targetInput_, &QLineEdit::textChanged, this, &ScannerWindow::validateTargetLimitFeedback);
-    connect(targetInput_, &QLineEdit::textChanged, this, [this](const QString &) {
+    connect(targetInput_, &QLineEdit::textChanged, this, [this](const QString &text) {
         if (rememberLastTargetOnLaunch_) {
             saveSettings();
+        }
+        if (!scanInProgress_) {
+            scanButton_->setEnabled(!adapters_.isEmpty() ||
+                                    isDebugScanFixtureTarget(text));
         }
     });
     connect(adapterCombo_, &QComboBox::currentIndexChanged, this, [this](int) {
@@ -758,7 +763,8 @@ void ScannerWindow::refreshAdapters()
 
     const bool hasNetwork = !adapters_.isEmpty();
     if (!scanWatcher_.isRunning()) {
-        scanButton_->setEnabled(hasNetwork);
+        scanButton_->setEnabled(hasNetwork ||
+                                isDebugScanFixtureTarget(targetInput_->text()));
     }
     defaultsButton_->setEnabled(hasNetwork);
 
@@ -832,9 +838,14 @@ void ScannerWindow::startScan()
         return;
     }
 
-    const QString targetText = targetInput_->text().trimmed();
+    const QString rawTargetText = targetInput_->text();
+    const QString targetText = rawTargetText.trimmed();
     if (!isSafeTextInput(targetText, 2048)) {
         showStatusMessage("Invalid target input.");
+        return;
+    }
+    if (isDebugScanFixtureTarget(rawTargetText)) {
+        startDebugScan();
         return;
     }
 
@@ -957,6 +968,87 @@ void ScannerWindow::startScan()
         return scanHosts(scanOptions, hosts, scanCancellation, onProgress, onResult);
     });
     scanWatcher_.setFuture(future);
+}
+
+void ScannerWindow::startDebugScan()
+{
+    pendingDisplayResults_.clear();
+    resultFlushTimer_->stop();
+    scanCompletionPending_ = false;
+    resultModel_->clear();
+
+    scanInProgress_ = true;
+    scanButton_->setToolTip("Stop scan");
+    applyToolbarDisplayMode();
+    refreshAdaptersButton_->setEnabled(false);
+    defaultsButton_->setEnabled(false);
+    adapterCombo_->setEnabled(false);
+    targetInput_->setEnabled(false);
+
+    const int total = debugScanFixtureResultCount();
+    showStatusMessage(QString("Running hidden test fixture (%1 devices)...").arg(total));
+    statusProgressBar_->setRange(0, total);
+    statusProgressBar_->setValue(0);
+    statusProgressBar_->setVisible(true);
+
+    cancelRequested_ = std::make_shared<std::atomic_bool>(false);
+    const std::shared_ptr<std::atomic_bool> scanCancellation = cancelRequested_;
+    const int fixtureAccuracy = std::clamp(accuracyLevel_, 0, 3);
+    QFuture<QList<ScanResult>> future = QtConcurrent::run(
+        [this, fixtureAccuracy, scanCancellation]() {
+            const auto onProgress = [this, scanCancellation](int current, int progressTotal) {
+                if (cancellable::isCancelled(scanCancellation)) {
+                    return;
+                }
+                QMetaObject::invokeMethod(
+                    this, [this, current, progressTotal, scanCancellation]() {
+                        if (!cancellable::isCancelled(scanCancellation)) {
+                            updateProgress(current, progressTotal);
+                        }
+                    }, Qt::QueuedConnection);
+            };
+            const auto onResult = [this, scanCancellation](const ScanResult &result) {
+                if (cancellable::isCancelled(scanCancellation)) {
+                    return;
+                }
+                QMetaObject::invokeMethod(this, [this, result, scanCancellation]() {
+                    if (!cancellable::isCancelled(scanCancellation) &&
+                        !scanCompletionPending_ && scanInProgress_) {
+                        queueResultForDisplay(result);
+                    }
+                }, Qt::QueuedConnection);
+            };
+            return runDebugScan(fixtureAccuracy, scanCancellation, onProgress, onResult);
+        });
+    scanWatcher_.setFuture(future);
+}
+
+QList<ScanResult> ScannerWindow::runDebugScan(
+    int accuracyLevel,
+    const std::shared_ptr<std::atomic_bool> &cancelRequested,
+    const std::function<void(int, int)> &onProgress,
+    const std::function<void(const ScanResult &)> &onResult) const
+{
+    QList<ScanResult> results;
+    const int total = debugScanFixtureResultCount();
+    results.reserve(total);
+    const int intervalMs = debugScanFixtureIntervalMs(accuracyLevel);
+    for (int index = 0; index < total; ++index) {
+        if (cancellable::isCancelled(cancelRequested) ||
+            cancellable::waitForDelay(intervalMs, cancelRequested) !=
+                cancellable::WaitResult::Completed) {
+            break;
+        }
+        const ScanResult result = debugScanFixtureResult(index);
+        results.append(result);
+        if (onResult) {
+            onResult(result);
+        }
+        if (onProgress) {
+            onProgress(index + 1, total);
+        }
+    }
+    return results;
 }
 
 QList<QHostAddress> ScannerWindow::parseTargetsInput(const QString &text, QString *error) const
@@ -2131,7 +2223,8 @@ void ScannerWindow::completeScanPresentation()
     scanInProgress_ = false;
     scanButton_->setToolTip("Start scan");
     applyToolbarDisplayMode();
-    scanButton_->setEnabled(!adapters_.isEmpty());
+    scanButton_->setEnabled(!adapters_.isEmpty() ||
+                            isDebugScanFixtureTarget(targetInput_->text()));
     refreshAdaptersButton_->setEnabled(true);
     defaultsButton_->setEnabled(!defaultTargetText_.isEmpty());
     adapterCombo_->setEnabled(true);

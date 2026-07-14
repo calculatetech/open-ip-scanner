@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(OpenIpScanner VERSION 0.4.4 LANGUAGES CXX)
+project(OpenIpScanner VERSION 0.4.5 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -21,6 +21,8 @@ add_executable(open_ip_scanner
     src/main.cpp
     src/cancellablewait.h
     src/cancellablewait.cpp
+    src/debugscanfixture.h
+    src/debugscanfixture.cpp
     src/neighborentry.h
     src/neighborentry.cpp
     src/scanbudget.h
@@ -43,6 +45,20 @@ add_executable(open_ip_scanner
 include(CTest)
 
 if(BUILD_TESTING)
+    add_executable(debug_scan_fixture_test
+        tests/debugscanfixture_test.cpp
+        src/debugscanfixture.h
+        src/debugscanfixture.cpp
+        src/neighborentry.h
+        src/neighborentry.cpp
+        src/scanresult.h
+        src/serviceevidence.h
+        src/serviceevidence.cpp
+    )
+    target_include_directories(debug_scan_fixture_test PRIVATE src)
+    target_link_libraries(debug_scan_fixture_test PRIVATE ${QT_PACKAGE}::Core ${QT_PACKAGE}::Network)
+    add_test(NAME debug_scan_fixture_contract COMMAND debug_scan_fixture_test)
+
     add_executable(scan_options_test
         tests/scanoptions_test.cpp
         src/scanoptions.h
@@ -99,6 +115,8 @@ if(BUILD_TESTING)
         tests/settingsdialog_test.cpp
         src/cancellablewait.h
         src/cancellablewait.cpp
+        src/debugscanfixture.h
+        src/debugscanfixture.cpp
         src/neighborentry.h
         src/neighborentry.cpp
         src/scanbudget.h
