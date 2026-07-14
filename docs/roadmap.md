@@ -121,11 +121,11 @@ Priority matches the most severe audit finding an item closes. All items in the 
 
 #### MDNS-TESTS
 
-- [ ] **Add a deterministic mDNS reverse-resolution compatibility suite.** `High`
+- [x] **Add a deterministic mDNS reverse-resolution compatibility suite.** `High`
   - Test success, no reverse record, delayed response, malformed data, explicit PTR and system-resolver precedence, local-name precedence, alternate-name retention, expiry, missing daemon, missing backend, wrong interface, overlapping addresses, cancellation, and fallback behavior.
   - Include an end-to-end fixture with a controlled responder; do not rely on whatever consumer devices happen to be present on a developer LAN.
   - Current progress on `0.5.2`: deterministic contracts cover success, no record, delayed and coalesced replies, positive and negative cache expiry, malformed names and mismatched reply fields, missing daemon/backend distinctions, daemon recovery, wrong interfaces, overlapping addresses, cancellation, timeout, explicit PTR/System/Local/mDNS precedence, alternate retention, and fallback. An opt-in CTest runs the production Avahi D-Bus backend against a private D-Bus daemon and an interface-scoped Avahi responder on an isolated dummy network; it proves positive resolution, wrong-interface rejection, and prompt active cancellation without touching the consumer LAN. A bounded GitHub Actions job builds and runs that CTest fixture for relevant changes.
-  - Validation evidence: normal and strict-warning suites pass 11/11, all ten non-rendering tests pass under ThreadSanitizer, both mDNS compatibility CTests pass in an isolated user/network namespace, and the live local Avahi backend check passes. The generated 0.5.2 package retains Qt D-Bus/Network dependencies and the `avahi-daemon` recommendation. Final fresh review found no code, CI, or fixture issue; the first hosted run and human verification remain before merge.
+  - Completion evidence: normal and strict-warning suites pass 11/11, all ten non-rendering tests pass under ThreadSanitizer, both mDNS compatibility CTests pass in an isolated user/network namespace, and the live local Avahi backend check passes. The generated 0.5.2 package retains Qt D-Bus/Network dependencies and the `avahi-daemon` recommendation. Final fresh review found no code, CI, or fixture issue, and GitHub Actions run `29358490668` passed the containerized two-test compatibility suite. Human verification remains before merge.
   - Done when these tests run under CTest in CI, prove the parser/backend contract, show only the selected plain hostname in the table, and show every distinct source-labeled name in the aligned details list.
 
 ### Settings, persisted data, and export
