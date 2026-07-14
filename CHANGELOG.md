@@ -2,6 +2,22 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.5.18] - 2026-07-14
+
+### Changed
+
+- Moved production probe wiring and Linux default-gateway lookup into a
+  window-free `ois_runtime` composition layer, while platform-neutral debug
+  fixture execution now belongs to `ois_scan`.
+- Scan-session work now captures only immutable options, hosts, and pure
+  vendor/details callbacks; worker threads no longer invoke a UI object.
+
+### Added
+
+- Added direct contracts for valid lowest-metric route-table gateway selection,
+  production composition/callback wiring, Linux gateway hex decoding, and
+  debug-runner publication, progress, and cancellation.
+
 ## [0.5.17] - 2026-07-14
 
 ### Changed

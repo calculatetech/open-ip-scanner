@@ -1,12 +1,7 @@
 #include "scannerwindow.h"
-#include "cancellablewait.h"
 #include "csvexporter.h"
 #include "debugscanfixture.h"
 #include "devicepresentation.h"
-#include "hostnameresolver.h"
-#include "mdnsresolver.h"
-#include "linuxneighborprobe.h"
-#include "linuxpingprobe.h"
 #include "ouidatabase.h"
 #include "resulttablemodel.h"
 #include "servicetagdelegate.h"
@@ -15,6 +10,7 @@
 #include "targetparser.h"
 #include "scansession.h"
 #include "serviceprobe.h"
+#include "scanrunners.h"
 
 #include <QAction>
 #include <QAbstractButton>
@@ -1055,11 +1051,28 @@ void ScannerWindow::startScan()
     statusProgressBar_->setValue(0);
     statusProgressBar_->setVisible(true);
 
+    const ScanVendorResolver vendorResolver = [](const QString &mac,
+                                                 const ScanOptions &options) {
+        return OuiDatabase::lookup(mac,
+                                   options.customOuiVendors,
+                                   options.builtInOuiVendors);
+    };
+    const ScanDetailsFormatter detailsFormatter = [](const ScanResult &result,
+                                                      const ScanOptions &options) {
+        return deviceDetailsHtml(result, options.macDisplayFormat);
+    };
     const bool launched = scanSession_->start(
-        [this, scanOptions, hosts](const ScanSession::Cancellation &cancellation,
-                                   const ScanSession::ProgressCallback &progress,
-                                   const ScanSession::ResultCallback &result) {
-            return scanHosts(scanOptions, hosts, cancellation, progress, result);
+        [scanOptions, hosts, vendorResolver, detailsFormatter](
+            const ScanSession::Cancellation &cancellation,
+            const ScanSession::ProgressCallback &progress,
+            const ScanSession::ResultCallback &result) {
+            return runProductionScan(scanOptions,
+                                     hosts,
+                                     cancellation,
+                                     progress,
+                                     result,
+                                     vendorResolver,
+                                     detailsFormatter);
         });
     if (!launched) {
         completeScanPresentation();
@@ -1090,43 +1103,16 @@ void ScannerWindow::startDebugScan()
 
     const int fixtureAccuracy = std::clamp(accuracyLevel_, 0, 3);
     const bool launched = scanSession_->start(
-        [this, fixtureAccuracy](const ScanSession::Cancellation &cancellation,
-                                const ScanSession::ProgressCallback &progress,
-                                const ScanSession::ResultCallback &result) {
-            return runDebugScan(fixtureAccuracy, cancellation, progress, result);
+        [fixtureAccuracy](const ScanSession::Cancellation &cancellation,
+                          const ScanSession::ProgressCallback &progress,
+                          const ScanSession::ResultCallback &result) {
+            return runDebugScanFixture(
+                fixtureAccuracy, cancellation, progress, result);
         });
     if (!launched) {
         completeScanPresentation();
         showStatusMessage("Could not start the test scan worker. Try again.");
     }
-}
-
-QList<ScanResult> ScannerWindow::runDebugScan(
-    int accuracyLevel,
-    const std::shared_ptr<std::atomic_bool> &cancelRequested,
-    const std::function<void(int, int)> &onProgress,
-    const std::function<void(const ScanResult &)> &onResult) const
-{
-    QList<ScanResult> results;
-    const int total = debugScanFixtureResultCount();
-    results.reserve(total);
-    const int intervalMs = debugScanFixtureIntervalMs(accuracyLevel);
-    for (int index = 0; index < total; ++index) {
-        if (cancellable::isCancelled(cancelRequested) ||
-            cancellable::waitForDelay(intervalMs, cancelRequested) !=
-                cancellable::WaitResult::Completed) {
-            break;
-        }
-        const ScanResult result = debugScanFixtureResult(index);
-        results.append(result);
-        if (onResult) {
-            onResult(result);
-        }
-        if (onProgress) {
-            onProgress(index + 1, total);
-        }
-    }
-    return results;
 }
 
 QList<QHostAddress> ScannerWindow::parseTargetsInput(const QString &text, QString *error) const
@@ -1136,128 +1122,6 @@ QList<QHostAddress> ScannerWindow::parseTargetsInput(const QString &text, QStrin
         *error = result.error;
     }
     return result.hosts;
-}
-
-QList<ScanResult> ScannerWindow::scanHosts(const ScanOptions &options,
-                                           const QList<QHostAddress> &hosts,
-                                           const std::shared_ptr<std::atomic_bool> &cancelRequested,
-                                           const std::function<void(int, int)> &onProgress,
-                                           const std::function<void(const ScanResult &)> &onResult) const
-{
-    const QString gatewayIp = lookupGatewayIp(options.interfaceName);
-    const int interfaceIndex = QNetworkInterface::interfaceIndexFromName(
-        options.interfaceName);
-    auto mdnsResolver = std::make_shared<ScanMdnsResolver>(
-        interfaceIndex, cancelRequested, createAvahiDbusBackend());
-    auto hostnameResolver = std::make_shared<HostnameResolver>(mdnsResolver);
-    auto neighborProbe = std::make_shared<LinuxNeighborProbe>();
-    auto pingProbe = std::make_shared<LinuxPingProbe>();
-    auto serviceProbe = std::make_shared<ServiceProbe>();
-    ProductionHostScanDependencies dependencies;
-    dependencies.ping = [pingProbe](const QHostAddress &host,
-                                    const ScanOptions &scanOptions,
-                                    const TargetBudget &budget,
-                                    const auto &cancellation) {
-        return pingProbe->ping(host,
-                               scanOptions.interfaceName,
-                               scanOptions.pingAttempts,
-                               scanOptions.pingTimeoutSeconds,
-                               budget,
-                               cancellation);
-    };
-    dependencies.services = [serviceProbe](const QString &ip,
-                                           const QString &localIp,
-                                           const TargetBudget &budget,
-                                           const auto &cancellation,
-                                           const ScanOptions &scanOptions) {
-        return serviceProbe->scan(ip,
-                                  localIp,
-                                  scanOptions.enabledServiceIds,
-                                  scanOptions.serviceAttempts,
-                                  scanOptions.serviceTimeoutMs,
-                                  budget,
-                                  cancellation);
-    };
-    dependencies.neighbor = [neighborProbe](const QString &ip,
-                                            const QString &interfaceName,
-                                            const TargetBudget &budget,
-                                            const auto &cancellation) {
-        return neighborProbe->lookup(ip, interfaceName, budget, cancellation);
-    };
-    dependencies.confirmNeighbor = [neighborProbe](
-                                               const NeighborObservation &initial,
-                                               const QString &ip,
-                                               const QString &interfaceName,
-                                               const ScanOptions &scanOptions,
-                                               const TargetBudget &budget,
-                                               const auto &cancellation) {
-        return neighborProbe->confirmLiveness(initial,
-                                              ip,
-                                              interfaceName,
-                                              scanOptions.neighborConfirmationMs,
-                                              budget,
-                                              cancellation);
-    };
-    dependencies.vendor = [](const QString &mac,
-                             const ScanOptions &scanOptions) {
-        return OuiDatabase::lookup(mac,
-                                   scanOptions.customOuiVendors,
-                                   scanOptions.builtInOuiVendors);
-    };
-    dependencies.hostname = [hostnameResolver](
-                                const QString &ip,
-                                const HostnameEvidence &preliminary,
-                                const QStringList &dnsSuffixes,
-                                int accuracyLevel,
-                                const TargetBudget &budget,
-                                const auto &cancellation) {
-        return hostnameResolver->resolve(ip,
-                                         preliminary,
-                                         dnsSuffixes,
-                                         accuracyLevel,
-                                         budget,
-                                         cancellation);
-    };
-    dependencies.details = [](const ScanResult &result,
-                              const ScanOptions &scanOptions) {
-        return deviceDetailsHtml(result, scanOptions.macDisplayFormat);
-    };
-    ProductionHostScanBackend backend(options, gatewayIp, std::move(dependencies));
-    return ScanEngine::run(hosts,
-                           options.maxParallelProbes,
-                           cancelRequested,
-                           backend,
-                           onProgress,
-                           onResult);
-}
-
-QString ScannerWindow::lookupGatewayIp(const QString &interfaceName) const
-{
-#ifdef Q_OS_LINUX
-    QFile routeFile("/proc/net/route");
-    if (!routeFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
-        return {};
-    }
-
-    while (!routeFile.atEnd()) {
-        const QString line = QString::fromUtf8(routeFile.readLine()).trimmed();
-        if (line.isEmpty() || line.startsWith("Iface")) {
-            continue;
-        }
-
-        const QStringList fields = line.split(QRegularExpression("\\s+"), Qt::SkipEmptyParts);
-        if (fields.size() < 3) {
-            continue;
-        }
-
-        if (fields[0] == interfaceName && fields[1] == "00000000") {
-            return hexGatewayToIp(fields[2]);
-        }
-    }
-#else
-    Q_UNUSED(interfaceName)
-#endif
-    return {};
 }
 
 QString ScannerWindow::serviceText(const QList<ServiceHit> &services) const
@@ -3369,21 +3233,6 @@ quint32 ScannerWindow::ipv4ToInt(const QHostAddress &address)
 QHostAddress ScannerWindow::intToIpv4(quint32 value)
 {
     return QHostAddress(value);
-}
-
-QString ScannerWindow::hexGatewayToIp(const QString &hexGateway)
-{
-    bool ok = false;
-    const quint32 value = hexGateway.toUInt(&ok, 16);
-    if (!ok) {
-        return {};
-    }
-
-    const quint32 b1 = value & 0x000000FFu;
-    const quint32 b2 = (value & 0x0000FF00u) >> 8;
-    const quint32 b3 = (value & 0x00FF0000u) >> 16;
-    const quint32 b4 = (value & 0xFF000000u) >> 24;
-    return QString("%1.%2.%3.%4").arg(b1).arg(b2).arg(b3).arg(b4);
 }
 
 bool ScannerWindow::parseIpv4(const QString &text, quint32 *out)

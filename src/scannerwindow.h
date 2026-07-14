@@ -11,16 +11,8 @@
 #include <QString>
 #include <QStringList>
 
-#include <atomic>
-#include <functional>
-#include <memory>
-
 #include "scanoptions.h"
 #include "devicepresentation.h"
-#include "scanengine.h"
-#include "productionhostscanbackend.h"
-#include "scanbudget.h"
-#include "neighborentry.h"
 #include "scanresult.h"
 #include "serviceevidence.h"
 #include "targetdefaults.h"
@@ -137,21 +129,7 @@ private:
     // Parse user target syntax (CIDR/range/single IP) into host addresses.
     QList<QHostAddress> parseTargetsInput(const QString &text, QString *error) const;
 
-    // Main worker entry point for host discovery and enrichment.
-    QList<ScanResult> scanHosts(const ScanOptions &options,
-                                const QList<QHostAddress> &hosts,
-                                const std::shared_ptr<std::atomic_bool> &cancelRequested,
-                                const std::function<void(int, int)> &onProgress,
-                                const std::function<void(const ScanResult &)> &onResult) const;
     void startDebugScan();
-    QList<ScanResult> runDebugScan(
-        int accuracyLevel,
-        const std::shared_ptr<std::atomic_bool> &cancelRequested,
-        const std::function<void(int, int)> &onProgress,
-        const std::function<void(const ScanResult &)> &onResult) const;
-
-    // Host discovery helpers.
-    QString lookupGatewayIp(const QString &interfaceName) const;
 
     // Service detection and details enrichment.
     void updateDetailsPaneForCurrentSelection();
@@ -218,7 +196,6 @@ private:
     // Utility conversion helpers.
     static quint32 ipv4ToInt(const QHostAddress &address);
     static QHostAddress intToIpv4(quint32 value);
-    static QString hexGatewayToIp(const QString &hexGateway);
     static bool parseIpv4(const QString &text, quint32 *out);
     static QIcon createPlayIcon();
     static QIcon createStopIcon();

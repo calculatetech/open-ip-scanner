@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.28)
-project(OpenIpScanner VERSION 0.5.17 LANGUAGES CXX)
+project(OpenIpScanner VERSION 0.5.18 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -70,6 +70,13 @@ target_link_libraries(ois_linux
     PUBLIC ois_core Qt6::Core Qt6::Network
     PRIVATE Qt6::DBus)
 
+add_library(ois_runtime STATIC
+    src/scanrunners.h
+    src/scanrunners.cpp
+)
+target_include_directories(ois_runtime PUBLIC src)
+target_link_libraries(ois_runtime PUBLIC ois_core ois_scan ois_linux)
+
 add_library(ois_ui STATIC
     src/devicepresentation.h
     src/devicepresentation.cpp
@@ -83,7 +90,7 @@ add_library(ois_ui STATIC
 )
 target_include_directories(ois_ui PUBLIC src)
 target_link_libraries(ois_ui PUBLIC
-    ois_core ois_scan ois_linux
+    ois_core ois_scan ois_linux ois_runtime
     Qt6::Widgets Qt6::Network Qt6::PrintSupport Qt6::DBus)
 target_compile_definitions(ois_ui PUBLIC
     OPEN_IP_SCANNER_VERSION="${PROJECT_VERSION}")
@@ -169,6 +176,10 @@ if(BUILD_TESTING)
     add_executable(hostname_resolver_test tests/hostnameresolver_test.cpp)
     target_link_libraries(hostname_resolver_test PRIVATE ois_linux)
     add_test(NAME hostname_resolver_contract COMMAND hostname_resolver_test)
+
+    add_executable(scan_runners_test tests/scanrunners_test.cpp)
+    target_link_libraries(scan_runners_test PRIVATE ois_runtime)
+    add_test(NAME scan_runners_contract COMMAND scan_runners_test)
 
     add_executable(scan_budget_test tests/scanbudget_test.cpp)
     target_link_libraries(scan_budget_test PRIVATE ois_scan)

@@ -4,6 +4,8 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
+#include <thread>
 
 namespace {
 
@@ -120,4 +122,36 @@ ScanResult debugScanFixtureResult(int index)
         "<p>Evidence: synthetic<br>Network traffic: none</p>")
                              .arg(boundedIndex + 1);
     return result;
+}
+
+QList<ScanResult> runDebugScanFixture(
+    int accuracyLevel,
+    const std::shared_ptr<std::atomic_bool> &cancellation,
+    const std::function<void(int, int)> &onProgress,
+    const std::function<void(const ScanResult &)> &onResult)
+{
+    QList<ScanResult> results;
+    const int total = debugScanFixtureResultCount();
+    results.reserve(total);
+    const int intervalMs = debugScanFixtureIntervalMs(accuracyLevel);
+    for (int index = 0; index < total; ++index) {
+        for (int elapsed = 0; elapsed < intervalMs; ++elapsed) {
+            if (cancellation && cancellation->load()) {
+                return results;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        if (cancellation && cancellation->load()) {
+            break;
+        }
+        const ScanResult result = debugScanFixtureResult(index);
+        results.append(result);
+        if (onResult) {
+            onResult(result);
+        }
+        if (onProgress) {
+            onProgress(index + 1, total);
+        }
+    }
+    return results;
 }
