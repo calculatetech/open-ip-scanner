@@ -54,8 +54,12 @@ if [[ $mode == full || $mode == release ]]; then
         '-DCMAKE_CXX_FLAGS=-fsanitize=thread -fno-omit-frame-pointer' \
         '-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=thread'
     cmake --build build/quality-tsan --parallel "$jobs"
+    tsan_exclusion='settings_dialog_stability|service_probe_tls_integration'
+    if [[ -n ${OIS_TSAN_EXCLUDE:-} ]]; then
+        tsan_exclusion+="|${OIS_TSAN_EXCLUDE}"
+    fi
     ctest --test-dir build/quality-tsan --output-on-failure \
-        -E 'settings_dialog_stability|service_probe_tls_integration'
+        -E "$tsan_exclusion"
 
     if command -v clang-tidy >/dev/null 2>&1; then
         cmake -S . -B build/quality-clang-tidy -G Ninja -DBUILD_TESTING=OFF \
