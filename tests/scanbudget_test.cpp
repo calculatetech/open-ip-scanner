@@ -23,16 +23,16 @@ int main()
 
     require(fast.targetDeadlineMs == 5000 && fast.pingAttempts == 1 &&
             fast.pingTimeoutSeconds == 1 && fast.serviceAttempts == 1 &&
-            fast.serviceTimeoutMs == 350);
+            fast.serviceTimeoutMs == 350 && fast.neighborConfirmationMs == 0);
     require(balanced.targetDeadlineMs == 11000 && balanced.pingAttempts == 2 &&
             balanced.pingTimeoutSeconds == 1 && balanced.serviceAttempts == 2 &&
-            balanced.serviceTimeoutMs == 750);
+            balanced.serviceTimeoutMs == 750 && balanced.neighborConfirmationMs == 5500);
     require(high.targetDeadlineMs == 25000 && high.pingAttempts == 3 &&
             high.pingTimeoutSeconds == 2 && high.serviceAttempts == 3 &&
-            high.serviceTimeoutMs == 1250);
+            high.serviceTimeoutMs == 1250 && high.neighborConfirmationMs == 6500);
     require(maximum.targetDeadlineMs == 50000 && maximum.pingAttempts == 4 &&
             maximum.pingTimeoutSeconds == 3 && maximum.serviceAttempts == 4 &&
-            maximum.serviceTimeoutMs == 2000);
+            maximum.serviceTimeoutMs == 2000 && maximum.neighborConfirmationMs == 8000);
     require(scanBudgetProfile(-1).targetDeadlineMs == fast.targetDeadlineMs);
     require(scanBudgetProfile(99).targetDeadlineMs == maximum.targetDeadlineMs);
 
@@ -66,12 +66,12 @@ int main()
     require(targetDeadlineForProfile(fast, 0) == 5000);
     require(targetDeadlineForProfile(fast, 4) == 5000);
     require(targetDeadlineForProfile(fast, 10) == 7000);
-    require(targetDeadlineForProfile(balanced, 4) == 11000);
-    require(targetDeadlineForProfile(balanced, 10) == 20000);
-    require(targetDeadlineForProfile(high, 4) == 25000);
-    require(targetDeadlineForProfile(high, 10) == 47000);
-    require(targetDeadlineForProfile(maximum, 4) == 50000);
-    require(targetDeadlineForProfile(maximum, 10) == 96000);
+    require(targetDeadlineForProfile(balanced, 4) == 16500);
+    require(targetDeadlineForProfile(balanced, 10) == 25500);
+    require(targetDeadlineForProfile(high, 4) == 31000);
+    require(targetDeadlineForProfile(high, 10) == 53500);
+    require(targetDeadlineForProfile(maximum, 4) == 56000);
+    require(targetDeadlineForProfile(maximum, 10) == 104000);
 
     TargetBudget::TimePoint now{};
     TargetBudget budget(100, [&]() { return now; });

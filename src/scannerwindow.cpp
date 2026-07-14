@@ -1255,6 +1255,12 @@ QList<ScanResult> ScannerWindow::scanHosts(const ScanOptions &options,
                     if (!alive) {
                         neighbor = lookupNeighbor(
                             ipString, options.interfaceName, budget, cancelRequested);
+                        neighbor = confirmNeighborLiveness(neighbor,
+                                                          ipString,
+                                                          options.interfaceName,
+                                                          options,
+                                                          budget,
+                                                          cancelRequested);
                         if (neighbor.suppliesMacMetadata()) {
                             discoveredMac = neighbor.mac;
                         }
@@ -1436,6 +1442,43 @@ NeighborObservation ScannerWindow::lookupNeighbor(
     Q_UNUSED(cancelRequested)
 #endif
     return {};
+}
+
+NeighborObservation ScannerWindow::confirmNeighborLiveness(
+    const NeighborObservation &initial,
+    const QString &ip,
+    const QString &interfaceName,
+    const ScanOptions &options,
+    const TargetBudget &budget,
+    const std::shared_ptr<std::atomic_bool> &cancelRequested) const
+{
+    NeighborObservation latest = initial;
+    if (!latest.suppliesMacMetadata() || latest.establishesLiveness() ||
+        options.neighborConfirmationMs <= 0 || budget.expired()) {
+        return latest;
+    }
+
+    QElapsedTimer confirmation;
+    confirmation.start();
+    while (confirmation.elapsed() < options.neighborConfirmationMs && !budget.expired()) {
+        const int confirmationRemaining = options.neighborConfirmationMs -
+                                          static_cast<int>(confirmation.elapsed());
+        const int waitMs = std::min({250, confirmationRemaining, budget.remainingMs()});
+        if (waitMs <= 0 ||
+            cancellable::waitForDelay(waitMs, cancelRequested) !=
+                cancellable::WaitResult::Completed) {
+            break;
+        }
+        const NeighborObservation candidate =
+            lookupNeighbor(ip, interfaceName, budget, cancelRequested);
+        if (candidate.suppliesMacMetadata()) {
+            latest = candidate;
+        }
+        if (candidate.establishesLiveness()) {
+            return candidate;
+        }
+    }
+    return latest;
 }
 
 QString ScannerWindow::lookupVendor(const QString &mac, const ScanOptions &options) const
@@ -3037,8 +3080,9 @@ void ScannerWindow::showHelpDialog()
         "<p><b>Performance:</b> Worker count controls parallel host probing. "
         "Higher values scan faster but increase network load.</p>"
         "<p><b>Accuracy:</b> Fast performs one short probe pass for a quick lay of the land. "
-        "Balanced through Maximum progressively repeat ping and port probes and wait longer "
-        "for intermittent, sleeping, or slower devices.</p>"
+        "Balanced through Maximum progressively repeat ping and port probes and allow cached "
+        "neighbor evidence time to become actively confirmed for intermittent, sleeping, or "
+        "slower devices.</p>"
         "<p><b>Services:</b> Enable/disable per-port probing and configure launch commands in "
         "Settings &rarr; Programs. An unverified connection is shown as "
         "<code>Unknown:&lt;port&gt;</code>; a service name appears after a bounded protocol check "
@@ -3089,6 +3133,7 @@ ScanOptions ScannerWindow::captureScanOptions(const AdapterInfo &adapter) const
     options.pingTimeoutSeconds = budget.pingTimeoutSeconds;
     options.serviceAttempts = budget.serviceAttempts;
     options.serviceTimeoutMs = budget.serviceTimeoutMs;
+    options.neighborConfirmationMs = budget.neighborConfirmationMs;
     options.macDisplayFormat = macDisplayFormat_;
     options.enabledServiceIds = enabledServiceIds_;
     int serviceWaitUnits = 0;

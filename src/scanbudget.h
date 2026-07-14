@@ -14,6 +14,7 @@ struct ScanBudgetProfile {
     int pingTimeoutSeconds = 1;
     int serviceAttempts = 2;
     int serviceTimeoutMs = 750;
+    int neighborConfirmationMs = 5500;
 };
 
 constexpr int kProcessCleanupReserveMs = 50;
@@ -47,11 +48,11 @@ constexpr int pingAttemptWaitMs(int timeoutSeconds)
 inline ScanBudgetProfile scanBudgetProfile(int accuracyLevel)
 {
     switch (std::clamp(accuracyLevel, 0, 3)) {
-    case 0: return {5000, 1, 1, 1, 350};
-    case 1: return {11000, 2, 1, 2, 750};
-    case 2: return {25000, 3, 2, 3, 1250};
-    case 3: return {50000, 4, 3, 4, 2000};
-    default: return {11000, 2, 1, 2, 750};
+    case 0: return {5000, 1, 1, 1, 350, 0};
+    case 1: return {11000, 2, 1, 2, 750, 5500};
+    case 2: return {25000, 3, 2, 3, 1250, 6500};
+    case 3: return {50000, 4, 3, 4, 2000, 8000};
+    default: return {11000, 2, 1, 2, 750, 5500};
     }
 }
 
@@ -71,7 +72,9 @@ inline int targetDeadlineForProfile(const ScanBudgetProfile &profile, int servic
     const std::int64_t serviceWork =
         static_cast<std::int64_t>(serviceWaitUnits) * profile.serviceAttempts *
         profile.serviceTimeoutMs;
-    const std::int64_t required = pingWork + serviceWork + kNonServiceStageReserveMs;
+    const std::int64_t required = pingWork + serviceWork +
+                                  profile.neighborConfirmationMs +
+                                  kNonServiceStageReserveMs;
     return static_cast<int>(std::min<std::int64_t>(
         std::max<std::int64_t>(profile.targetDeadlineMs, required),
         std::numeric_limits<int>::max()));
@@ -80,11 +83,11 @@ inline int targetDeadlineForProfile(const ScanBudgetProfile &profile, int servic
 inline const char *scanBudgetProfileSummary(int accuracyLevel)
 {
     switch (std::clamp(accuracyLevel, 0, 3)) {
-    case 0: return "1 attempt; 1 s ping / 350 ms port wait";
-    case 1: return "2 attempts; 1 s ping / 750 ms port wait";
-    case 2: return "3 attempts; 2 s ping / 1.25 s port wait";
-    case 3: return "4 attempts; 3 s ping / 2 s port wait";
-    default: return "2 attempts; 1 s ping / 750 ms port wait";
+    case 0: return "1 attempt; 1 s ping / 350 ms port; no neighbor wait";
+    case 1: return "2 attempts; 1 s ping / 750 ms port; 5.5 s neighbor confirm";
+    case 2: return "3 attempts; 2 s ping / 1.25 s port; 6.5 s neighbor confirm";
+    case 3: return "4 attempts; 3 s ping / 2 s port; 8 s neighbor confirm";
+    default: return "2 attempts; 1 s ping / 750 ms port; 5.5 s neighbor confirm";
     }
 }
 

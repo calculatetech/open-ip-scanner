@@ -8,6 +8,7 @@ All notable changes to this project are documented in this file.
 - Replaced per-cell result widgets with an interface-and-IP keyed table model and painted service tags.
 - Publish results continuously in bounded UI batches while preserving deterministic insertion order, selection, and the anchored viewport.
 - Reconcile authoritative completion results through the same bounded path without clearing, rebuilding, or unexpectedly sorting the table.
+- Let Balanced through Maximum accuracy wait a bounded interval for valid cached neighbor evidence to become actively confirmed, improving detection of slow or sleeping devices without treating stale cache entries as definitive.
 
 ### Added
 - Added a 4,096-row GUI responsiveness benchmark covering scrambled arrivals, explicit sorting, filtering, completion reconciliation, and scroll-anchor stability.

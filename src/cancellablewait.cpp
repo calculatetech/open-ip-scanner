@@ -5,6 +5,7 @@
 #include <QEventLoop>
 #include <QProcess>
 #include <QTcpSocket>
+#include <QThread>
 #include <QTimer>
 
 #include <algorithm>
@@ -145,6 +146,23 @@ WaitResult waitForReadyRead(QTcpSocket &socket, int timeoutMs, const Flag &flag)
             return socket.state() == QAbstractSocket::UnconnectedState ||
                    socket.error() == QAbstractSocket::RemoteHostClosedError;
         });
+}
+
+WaitResult waitForDelay(int timeoutMs, const Flag &flag)
+{
+    if (timeoutMs <= 0) {
+        return isCancelled(flag) ? WaitResult::Cancelled : WaitResult::Completed;
+    }
+    QElapsedTimer elapsed;
+    elapsed.start();
+    while (elapsed.elapsed() < timeoutMs) {
+        if (isCancelled(flag)) {
+            return WaitResult::Cancelled;
+        }
+        const int remaining = timeoutMs - static_cast<int>(elapsed.elapsed());
+        QThread::msleep(static_cast<unsigned long>(std::min(kPollIntervalMs, remaining)));
+    }
+    return isCancelled(flag) ? WaitResult::Cancelled : WaitResult::Completed;
 }
 
 QHostInfo lookupHost(const QString &address, int timeoutMs, const Flag &flag, WaitResult *result)

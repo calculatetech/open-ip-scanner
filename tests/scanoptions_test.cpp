@@ -33,6 +33,7 @@ int main()
     preferences.pingTimeoutSeconds = 1;
     preferences.serviceAttempts = 1;
     preferences.serviceTimeoutMs = 280;
+    preferences.neighborConfirmationMs = 5500;
     preferences.targetDeadlineMs = 2000;
     preferences.macDisplayFormat = 0;
     preferences.enabledServiceIds = {"http", "ssh"};
@@ -57,6 +58,7 @@ int main()
             require(activeScan.pingTimeoutSeconds == 1);
             require(activeScan.serviceAttempts == 1);
             require(activeScan.serviceTimeoutMs == 280);
+            require(activeScan.neighborConfirmationMs == 5500);
             require(activeScan.targetDeadlineMs == 2000);
             require(activeScan.macDisplayFormat == 0);
             require(activeScan.enabledServiceIds == QSet<QString>({"http", "ssh"}));
@@ -88,6 +90,7 @@ int main()
     preferences.pingTimeoutSeconds = 3;
     preferences.serviceAttempts = 3;
     preferences.serviceTimeoutMs = 700;
+    preferences.neighborConfirmationMs = 8000;
     preferences.targetDeadlineMs = 8000;
     preferences.macDisplayFormat = 6;
     preferences.enabledServiceIds = {"rdp"};
@@ -116,6 +119,7 @@ int main()
     require(nextScan.pingTimeoutSeconds == 3);
     require(nextScan.serviceAttempts == 3);
     require(nextScan.serviceTimeoutMs == 700);
+    require(nextScan.neighborConfirmationMs == 8000);
     require(nextScan.targetDeadlineMs == 8000);
     require(nextScan.macDisplayFormat == 6);
     require(nextScan.enabledServiceIds == QSet<QString>({"rdp"}));

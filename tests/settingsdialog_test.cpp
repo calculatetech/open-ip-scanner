@@ -6,6 +6,7 @@
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QElapsedTimer>
+#include <QFile>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
@@ -15,6 +16,7 @@
 #include <QSlider>
 #include <QStandardPaths>
 #include <QTableView>
+#include <QTemporaryDir>
 #include <QTimer>
 
 #include <arpa/inet.h>
@@ -108,9 +110,10 @@ struct ScannerWindowTestAccess {
                options.localIp == "192.0.2.10" &&
                options.localMac == "02:00:00:00:00:10" && options.pingAttempts == 2 &&
                options.pingTimeoutSeconds == 1 && options.serviceAttempts == 2 &&
-               options.serviceTimeoutMs == 750 && options.macDisplayFormat == 6 &&
+               options.serviceTimeoutMs == 750 && options.neighborConfirmationMs == 5500 &&
+               options.macDisplayFormat == 6 &&
                options.enabledServiceIds == QSet<QString>({"http", "smtp587", "rdp"}) &&
-               options.targetDeadlineMs == 17000 &&
+               options.targetDeadlineMs == 22500 &&
                options.builtInOuiVendors.value("AABBCC") == "Built in fixture" &&
                options.customOuiVendors.value("DDEEFF") == "Custom fixture";
     }
@@ -288,6 +291,42 @@ struct ScannerWindowTestAccess {
                scanActionDisabledDuringCompletion &&
                orderBeforeCompletion == orderAfterCompletion &&
                window.resultModel_->rowCount() == 4098;
+    }
+
+    static bool confirmsDelayedNeighbor(ScannerWindow &window)
+    {
+        QTemporaryDir tools;
+        if (!tools.isValid()) {
+            return false;
+        }
+        QFile fakeIp(tools.filePath("ip"));
+        if (!fakeIp.open(QIODevice::WriteOnly | QIODevice::Text)) {
+            return false;
+        }
+        fakeIp.write(
+            "#!/bin/sh\n"
+            "printf '%s\\n' '[{\"dst\":\"192.0.2.55\",\"dev\":\"fixture0\","
+            "\"lladdr\":\"02:00:00:00:00:55\",\"state\":[\"REACHABLE\"]}]'\n");
+        fakeIp.close();
+        if (!fakeIp.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner |
+                                   QFileDevice::ExeOwner)) {
+            return false;
+        }
+
+        const QByteArray previousPath = qgetenv("PATH");
+        qputenv("PATH", tools.path().toUtf8() + ':' + previousPath);
+        NeighborObservation initial;
+        initial.ip = "192.0.2.55";
+        initial.interfaceName = "fixture0";
+        initial.mac = "02:00:00:00:00:55";
+        initial.state = NeighborState::Delay;
+        ScanOptions options;
+        options.neighborConfirmationMs = 1000;
+        const TargetBudget budget(2000);
+        const NeighborObservation confirmed = window.confirmNeighborLiveness(
+            initial, initial.ip, initial.interfaceName, options, budget, {});
+        qputenv("PATH", previousPath);
+        return confirmed.establishesLiveness() && confirmed.mac == initial.mac;
     }
 
     static std::pair<bool, ServiceEvidenceLevel> probePlainService(
@@ -499,6 +538,7 @@ int main(int argc, char **argv)
     REQUIRE(ScannerWindowTestAccess::preservesInterfaceIdentity(window));
     REQUIRE(ScannerWindowTestAccess::capturesAllScanOptions(window));
     REQUIRE(ScannerWindowTestAccess::resultScalingContract(window));
+    REQUIRE(ScannerWindowTestAccess::confirmsDelayedNeighbor(window));
 
     const auto verifiedSsh = probeMockEndpoint(window, "ssh", "SSH-2.0-fixture\r\n");
     REQUIRE(verifiedSsh.first);

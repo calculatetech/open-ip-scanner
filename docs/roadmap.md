@@ -18,6 +18,8 @@ The unchecked milestone boxes below mean their complete acceptance criteria are 
 
 Correctness work is active at **RESULT-SCALING** on version `0.4.4`; that version remains stable through implementation, review, human verification, and merge. DUPLICATE-IP-CONFLICTS remains Post-1.0.
 
+The active `0.4.4` validation cycle also repairs a field-discovered neighbor timing gap: a ping-silent device could remain in Linux `DELAY` long enough for the scanner's single neighbor lookup to miss its later `REACHABLE` confirmation. Fast retains an immediate cutoff; Balanced, High, and Maximum now allow progressively longer bounded confirmation windows, remain cancellation-aware, and still reject a cached MAC that never becomes actively confirmed.
+
 ## Priority definitions
 
 - **Blocker:** The current behavior has a confirmed undefined-behavior path, cannot be regression-gated at all, or produces a policy/license-invalid primary artifact. Do this first.
@@ -69,6 +71,7 @@ Priority matches the most severe audit finding an item closes. All items in the 
   - Freshness policy: use the Linux kernel's Neighbor Unreachability Detection state instead of inventing an unavailable wall-clock age. Only a valid unicast-MAC entry in `REACHABLE` may establish liveness. `STALE`, `DELAY`, `PROBE`, and `PERMANENT` supply supplementary MAC metadata only after ping or a service probe establishes liveness. `INCOMPLETE`, `FAILED`, `NONE`, and `NOARP`, as well as entries with missing, zero, broadcast, multicast, or malformed MAC addresses, establish nothing.
   - Current progress on `0.4.2`: production discovery uses interface-scoped `ip -j neigh` JSON instead of `/proc/net/arp`, applies the freshness policy before consuming evidence, and keys neighbor observations and scan-result merging by interface plus IPv4 address. Deterministic tests cover every listed NUD state, invalid MAC forms, malformed JSON, interface filtering, and overlapping addresses on separate links.
   - Completion evidence: deterministic fixtures cover every listed Linux neighbor state, invalid MAC forms, interface filtering, and overlapping links; production UI coverage preserves interface-plus-IP identity; normal, lint, and ThreadSanitizer suites pass; and human validation confirmed expected scan behavior.
+  - `0.4.4` validation repair: deterministic coverage confirms a supplementary `DELAY` observation is accepted only after a later `REACHABLE` observation, the wait is accuracy-scaled and cancellation-aware, and a guarded production-path check recovered the reported slow device from a stale starting state. Normal and strict suites pass 8/8, the relevant ThreadSanitizer set passes 4/4, and a fresh adversarial review found no remaining issue. Renewed human validation remains part of the active `0.4.4` cycle.
 
 #### SERVICE-EVIDENCE
 
