@@ -15,7 +15,9 @@ These rules extend the workspace-level agent instructions and apply to the entir
 
 - Before editing, create or switch to a task-specific branch or worktree. Never perform new work directly on `main`.
 - Keep each branch scoped to one human-verifiable increment. Preserve unrelated user changes and do not move them into the task branch unintentionally.
-- Complete the required tests, linting, and fresh review before publication. Never review review fixes recursively.
+- Every substantive code change requires a fresh read-only adversarial review after implementation and validation and before commit. This includes code changed to address findings from an earlier review: rerun the relevant tests and lint, then review the resulting code again until no further code changes are required.
+- Exempt only mechanical, behavior-neutral corrections such as whitespace-only formatting, comment spelling, or equivalent edits that cannot affect control flow, data, dependencies, runtime/build/security configuration, or generated behavior. Documentation-only changes continue to follow their own validation scope.
+- Complete the required tests, linting, and final fresh review before publication.
 - After a successful required review, automatically create an intentional commit containing only the verified task scope and push the task branch to its upstream remote. No separate prompt is required for that commit or push.
 - Never merge a task branch into `main` until a human has verified the branch and explicitly authorized the merge. A successful automated review, push, or CI run is not human verification and does not authorize merging.
 - Pushing a task branch does not authorize opening a pull request, tagging a release, publishing packages, or merging.

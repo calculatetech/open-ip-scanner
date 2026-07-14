@@ -82,6 +82,7 @@ namespace {
 constexpr int kMaxHostsToScan = 4096;
 constexpr int kMaxParallelProbes = 16;
 constexpr int kSettingsSchemaVersion = 1;
+constexpr int kIdentityRole = Qt::UserRole + 1;
 // Default toolbar layout used on first launch and settings reset.
 const QStringList kToolbarDefaultOrder = {
     "targets_label", "target_input", "scan", "sep", "auto", "find", "terminal", "sep", "adapter_label", "adapter_combo", "refresh"
@@ -931,8 +932,8 @@ void ScannerWindow::startScan()
         return;
     }
 
-    servicesByIp_.clear();
-    detailsByIp_.clear();
+    servicesByIdentity_.clear();
+    detailsByIdentity_.clear();
     table_->setRowCount(0);
 
     scanInProgress_ = true;
@@ -1183,13 +1184,14 @@ QList<ScanResult> ScannerWindow::scanHosts(const ScanOptions &options,
         if (cancellable::isCancelled(cancelRequested)) {
             return;
         }
-        // Merge data by IP so later, higher-quality fields replace unknown values.
+        // Merge data by interface plus IP so overlapping links retain distinct identities.
         bool shouldEmit = false;
         ScanResult emitResult = result;
         {
             QMutexLocker locker(&resultsMutex);
             auto it = std::find_if(results.begin(), results.end(), [&](const ScanResult &existing) {
-                return existing.ip == result.ip;
+                return existing.ip == result.ip &&
+                       existing.interfaceName == result.interfaceName;
             });
 
             if (it == results.end()) {
@@ -1258,6 +1260,7 @@ QList<ScanResult> ScannerWindow::scanHosts(const ScanOptions &options,
 
                 bool alive = false;
                 QString discoveredMac;
+                NeighborObservation neighbor;
                 QList<ServiceHit> discoveredServices;
                 if (ipString == options.localIp) {
                     alive = true;
@@ -1267,9 +1270,12 @@ QList<ScanResult> ScannerWindow::scanHosts(const ScanOptions &options,
                 } else {
                     alive = pingHost(host, options, budget, cancelRequested);
                     if (!alive) {
-                        discoveredMac = lookupMacAddress(
+                        neighbor = lookupNeighbor(
                             ipString, options.interfaceName, budget, cancelRequested);
-                        if (!discoveredMac.isEmpty()) {
+                        if (neighbor.suppliesMacMetadata()) {
+                            discoveredMac = neighbor.mac;
+                        }
+                        if (neighbor.establishesLiveness()) {
                             alive = true;
                         }
                     }
@@ -1283,6 +1289,7 @@ QList<ScanResult> ScannerWindow::scanHosts(const ScanOptions &options,
                 if (alive) {
                     ScanResult result;
                     result.ip = ipString;
+                    result.interfaceName = options.interfaceName;
                     for (const AliveHostStage stage : kAliveHostStageOrder) {
                         switch (stage) {
                         case AliveHostStage::Services:
@@ -1295,12 +1302,18 @@ QList<ScanResult> ScannerWindow::scanHosts(const ScanOptions &options,
                                                   : discoveredServices;
                             break;
                         case AliveHostStage::MacAddress:
-                            result.mac = discoveredMac.isEmpty()
-                                             ? lookupMacAddress(ipString,
-                                                                options.interfaceName,
-                                                                budget,
-                                                                cancelRequested)
-                                             : discoveredMac;
+                            if (discoveredMac.isEmpty()) {
+                                if (neighbor.ip.isEmpty()) {
+                                    neighbor = lookupNeighbor(ipString,
+                                                              options.interfaceName,
+                                                              budget,
+                                                              cancelRequested);
+                                }
+                                if (neighbor.suppliesMacMetadata()) {
+                                    discoveredMac = neighbor.mac;
+                                }
+                            }
+                            result.mac = discoveredMac;
                             break;
                         case AliveHostStage::Vendor:
                             result.vendor = lookupVendor(result.mac, options);
@@ -1406,42 +1419,18 @@ bool ScannerWindow::pingHost(const QHostAddress &address,
 #endif
 }
 
-QString ScannerWindow::lookupMacAddress(
+NeighborObservation ScannerWindow::lookupNeighbor(
     const QString &ip,
     const QString &interfaceName,
     const TargetBudget &budget,
     const std::shared_ptr<std::atomic_bool> &cancelRequested) const
 {
 #ifdef Q_OS_LINUX
-    QFile arpFile("/proc/net/arp");
-    if (!cancellable::isCancelled(cancelRequested) && !budget.expired() &&
-        arpFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
-        while (!arpFile.atEnd()) {
-            if (cancellable::isCancelled(cancelRequested) || budget.expired()) {
-                return {};
-            }
-            const QString line = QString::fromUtf8(arpFile.readLine()).trimmed();
-            if (line.isEmpty() || line.startsWith("IP address")) {
-                continue;
-            }
-
-            const QStringList fields = line.split(QRegularExpression("\\s+"), Qt::SkipEmptyParts);
-            if (fields.size() < 6) {
-                continue;
-            }
-
-            const bool ifaceMatches = interfaceName.isEmpty() || fields[5] == interfaceName;
-            if (fields[0] == ip && ifaceMatches) {
-                return fields[3].toUpper();
-            }
-        }
-    }
-
     if (cancellable::isCancelled(cancelRequested) || budget.expired()) {
         return {};
     }
     QProcess ipNeigh;
-    QStringList args{"neigh", "show", ip};
+    QStringList args{"-j", "neigh", "show", ip};
     if (!interfaceName.isEmpty()) {
         args << "dev" << interfaceName;
     }
@@ -1453,11 +1442,14 @@ QString ScannerWindow::lookupMacAddress(
             [&budget]() { return budget.remainingMs(); }) ==
             cancellable::WaitResult::Completed &&
         ipNeigh.exitStatus() == QProcess::NormalExit && ipNeigh.exitCode() == 0) {
-        const QString out = QString::fromUtf8(ipNeigh.readAllStandardOutput());
-        const QRegularExpression re("lladdr\\s+([0-9a-fA-F:]{17})");
-        const auto match = re.match(out);
-        if (match.hasMatch()) {
-            return match.captured(1).toUpper();
+        const QList<NeighborObservation> observations =
+            parseLinuxNeighborJson(ipNeigh.readAllStandardOutput(), interfaceName);
+        const QString expectedKey = neighborIdentityKey(interfaceName, ip);
+        for (const NeighborObservation &observation : observations) {
+            if (interfaceName.isEmpty() ? observation.ip == ip
+                                        : observation.identityKey() == expectedKey) {
+                return observation;
+            }
         }
     }
 #else
@@ -2042,7 +2034,7 @@ void ScannerWindow::finishScan()
     const bool sortingEnabled = table_->isSortingEnabled();
     const int sortSectionBefore = table_->horizontalHeader()->sortIndicatorSection();
     const Qt::SortOrder sortOrderBefore = table_->horizontalHeader()->sortIndicatorOrder();
-    const QString selectedIpBefore = (table_->currentRow() >= 0) ? cellText(table_->currentRow(), ColIp) : QString();
+    const QString selectedIdentityBefore = rowIdentityKey(table_->currentRow());
     const int selectedColBefore = std::max(0, table_->currentColumn());
     table_->setUpdatesEnabled(false);
     if (sortingEnabled) {
@@ -2051,8 +2043,8 @@ void ScannerWindow::finishScan()
 
     // Rebuild from final authoritative results to avoid UI race/drift from incremental updates.
     table_->setRowCount(0);
-    servicesByIp_.clear();
-    detailsByIp_.clear();
+    servicesByIdentity_.clear();
+    detailsByIdentity_.clear();
     for (const ScanResult &result : finalResults) {
         addOrUpdateResultRow(result);
     }
@@ -2068,8 +2060,8 @@ void ScannerWindow::finishScan()
         table_->horizontalHeader()->setSortIndicator(section, order);
         table_->sortItems(section, order);
     }
-    if (!selectedIpBefore.isEmpty()) {
-        const int selectedRow = findRowByIp(selectedIpBefore);
+    if (!selectedIdentityBefore.isEmpty()) {
+        const int selectedRow = findRowByIdentity(selectedIdentityBefore);
         if (selectedRow >= 0) {
             table_->setCurrentCell(selectedRow, selectedColBefore);
         }
@@ -2119,6 +2111,7 @@ void ScannerWindow::addOrUpdateResultRow(const ScanResult &result)
     const QString hostnameText = result.hostname.isEmpty() ? QString("Unknown") : result.hostname;
     const QString macText = formatMacForDisplay(result.mac);
     const QString vendorText = result.vendor.isEmpty() ? QString("Unknown") : result.vendor;
+    const QString identityKey = neighborIdentityKey(result.interfaceName, result.ip);
     const qulonglong ipSortKey = static_cast<qulonglong>(ipv4ToInt(QHostAddress(result.ip)));
     qulonglong macSortKey = 0;
     bool hasMacSortKey = false;
@@ -2126,11 +2119,11 @@ void ScannerWindow::addOrUpdateResultRow(const ScanResult &result)
     if (!macHex.isEmpty()) {
         macSortKey = macHex.toULongLong(&hasMacSortKey, 16);
     }
-    if (!result.services.isEmpty() || !servicesByIp_.contains(result.ip)) {
-        servicesByIp_[result.ip] = result.services;
+    if (!result.services.isEmpty() || !servicesByIdentity_.contains(identityKey)) {
+        servicesByIdentity_[identityKey] = result.services;
     }
-    if (!result.detailsText.isEmpty() || !detailsByIp_.contains(result.ip)) {
-        detailsByIp_[result.ip] = result.detailsText;
+    if (!result.detailsText.isEmpty() || !detailsByIdentity_.contains(identityKey)) {
+        detailsByIdentity_[identityKey] = result.detailsText;
     }
 
     // Temporarily disable sorting while mutating rows to keep row lookup stable.
@@ -2146,9 +2139,9 @@ void ScannerWindow::addOrUpdateResultRow(const ScanResult &result)
     }
     const int selectedRow = table_->currentRow();
     const int selectedColumn = std::max(0, table_->currentColumn());
-    const QString selectedIp = (selectedRow >= 0) ? cellText(selectedRow, ColIp) : QString();
+    const QString selectedIdentity = rowIdentityKey(selectedRow);
 
-    const int existingRow = findRowByIp(result.ip);
+    const int existingRow = findRowByIdentity(identityKey);
     if (existingRow >= 0) {
         const int row = existingRow;
 
@@ -2183,6 +2176,7 @@ void ScannerWindow::addOrUpdateResultRow(const ScanResult &result)
 
         ipItem->setText(result.ip);
         ipItem->setData(Qt::UserRole, ipSortKey);
+        ipItem->setData(kIdentityRole, identityKey);
         if ((hostItem->text().isEmpty() || hostItem->text() == "Unknown") && hostnameText != "Unknown") {
             hostItem->setText(hostnameText);
         }
@@ -2198,7 +2192,7 @@ void ScannerWindow::addOrUpdateResultRow(const ScanResult &result)
             table_->removeCellWidget(row, ColServices);
             oldWidget->deleteLater();
         }
-        const QList<ServiceHit> displayServices = servicesByIp_.value(result.ip);
+        const QList<ServiceHit> displayServices = servicesByIdentity_.value(identityKey);
         if (!displayServices.isEmpty()) {
             auto *svcContainer = new QWidget(table_);
             auto *svcLayout = new QHBoxLayout(svcContainer);
@@ -2223,6 +2217,7 @@ void ScannerWindow::addOrUpdateResultRow(const ScanResult &result)
         auto *ipItem = new SortKeyTableWidgetItem(result.ip);
         ipItem->setFont(mono);
         ipItem->setData(Qt::UserRole, ipSortKey);
+        ipItem->setData(kIdentityRole, identityKey);
         table_->setItem(row, ColIp, ipItem);
         table_->setItem(row, ColHostname, new QTableWidgetItem(hostnameText));
         auto *macItem = new SortKeyTableWidgetItem(macText);
@@ -2231,7 +2226,7 @@ void ScannerWindow::addOrUpdateResultRow(const ScanResult &result)
         table_->setItem(row, ColMac, macItem);
         table_->setItem(row, ColVendor, new QTableWidgetItem(vendorText));
         table_->setItem(row, ColServices, new QTableWidgetItem(QString()));
-        const QList<ServiceHit> displayServices = servicesByIp_.value(result.ip);
+        const QList<ServiceHit> displayServices = servicesByIdentity_.value(identityKey);
         if (!displayServices.isEmpty()) {
             auto *svcContainer = new QWidget(table_);
             auto *svcLayout = new QHBoxLayout(svcContainer);
@@ -2258,8 +2253,8 @@ void ScannerWindow::addOrUpdateResultRow(const ScanResult &result)
         table_->horizontalHeader()->setSortIndicator(sortColumn, sortOrder);
         table_->sortItems(sortColumn, sortOrder);
     }
-    if (!selectedIp.isEmpty()) {
-        const int newRow = findRowByIp(selectedIp);
+    if (!selectedIdentity.isEmpty()) {
+        const int newRow = findRowByIdentity(selectedIdentity);
         if (newRow >= 0) {
             table_->setCurrentCell(newRow, selectedColumn);
         }
@@ -2276,7 +2271,7 @@ void ScannerWindow::handleTableDoubleClick(int row, int column)
     }
 
     const QString ip = cellText(row, ColIp);
-    const QList<ServiceHit> services = servicesByIp_.value(ip);
+    const QList<ServiceHit> services = servicesByIdentity_.value(rowIdentityKey(row));
     if (services.isEmpty()) {
         return;
     }
@@ -2306,7 +2301,7 @@ void ScannerWindow::showTableContextMenu(const QPoint &pos)
     table_->setCurrentCell(index.row(), index.column());
 
     const QString ip = cellText(index.row(), ColIp);
-    const QList<ServiceHit> services = servicesByIp_.value(ip);
+    const QList<ServiceHit> services = servicesByIdentity_.value(rowIdentityKey(index.row()));
 
     QMenu menu(this);
     QAction *copyCellAction = menu.addAction("Copy Cell");
@@ -2510,7 +2505,7 @@ QString ScannerWindow::cellText(int row, int column) const
     if (column == ColServices) {
         const QTableWidgetItem *ipItem = table_->item(row, ColIp);
         if (ipItem != nullptr) {
-            return serviceText(servicesByIp_.value(ipItem->text()));
+            return serviceText(servicesByIdentity_.value(rowIdentityKey(row)));
         }
     }
 
@@ -3581,11 +3576,19 @@ void ScannerWindow::applyToolbarDisplayMode()
     applyButton(refreshAdaptersButton_, "Refresh", style()->standardIcon(QStyle::SP_BrowserReload), buttonMode("refresh"), 32);
 }
 
-int ScannerWindow::findRowByIp(const QString &ip) const
+QString ScannerWindow::rowIdentityKey(int row) const
+{
+    if (row < 0) {
+        return {};
+    }
+    const QTableWidgetItem *item = table_->item(row, ColIp);
+    return item == nullptr ? QString() : item->data(kIdentityRole).toString();
+}
+
+int ScannerWindow::findRowByIdentity(const QString &identityKey) const
 {
     for (int row = 0; row < table_->rowCount(); ++row) {
-        const QTableWidgetItem *item = table_->item(row, ColIp);
-        if (item != nullptr && item->text() == ip) {
+        if (rowIdentityKey(row) == identityKey) {
             return row;
         }
     }
@@ -3617,8 +3620,7 @@ void ScannerWindow::updateDetailsPaneForCurrentSelection()
         return;
     }
 
-    const QString ip = cellText(item->row(), ColIp);
-    const QString details = detailsByIp_.value(ip);
+    const QString details = detailsByIdentity_.value(rowIdentityKey(item->row()));
     if (details.trimmed().isEmpty()) {
         detailsPane_->setPlainText("No details available for selected device.");
         return;
