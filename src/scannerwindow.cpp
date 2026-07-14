@@ -94,7 +94,8 @@
 namespace {
 constexpr int kMaxHostsToScan = 4096;
 constexpr int kMaxParallelProbes = 16;
-constexpr int kSettingsSchemaVersion = 1;
+constexpr int kSettingsSchemaVersion = 2;
+constexpr int kSettingsSaveDebounceMs = 350;
 // Default toolbar layout used on first launch and settings reset.
 const QStringList kToolbarDefaultOrder = {
     "targets_label", "target_input", "scan", "sep", "auto", "find", "terminal", "sep", "adapter_label", "adapter_combo", "refresh"
@@ -334,6 +335,11 @@ ScannerWindow::ScannerWindow(QWidget *parent)
     resultFlushTimer_ = new QTimer(this);
     resultFlushTimer_->setSingleShot(true);
     resultFlushTimer_->setInterval(16);
+    settingsSaveTimer_ = new QTimer(this);
+    settingsSaveTimer_->setSingleShot(true);
+    settingsSaveTimer_->setInterval(kSettingsSaveDebounceMs);
+    connect(settingsSaveTimer_, &QTimer::timeout,
+            this, &ScannerWindow::saveSettings);
 
     applyDefaultSettings();
     loadOuiDatabase();
@@ -371,7 +377,7 @@ ScannerWindow::ScannerWindow(QWidget *parent)
     connect(targetInput_, &QLineEdit::textChanged, this, &ScannerWindow::validateTargetLimitFeedback);
     connect(targetInput_, &QLineEdit::textChanged, this, [this](const QString &text) {
         if (rememberLastTargetOnLaunch_) {
-            saveSettings();
+            scheduleSettingsSave();
         }
         if (!scanInProgress_) {
             scanButton_->setEnabled(!adapters_.isEmpty() ||
@@ -3175,9 +3181,25 @@ void ScannerWindow::showSettingsDialog()
         currentList->insertItem(row + 1, item);
         currentList->setCurrentRow(row + 1);
     });
-    connect(defaultsButton, &QPushButton::clicked, &dialog, [availableList, currentList, allIds, addToolbarItem]() {
+    connect(defaultsButton,
+            &QPushButton::clicked,
+            &dialog,
+            [availableList,
+             currentList,
+             allIds,
+             addToolbarItem,
+             displayModeCombo,
+             itemModeCombo,
+             &toolbarModesDraft]() {
         availableList->clear();
         currentList->clear();
+        displayModeCombo->setCurrentIndex(
+            displayModeCombo->findData(0));
+        for (const QString &id : kToolbarButtonIds) {
+            toolbarModesDraft[id] = -1;
+        }
+        itemModeCombo->setCurrentIndex(
+            itemModeCombo->findData(-1));
         for (const QString &id : allIds) {
             if (id == "sep" || id == "spacer") {
                 addToolbarItem(availableList, id);
@@ -3247,6 +3269,26 @@ void ScannerWindow::showSettingsDialog()
         return;
     }
 
+    QHash<QString, QString> parsedOuiVendors;
+    QString ouiError;
+    if (!parseCustomOuiOverrides(
+            ouiEdit->toPlainText(), &parsedOuiVendors, &ouiError)) {
+        QMessageBox::warning(this, "Invalid OUI overrides", ouiError);
+        return;
+    }
+    QHash<QString, QString> parsedCommands = customCommands_;
+    for (auto it = commandEdits.begin(); it != commandEdits.end(); ++it) {
+        const QString command = it.value()->text().trimmed();
+        if (!command.isEmpty() && !isSafeTextInput(command, 512)) {
+            QMessageBox::warning(
+                this,
+                "Settings",
+                QString("Invalid command for service '%1'.").arg(it.key()));
+            return;
+        }
+        parsedCommands[it.key()] = command;
+    }
+
     updateWorkerLabel(workerSlider->value());
     accuracyLevel_ = std::clamp(accuracySlider->value(), 0, 3);
 
@@ -3276,35 +3318,8 @@ void ScannerWindow::showSettingsDialog()
         }
     }
 
-    for (auto it = commandEdits.begin(); it != commandEdits.end(); ++it) {
-        const QString command = it.value()->text().trimmed();
-        if (!command.isEmpty() && !isSafeTextInput(command, 512)) {
-            QMessageBox::warning(this, "Settings", QString("Invalid command for service '%1'.").arg(it.key()));
-            return;
-        }
-        customCommands_[it.key()] = command;
-    }
-
-    customOuiVendors_.clear();
-    const QStringList customOuiLines = ouiEdit->toPlainText().split('\n', Qt::SkipEmptyParts);
-    for (const QString &lineRaw : customOuiLines) {
-        const QString line = lineRaw.trimmed();
-        if (line.isEmpty() || line.startsWith('#')) {
-            continue;
-        }
-        if (!isSafeTextInput(line, 256)) {
-            continue;
-        }
-        const int sep = line.indexOf('=');
-        if (sep <= 0) {
-            continue;
-        }
-        const QString prefix = normalizeOuiPrefix(line.left(sep).trimmed());
-        const QString vendor = line.mid(sep + 1).trimmed();
-        if (!prefix.isEmpty() && !vendor.isEmpty()) {
-            customOuiVendors_.insert(prefix, vendor);
-        }
-    }
+    customCommands_ = parsedCommands;
+    customOuiVendors_ = parsedOuiVendors;
 
     toolbarDisplayMode_ = displayModeCombo->currentData().toInt();
     toolbarItemDisplayModes_ = toolbarModesDraft;
@@ -3462,11 +3477,9 @@ void ScannerWindow::applyDefaultSettings()
     toolbarDisplayMode_ = 0;
     macDisplayFormat_ = MacColonUpper;
     toolbarItemDisplayModes_.clear();
-    toolbarItemDisplayModes_.insert("scan", 0);
-    toolbarItemDisplayModes_.insert("auto", 0);
-    toolbarItemDisplayModes_.insert("find", 0);
-    toolbarItemDisplayModes_.insert("terminal", 0);
-    toolbarItemDisplayModes_.insert("refresh", 0);
+    for (const QString &id : kToolbarButtonIds) {
+        toolbarItemDisplayModes_.insert(id, -1);
+    }
     enabledServiceIds_.clear();
     enabledServiceIds_ << "http" << "https" << "ssh" << "rdp";
 
@@ -3484,17 +3497,29 @@ void ScannerWindow::applyDefaultSettings()
     toolbarOrder_ = kToolbarDefaultOrder;
 }
 
+void ScannerWindow::migrateSettings(QSettings &settings)
+{
+    const int schema = settings.value("settings/schema_version", 0).toInt();
+    if (schema >= kSettingsSchemaVersion) {
+        return;
+    }
+
+    // Schemas 0 and 1 use the same general key names. Schema 2 changes how
+    // absent and explicitly empty collections and the -1 toolbar inheritance
+    // sentinel are interpreted. It also applies the planned privacy migration:
+    // legacy target data survives only when retention was explicitly enabled.
+    if (!settings.value("targets/remember_last", false).toBool()) {
+        settings.remove("targets/history");
+        settings.remove("targets/last_input");
+    }
+    settings.setValue("settings/schema_version", kSettingsSchemaVersion);
+    settings.sync();
+}
+
 void ScannerWindow::loadSettings()
 {
     QSettings settings("OpenIPScanner", "OpenIPScanner");
-    const int schema = settings.value("settings/schema_version", -1).toInt();
-
-    if (schema != kSettingsSchemaVersion) {
-        settings.clear();
-        applyDefaultSettings();
-        saveSettings();
-        return;
-    }
+    migrateSettings(settings);
 
     // On Wayland, compositor controls window placement, so only restore size.
     const bool isWayland = QGuiApplication::platformName().contains("wayland", Qt::CaseInsensitive);
@@ -3529,9 +3554,9 @@ void ScannerWindow::loadSettings()
     toolbarItemDisplayModes_.clear();
     for (const QString &id : kToolbarButtonIds) {
         const QString key = QString("toolbar/item_mode_%1").arg(id);
-        const int fallback = (id == "find") ? 0 : toolbarDisplayMode_;
+        const int fallback = -1;
         const int value = settings.contains(key) ? settings.value(key).toInt() : fallback;
-        toolbarItemDisplayModes_.insert(id, std::clamp(value, 0, 2));
+        toolbarItemDisplayModes_.insert(id, std::clamp(value, -1, 2));
     }
     table_->setColumnHidden(ColIp, !settings.value("appearance/show_ip", true).toBool());
     table_->setColumnHidden(ColHostname, !settings.value("appearance/show_hostname", true).toBool());
@@ -3549,8 +3574,9 @@ void ScannerWindow::loadSettings()
         table_->setColumnHidden(ColIp, false);
     }
 
-    const QStringList enabledServices = settings.value("services/enabled_ids").toStringList();
-    if (!enabledServices.isEmpty()) {
+    if (settings.contains("services/enabled_ids")) {
+        const QStringList enabledServices =
+            settings.value("services/enabled_ids").toStringList();
         enabledServiceIds_.clear();
         for (const QString &id : enabledServices) {
             if (isSafeTextInput(id, 32)) {
@@ -3650,7 +3676,8 @@ void ScannerWindow::saveSettings() const
     settings.setValue("toolbar/display_mode", toolbarDisplayMode_);
     settings.setValue("toolbar/order", toolbarOrder_);
     for (const QString &id : kToolbarButtonIds) {
-        settings.setValue(QString("toolbar/item_mode_%1").arg(id), toolbarItemDisplayModes_.value(id, toolbarDisplayMode_));
+        settings.setValue(QString("toolbar/item_mode_%1").arg(id),
+                          toolbarItemDisplayModes_.value(id, -1));
     }
     settings.setValue("appearance/show_ip", !table_->isColumnHidden(ColIp));
     settings.setValue("appearance/show_hostname", !table_->isColumnHidden(ColHostname));
@@ -3679,6 +3706,64 @@ void ScannerWindow::saveSettings() const
         settings.setValue("vendor", it.value());
     }
     settings.endArray();
+}
+
+void ScannerWindow::scheduleSettingsSave()
+{
+    settingsSaveTimer_->start();
+}
+
+bool ScannerWindow::parseCustomOuiOverrides(
+    const QString &text,
+    QHash<QString, QString> *vendors,
+    QString *error)
+{
+    if (vendors == nullptr) {
+        return false;
+    }
+    vendors->clear();
+    const QStringList lines = text.split('\n');
+    for (int index = 0; index < lines.size(); ++index) {
+        const QString line = lines[index].trimmed();
+        if (line.isEmpty() || line.startsWith('#')) {
+            continue;
+        }
+        const int separator = line.indexOf('=');
+        if (separator <= 0 || separator != line.lastIndexOf('=')) {
+            if (error != nullptr) {
+                *error = QString("Line %1 must use PREFIX=Vendor.").arg(index + 1);
+            }
+            vendors->clear();
+            return false;
+        }
+        QString rawPrefix = line.left(separator).trimmed().toUpper();
+        rawPrefix.remove(':');
+        rawPrefix.remove('-');
+        rawPrefix.remove('.');
+        const QString vendor = line.mid(separator + 1).trimmed();
+        static const QRegularExpression prefixPattern("^[0-9A-F]{6}$");
+        if (!prefixPattern.match(rawPrefix).hasMatch()) {
+            if (error != nullptr) {
+                *error = QString("Line %1 has an invalid 24-bit hexadecimal OUI prefix.")
+                             .arg(index + 1);
+            }
+            vendors->clear();
+            return false;
+        }
+        if (vendor.isEmpty() || !isSafeTextInput(vendor, 120)) {
+            if (error != nullptr) {
+                *error = QString("Line %1 has an empty or invalid vendor name.")
+                             .arg(index + 1);
+            }
+            vendors->clear();
+            return false;
+        }
+        vendors->insert(rawPrefix, vendor);
+    }
+    if (error != nullptr) {
+        error->clear();
+    }
+    return true;
 }
 
 bool ScannerWindow::isSafeTextInput(const QString &text, int maxLength)
@@ -3811,7 +3896,9 @@ void ScannerWindow::applyToolbarDisplayMode()
 
     // Per-action mode overrides global style (icon/text).
     const auto buttonMode = [this](const QString &id) {
-        return std::clamp(toolbarItemDisplayModes_.value(id, toolbarDisplayMode_), 0, 2);
+        const int overrideMode = toolbarItemDisplayModes_.value(id, -1);
+        return overrideMode < 0 ? toolbarDisplayMode_
+                                : std::clamp(overrideMode, 0, 2);
     };
     const auto applyButton = [](QPushButton *button, const QString &label, const QIcon &icon, int mode, int iconOnlyWidth = 0) {
         if (button == nullptr) {
@@ -4053,7 +4140,8 @@ QString ScannerWindow::normalizeOuiPrefix(const QString &prefix)
     normalized.remove(':');
     normalized.remove('-');
     normalized.remove('.');
-    if (normalized.size() < 6) {
+    static const QRegularExpression hexPattern("^[0-9A-F]+$");
+    if (normalized.size() < 6 || !hexPattern.match(normalized).hasMatch()) {
         return {};
     }
     return normalized.left(6);

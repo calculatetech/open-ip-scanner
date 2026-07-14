@@ -9,6 +9,7 @@
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QElapsedTimer>
+#include <QEventLoop>
 #include <QFile>
 #include <QLabel>
 #include <QLineEdit>
@@ -62,6 +63,135 @@ struct ScannerWindowTestAccess {
                                  TargetTextFormat format)
     {
         return window.targetTextFormat_ == format;
+    }
+
+    static bool settingsMigrationContract(ScannerWindow &window)
+    {
+        QSettings settings("OpenIPScanner", "OpenIPScanner");
+        for (int schema : {0, 1}) {
+            for (int globalMode = 0; globalMode <= 2; ++globalMode) {
+                for (int explicitMode = 0; explicitMode <= 2; ++explicitMode) {
+                    settings.clear();
+                    settings.setValue("settings/schema_version", schema);
+                    settings.setValue("unrelated/keep", "preserved");
+                    settings.setValue("targets/remember_last", false);
+                    settings.setValue("targets/history", QStringList{"10.0.0.0/24"});
+                    settings.setValue("targets/last_input", "10.0.0.0/24");
+                    settings.setValue("services/enabled_ids", QStringList{});
+                    settings.setValue("toolbar/display_mode", globalMode);
+                    settings.setValue("toolbar/item_mode_scan", -1);
+                    settings.setValue("toolbar/item_mode_auto", explicitMode);
+                    settings.sync();
+
+                    window.applyDefaultSettings();
+                    window.loadSettings();
+                    if (settings.value("settings/schema_version").toInt() != 2 ||
+                        settings.value("unrelated/keep").toString() != "preserved" ||
+                        settings.contains("targets/history") ||
+                        settings.contains("targets/last_input") ||
+                        !settings.contains("services/enabled_ids") ||
+                        !window.enabledServiceIds_.isEmpty() ||
+                        window.toolbarDisplayMode_ != globalMode ||
+                        window.toolbarItemDisplayModes_.value("scan") != -1 ||
+                        window.toolbarItemDisplayModes_.value("auto") != explicitMode) {
+                        return false;
+                    }
+                    window.applyToolbarDisplayMode();
+                    const bool scanHasText = !window.scanButton_->text().isEmpty();
+                    const bool scanHasIcon = !window.scanButton_->icon().isNull();
+                    const bool autoHasText = !window.defaultsButton_->text().isEmpty();
+                    const bool autoHasIcon = !window.defaultsButton_->icon().isNull();
+                    if (scanHasText != (globalMode != 0) ||
+                        scanHasIcon != (globalMode != 2) ||
+                        autoHasText != (explicitMode != 0) ||
+                        autoHasIcon != (explicitMode != 2)) {
+                        return false;
+                    }
+
+                    window.saveSettings();
+                    window.enabledServiceIds_ << "ssh";
+                    window.loadSettings();
+                    if (!window.enabledServiceIds_.isEmpty()) {
+                        return false;
+                    }
+                }
+            }
+        }
+
+        settings.clear();
+        settings.setValue("settings/schema_version", 1);
+        settings.setValue("unrelated/keep", "preserved");
+        settings.setValue("targets/remember_last", true);
+        settings.setValue("targets/history", QStringList{"10.0.0.0/24"});
+        settings.setValue("targets/last_input", "10.0.0.0/24");
+        window.applyDefaultSettings();
+        window.loadSettings();
+        if (settings.value("targets/history").toStringList() !=
+                QStringList{"10.0.0.0/24"} ||
+            settings.value("targets/last_input").toString() != "10.0.0.0/24") {
+            return false;
+        }
+
+        window.applyDefaultSettings();
+        window.saveSettings();
+        settings.sync();
+        const bool resetPreservedUnrelated =
+            settings.value("unrelated/keep").toString() == "preserved";
+        settings.clear();
+        window.applyDefaultSettings();
+        window.saveSettings();
+        return resetPreservedUnrelated;
+    }
+
+    static bool customOuiValidationContract()
+    {
+        QHash<QString, QString> vendors;
+        QString error;
+        if (!ScannerWindow::parseCustomOuiOverrides(
+                "00:16:3E=Lab vendor\n# comment\nAABBCC=Camera vendor",
+                &vendors,
+                &error) ||
+            !error.isEmpty() || vendors.size() != 2 ||
+            vendors.value("00163E") != "Lab vendor" ||
+            vendors.value("AABBCC") != "Camera vendor") {
+            return false;
+        }
+        if (ScannerWindow::parseCustomOuiOverrides(
+                "00163E=Valid\nGG1122=Invalid", &vendors, &error) ||
+            !vendors.isEmpty() || !error.startsWith("Line 2")) {
+            return false;
+        }
+        if (ScannerWindow::parseCustomOuiOverrides(
+                "00163E Missing separator", &vendors, &error) ||
+            !error.startsWith("Line 1")) {
+            return false;
+        }
+        return ScannerWindow::normalizeOuiPrefix("GG:11:22:33:44:55").isEmpty();
+    }
+
+    static bool debouncedTargetSaveContract(ScannerWindow &window)
+    {
+        QSettings settings("OpenIPScanner", "OpenIPScanner");
+        settings.remove("targets/last_input");
+        settings.sync();
+        window.rememberLastTargetOnLaunch_ = true;
+        window.targetInput_->setText("192.0.2.1");
+        window.targetInput_->setText("192.0.2.2");
+        window.targetInput_->setText("192.0.2.3");
+        if (!window.settingsSaveTimer_->isActive() ||
+            settings.contains("targets/last_input")) {
+            return false;
+        }
+        QEventLoop wait;
+        QTimer::singleShot(500, &wait, &QEventLoop::quit);
+        wait.exec();
+        settings.sync();
+        const bool savedLastValue =
+            settings.value("targets/last_input").toString() == "192.0.2.3" &&
+            !window.settingsSaveTimer_->isActive();
+        window.rememberLastTargetOnLaunch_ = false;
+        window.saveSettings();
+        return savedLastValue;
     }
 
     static void installTargetFormatFixture(ScannerWindow &window)
@@ -834,6 +964,9 @@ int main(int argc, char **argv)
     QSettings("OpenIPScanner", "OpenIPScanner").clear();
     ScannerWindow window;
     bool ok = true;
+    REQUIRE(ScannerWindowTestAccess::settingsMigrationContract(window));
+    REQUIRE(ScannerWindowTestAccess::customOuiValidationContract());
+    REQUIRE(ScannerWindowTestAccess::debouncedTargetSaveContract(window));
 
     const DefaultTargetPlan parserPlan =
         buildDefaultTargetPlan({{QHostAddress("10.2.3.4").toIPv4Address(),

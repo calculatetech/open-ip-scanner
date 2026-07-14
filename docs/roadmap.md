@@ -2,7 +2,7 @@
 
 This file is the single source of truth for unfinished product, engineering, documentation, and release work. Detailed evidence for why each 1.0 item exists is in [the production-readiness audit](production-readiness-audit.md). New ideas belong here rather than in a second backlog.
 
-The audited baseline is `0.2.0` at commit `91e0a7a`; `0.5.2` is the latest human-verified version, and `0.5.3` is the active TARGET-FORMAT-PREFERENCE branch. Version 1.0 is not ready. Every unchecked item under “Required for 1.0” is a release gate; the post-1.0 section is explicitly outside the first production release.
+The audited baseline is `0.2.0` at commit `91e0a7a`; `0.5.2` is the latest human-verified version, `0.5.3` is reviewed and merged, and `0.5.4` is the active SETTINGS-MIGRATIONS branch. Version 1.0 is not ready. Every unchecked item under “Required for 1.0” is a release gate; the post-1.0 section is explicitly outside the first production release.
 
 ## Delivered implementation increments
 
@@ -20,6 +20,7 @@ The unchecked milestone boxes below mean their complete acceptance criteria are 
 - `0.5.0` — **MDNS-RESOLVER:** replaced per-host helper processes with one cancellable, interface-scoped Avahi D-Bus reverse resolver per scan and added explicit hostname evidence quality.
 - `0.5.1` — **ENRICHMENT-PROVENANCE:** retained source-aware Local, PTR, System, and mDNS names while keeping the result table concise and moving compact provenance into Details and diagnostics.
 - `0.5.2` — **MDNS-TESTS:** added the deterministic compatibility matrix, isolated controlled Avahi responder, and bounded hosted CI for both mDNS tests.
+- `0.5.3` — **TARGET-FORMAT-PREFERENCE:** added exact persisted CIDR/range generation while preserving target sets, adapter selection, and limits.
 
 **RESULT-SCALING** is human-verified on version `0.4.4`. DUPLICATE-IP-CONFLICTS remains Post-1.0.
 
@@ -143,9 +144,11 @@ Priority matches the most severe audit finding an item closes. All items in the 
 
 #### SETTINGS-MIGRATIONS
 
-- [ ] **Fix settings round trips and migrations.** `High`
+- [x] **Fix settings round trips and migrations.** `High`
   - Persist an intentionally empty enabled-service set instead of restoring defaults. Make toolbar “Default” inherit the global style and preserve that sentinel across restarts.
   - Replace schema-wide `clear()` with explicit migrations, validate custom OUI input with user-visible errors, and debounce settings writes instead of writing on every target keystroke.
+  - Current progress on `0.5.4`: schema 2 upgrades schema 0/1 in place without clearing unknown keys, removes legacy target history only when remember-last was not explicitly enabled, and preserves explicitly retained target data. Enabled-service persistence distinguishes an absent key from an intentionally empty list. Per-action toolbar mode `-1` remains an inheritance sentinel and resolves dynamically against every global mode; the toolbar Defaults action restores inheritance. Remembered-target edits use a restartable 350 ms save timer. Custom OUI parsing accepts comments and normalized 24-bit hexadecimal prefixes, rejects malformed lines atomically with a line-numbered warning, and validates vendor text before changing live settings.
+  - Completion evidence: deterministic settings contracts cover schema 0 and 1 migration, unrelated-key retention, privacy migration branches, empty service save/load, every global and explicit toolbar mode, sentinel inheritance, known-key reset without unrelated deletion, valid and malformed OUI input, debounced rapid target edits, target-format persistence, and accepted Settings dialog behavior. Normal and strict-warning suites pass 11/11 after one loaded-run GUI benchmark retry; all ten non-rendering tests pass under ThreadSanitizer, and package metadata reports version 0.5.4. The initial atomic-acceptance review finding was repaired, focused normal and strict tests passed again, and final fresh adversarial review found no actionable issue.
   - Done when round-trip tests cover empty collections, every toolbar mode, old schemas, invalid OUI entries, and reset behavior without deleting unrelated valid preferences.
 
 #### CSV-EXPORT

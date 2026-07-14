@@ -30,6 +30,7 @@ class QLineEdit;
 class QHBoxLayout;
 class QPoint;
 class QProgressBar;
+class QSettings;
 class QPushButton;
 class QToolBar;
 class QSplitter;
@@ -257,6 +258,11 @@ private:
     void applyDefaultSettings();
     void loadSettings();
     void saveSettings() const;
+    void scheduleSettingsSave();
+    static void migrateSettings(QSettings &settings);
+    static bool parseCustomOuiOverrides(const QString &text,
+                                        QHash<QString, QString> *vendors,
+                                        QString *error);
     static bool isSafeTextInput(const QString &text, int maxLength);
     void recordTargetHistory(const QString &text);
     void setDetailsPaneVisible(bool visible);
@@ -328,6 +334,7 @@ private:
     std::shared_ptr<std::atomic_bool> cancelRequested_;
     QList<ScanResult> pendingDisplayResults_;
     QTimer *resultFlushTimer_ = nullptr;
+    QTimer *settingsSaveTimer_ = nullptr;
     QFutureWatcher<QList<ScanResult>> scanWatcher_;
     bool scanCompletionPending_ = false;
     bool completedScanWasCanceled_ = false;

@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.5.4] - 2026-07-14
+
+### Changed
+
+- Replaced destructive settings-schema clearing with an explicit schema-2
+  migration that preserves unrelated preferences and retains legacy target
+  data only when retention was explicitly enabled.
+- Persist intentionally empty service selections and the toolbar `Default`
+  inheritance sentinel exactly across restarts and resets.
+- Debounce remembered-target writes and report invalid custom OUI lines with a
+  line-specific error instead of silently dropping them.
+
 ## [0.5.3] - 2026-07-14
 
 ### Added
