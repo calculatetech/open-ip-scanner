@@ -1,6 +1,7 @@
 #include "scannerwindow.h"
 #include "cancellablewait.h"
 #include "debugscanfixture.h"
+#include "mdnsresolver.h"
 #include "resulttablemodel.h"
 #include "servicetagdelegate.h"
 #include "settingslayout.h"
@@ -1273,8 +1274,14 @@ QList<ScanResult> ScannerWindow::scanHosts(const ScanOptions &options,
                     it->vendor = result.vendor;
                     shouldEmit = true;
                 }
-                if (it->hostname == "Unknown" && result.hostname != "Unknown") {
-                    it->hostname = result.hostname;
+                const HostnameEvidence currentHostname{
+                    it->hostname, it->hostnameQuality};
+                const HostnameEvidence mergedHostname = preferredHostname(
+                    currentHostname, {result.hostname, result.hostnameQuality});
+                if (mergedHostname.hostname != currentHostname.hostname ||
+                    mergedHostname.quality != currentHostname.quality) {
+                    it->hostname = mergedHostname.hostname;
+                    it->hostnameQuality = mergedHostname.quality;
                     shouldEmit = true;
                 }
                 if (it->services.isEmpty() && !result.services.isEmpty()) {
@@ -1295,6 +1302,10 @@ QList<ScanResult> ScannerWindow::scanHosts(const ScanOptions &options,
     };
 
     const QString gatewayIp = lookupGatewayIp(options.interfaceName);
+    const int interfaceIndex = QNetworkInterface::interfaceIndexFromName(
+        options.interfaceName);
+    auto mdnsResolver = std::make_shared<ScanMdnsResolver>(
+        interfaceIndex, cancelRequested, createAvahiDbusBackend());
 
     const int total = hosts.size();
     std::atomic<int> nextIndex{0};
@@ -1394,12 +1405,22 @@ QList<ScanResult> ScannerWindow::scanHosts(const ScanOptions &options,
                         case AliveHostStage::Vendor:
                             result.vendor = lookupVendor(result.mac, options);
                             break;
-                        case AliveHostStage::Hostname:
-                            result.hostname = ipString == options.localIp
-                                                  ? QHostInfo::localHostName().trimmed()
-                                                  : lookupHostname(
-                                                        ipString, budget, cancelRequested);
+                        case AliveHostStage::Hostname: {
+                            HostnameEvidence preliminary;
+                            if (ipString == options.localIp) {
+                                preliminary.hostname = QHostInfo::localHostName().trimmed();
+                                preliminary.quality = HostnameQuality::Preliminary;
+                            }
+                            const HostnameEvidence resolved = lookupHostname(
+                                ipString,
+                                preliminary,
+                                budget,
+                                cancelRequested,
+                                *mdnsResolver);
+                            result.hostname = resolved.hostname;
+                            result.hostnameQuality = resolved.quality;
                             break;
+                        }
                         case AliveHostStage::NormalizeIdentity:
                             if (result.mac.isEmpty()) {
                                 result.mac = "Unknown";
@@ -1585,85 +1606,39 @@ QString ScannerWindow::lookupVendor(const QString &mac, const ScanOptions &optio
     return options.builtInOuiVendors.value(prefix, "Unknown");
 }
 
-QString ScannerWindow::lookupHostname(
+HostnameEvidence ScannerWindow::lookupHostname(
     const QString &ip,
+    const HostnameEvidence &preliminary,
     const TargetBudget &budget,
-    const std::shared_ptr<std::atomic_bool> &cancelRequested) const
+    const std::shared_ptr<std::atomic_bool> &cancelRequested,
+    ScanMdnsResolver &mdnsResolver) const
 {
-    const QString mdnsHost = lookupMdnsHostname(ip, budget, cancelRequested);
-    if (!mdnsHost.isEmpty()) {
-        return mdnsHost;
+    HostnameEvidence best = preliminary;
+    const int mdnsWaitMs = budget.clampTimeout(2000);
+    const MdnsLookupResult mdns = mdnsResolver.resolve(ip, mdnsWaitMs);
+    if (mdns.status == MdnsLookupStatus::Resolved) {
+        return preferredHostname(best, {mdns.hostname, HostnameQuality::AvahiMdns});
     }
 
     if (cancellable::isCancelled(cancelRequested) || budget.expired()) {
-        return "Unknown";
+        return best;
     }
     cancellable::WaitResult lookupResult = cancellable::WaitResult::Failed;
     const QHostInfo info = cancellable::lookupHost(
         ip, budget.clampTimeout(1500), cancelRequested, &lookupResult);
     if (lookupResult != cancellable::WaitResult::Completed) {
-        return "Unknown";
+        return best;
     }
     if (info.error() != QHostInfo::NoError) {
-        return "Unknown";
+        return best;
     }
 
     const QString host = info.hostName().trimmed();
     if (host.isEmpty() || host == ip) {
-        return "Unknown";
+        return best;
     }
 
-    return host;
-}
-
-QString ScannerWindow::lookupMdnsHostname(
-    const QString &ip,
-    const TargetBudget &budget,
-    const std::shared_ptr<std::atomic_bool> &cancelRequested) const
-{
-#ifdef Q_OS_LINUX
-    const QString resolver = QStandardPaths::findExecutable("avahi-resolve-address");
-    if (resolver.isEmpty()) {
-        return {};
-    }
-
-    QProcess proc;
-    proc.start(resolver, {"-4", ip});
-    if (cancellable::waitForProcess(
-            proc,
-            budget.clampTimeout(1200, kProcessCleanupReserveMs),
-            cancelRequested,
-            [&budget]() { return budget.remainingMs(); }) !=
-        cancellable::WaitResult::Completed) {
-        return {};
-    }
-    if (proc.exitStatus() != QProcess::NormalExit || proc.exitCode() != 0) {
-        return {};
-    }
-
-    const QString output = QString::fromUtf8(proc.readAllStandardOutput()).trimmed();
-    if (output.isEmpty()) {
-        return {};
-    }
-
-    QStringList parts = output.split(QRegularExpression("\\s+"), Qt::SkipEmptyParts);
-    if (parts.size() < 2) {
-        return {};
-    }
-    QString host = parts.last().trimmed();
-    if (host.endsWith('.')) {
-        host.chop(1);
-    }
-    if (host.isEmpty() || host == ip) {
-        return {};
-    }
-    return host;
-#else
-    Q_UNUSED(ip)
-    Q_UNUSED(budget)
-    Q_UNUSED(cancelRequested)
-    return {};
-#endif
+    return preferredHostname(best, {host, HostnameQuality::SystemResolver});
 }
 
 QString ScannerWindow::lookupGatewayIp(const QString &interfaceName) const
