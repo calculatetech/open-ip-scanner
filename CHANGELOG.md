@@ -2,6 +2,43 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.4.0] - 2026-07-13
+
+### Changed
+- Standardized Settings dialog geometry at 600 by 440 logical pixels with consistent margins, section spacing, and internally scrolling pages.
+- Aligned both Performance sliders to the same fixed length and reserved stable value and accuracy-description regions so changing a slider cannot move or resize nearby controls.
+
+### Added
+- Added the canonical UI layout specification and an automated Settings geometry contract.
+
+## [0.3.4] - 2026-07-13
+
+### Changed
+- Made the accuracy slider explicitly scale ping and port-probe attempts from one short Fast pass through four longer Maximum passes.
+- Added concrete timeout/attempt feedback beside the slider and guidance for quick discovery versus thorough investigation.
+- Derived the internal safety ceiling from the selected profile and enabled-port count so every port retains the advertised attempts, including when all optional probes are enabled.
+
+## [0.3.3] - 2026-07-13
+
+### Fixed
+- Prioritized enabled-port probing before optional MAC, hostname, and detail enrichment can exhaust a target's scan deadline.
+- Added a durable scan-stage ordering check so optional enrichment cannot silently move ahead of service evidence again.
+
+### Changed
+- Removed the worst-case duration estimate from the normal scan status and explained it in plain language only when a large scan requires confirmation.
+- Raised accuracy-profile safety ceilings and service timeouts so slower LAN switches, cameras, and embedded devices are not routinely clipped by the Balanced profile.
+
+## [0.3.2] - 2026-07-13
+
+### Changed
+- Replaced open-ended accuracy retries with fixed one-, two-, four-, and eight-second per-target budgets.
+- Removed the serial high-accuracy reconciliation pass so all targets use the configured worker pool once.
+- Reused TCP discovery results during enrichment instead of probing the same enabled ports twice.
+- Added a visible scan upper-bound estimate and confirmation before estimates longer than ten minutes.
+
+### Added
+- Added deterministic tests for accuracy profiles, target deadline expiry, worker-wave estimates, and edge inputs.
+
 ## [0.3.1] - 2026-07-13
 
 ### Changed

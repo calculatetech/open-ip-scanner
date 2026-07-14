@@ -66,7 +66,10 @@ bool isCancelled(const Flag &flag)
     return flag && flag->load();
 }
 
-WaitResult waitForProcess(ProcessControl &process, int timeoutMs, const Flag &flag)
+WaitResult waitForProcess(ProcessControl &process,
+                          int timeoutMs,
+                          const Flag &flag,
+                          const RemainingTime &cleanupRemaining)
 {
     const WaitResult result = waitInSlices(
         timeoutMs,
@@ -79,7 +82,10 @@ WaitResult waitForProcess(ProcessControl &process, int timeoutMs, const Flag &fl
         });
     if (result == WaitResult::Cancelled || result == WaitResult::TimedOut) {
         process.kill();
-        if (!process.waitForFinished(250) || process.state() != QProcess::NotRunning) {
+        const int cleanupMs = cleanupRemaining
+                                  ? std::min(250, std::max(0, cleanupRemaining()))
+                                  : 250;
+        if (!process.waitForFinished(cleanupMs) || process.state() != QProcess::NotRunning) {
             return WaitResult::Failed;
         }
     }
@@ -89,10 +95,13 @@ WaitResult waitForProcess(ProcessControl &process, int timeoutMs, const Flag &fl
     return result;
 }
 
-WaitResult waitForProcess(QProcess &process, int timeoutMs, const Flag &flag)
+WaitResult waitForProcess(QProcess &process,
+                          int timeoutMs,
+                          const Flag &flag,
+                          const RemainingTime &cleanupRemaining)
 {
     QtProcessControl control(process);
-    return waitForProcess(control, timeoutMs, flag);
+    return waitForProcess(control, timeoutMs, flag, cleanupRemaining);
 }
 
 WaitResult waitForConnected(QTcpSocket &socket, int timeoutMs, const Flag &flag)
@@ -146,6 +155,12 @@ QHostInfo lookupHost(const QString &address, int timeoutMs, const Flag &flag, Wa
         }
         return QHostInfo();
     }
+    if (timeoutMs <= 0) {
+        if (result) {
+            *result = WaitResult::TimedOut;
+        }
+        return QHostInfo();
+    }
 
     QEventLoop loop;
     QHostInfo answer;
@@ -156,17 +171,23 @@ QHostInfo lookupHost(const QString &address, int timeoutMs, const Flag &flag, Wa
         loop.quit();
     });
 
-    QElapsedTimer elapsed;
-    elapsed.start();
     QTimer poll;
     poll.setInterval(kPollIntervalMs);
     QObject::connect(&poll, &QTimer::timeout, &loop, [&]() {
-        if (isCancelled(flag) || elapsed.elapsed() >= timeoutMs) {
+        if (isCancelled(flag)) {
             QHostInfo::abortHostLookup(lookupId);
             loop.quit();
         }
     });
+    QTimer deadline;
+    deadline.setSingleShot(true);
+    deadline.setInterval(timeoutMs);
+    QObject::connect(&deadline, &QTimer::timeout, &loop, [&]() {
+        QHostInfo::abortHostLookup(lookupId);
+        loop.quit();
+    });
     poll.start();
+    deadline.start();
     loop.exec();
 
     const WaitResult outcome = completed

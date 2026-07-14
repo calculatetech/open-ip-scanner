@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(OpenIpScanner VERSION 0.3.1 LANGUAGES CXX)
+project(OpenIpScanner VERSION 0.4.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -21,7 +21,9 @@ add_executable(open_ip_scanner
     src/main.cpp
     src/cancellablewait.h
     src/cancellablewait.cpp
+    src/scanbudget.h
     src/scanoptions.h
+    src/settingslayout.h
     src/scannerwindow.h
     src/scannerwindow.cpp
     resources/resources.qrc
@@ -46,6 +48,40 @@ if(BUILD_TESTING)
     target_include_directories(scan_cancellation_test PRIVATE src)
     target_link_libraries(scan_cancellation_test PRIVATE ${QT_PACKAGE}::Core ${QT_PACKAGE}::Network)
     add_test(NAME scan_cancellation_deadlines COMMAND scan_cancellation_test)
+
+    add_executable(scan_budget_test tests/scanbudget_test.cpp)
+    target_include_directories(scan_budget_test PRIVATE src)
+    add_test(NAME scan_budget_profiles COMMAND scan_budget_test)
+
+    add_executable(settings_layout_test tests/settingslayout_test.cpp)
+    target_include_directories(settings_layout_test PRIVATE src)
+    add_test(NAME settings_layout_contract COMMAND settings_layout_test)
+
+    add_executable(settings_dialog_test
+        tests/settingsdialog_test.cpp
+        src/cancellablewait.h
+        src/cancellablewait.cpp
+        src/scanbudget.h
+        src/scanoptions.h
+        src/settingslayout.h
+        src/scannerwindow.h
+        src/scannerwindow.cpp
+        resources/resources.qrc
+    )
+    target_include_directories(settings_dialog_test PRIVATE src)
+    target_link_libraries(settings_dialog_test PRIVATE
+        ${QT_PACKAGE}::Widgets
+        ${QT_PACKAGE}::Network
+        ${QT_PACKAGE}::Concurrent
+        ${QT_PACKAGE}::PrintSupport
+    )
+    target_compile_definitions(settings_dialog_test PRIVATE
+        OPEN_IP_SCANNER_VERSION="${PROJECT_VERSION}"
+    )
+    add_test(NAME settings_dialog_stability COMMAND settings_dialog_test)
+    set_tests_properties(settings_dialog_stability PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+    )
 endif()
 
 set_target_properties(open_ip_scanner PROPERTIES

@@ -1,5 +1,6 @@
 #include "scannerwindow.h"
 #include "cancellablewait.h"
+#include "settingslayout.h"
 
 #include <QAction>
 #include <QApplication>
@@ -21,6 +22,7 @@
 #include <QFontMetrics>
 #include <QFuture>
 #include <QGuiApplication>
+#include <QGridLayout>
 #include <QHeaderView>
 #include <QHostInfo>
 #include <QHBoxLayout>
@@ -44,6 +46,7 @@
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QRegularExpressionValidator>
+#include <QScrollArea>
 #include <QSet>
 #include <QSettings>
 #include <QSignalBlocker>
@@ -63,7 +66,6 @@
 #include <QTextBrowser>
 #include <QPlainTextEdit>
 #include <QTextStream>
-#include <QThread>
 #include <QThreadPool>
 #include <QTimer>
 #include <QToolBar>
@@ -79,7 +81,6 @@
 namespace {
 constexpr int kMaxHostsToScan = 4096;
 constexpr int kMaxParallelProbes = 16;
-constexpr int kInterProbeDelayMs = 40;
 constexpr int kSettingsSchemaVersion = 1;
 // Default toolbar layout used on first launch and settings reset.
 const QStringList kToolbarDefaultOrder = {
@@ -854,6 +855,30 @@ void ScannerWindow::startScan()
         bindProbe.abort();
     }
 
+    const ScanOptions scanOptions = captureScanOptions(adapter);
+    const qint64 estimatedMs = estimatedScanUpperBoundMs(
+        hosts.size(), scanOptions.maxParallelProbes, scanOptions.targetDeadlineMs);
+    const qint64 estimatedSeconds = (estimatedMs + 999) / 1000;
+    const QString estimateText = estimatedSeconds >= 60
+                                     ? QString("%1m %2s")
+                                           .arg(estimatedSeconds / 60)
+                                           .arg(estimatedSeconds % 60)
+                                     : QString("%1s").arg(estimatedSeconds);
+    if (estimatedMs > 10 * 60 * 1000 &&
+        QMessageBox::question(
+            this,
+            "Large Scan Estimate",
+            QString("Based on %1 targets, %2 workers, and the selected per-target timeout, "
+                    "this scan could take up to about %3 in the worst case. Continue?")
+                .arg(hosts.size())
+                .arg(scanOptions.maxParallelProbes)
+                .arg(estimateText),
+            QMessageBox::Yes | QMessageBox::No,
+            QMessageBox::No) != QMessageBox::Yes) {
+        showStatusMessage("Scan canceled before launch.");
+        return;
+    }
+
     servicesByIp_.clear();
     detailsByIp_.clear();
     table_->setRowCount(0);
@@ -866,13 +891,14 @@ void ScannerWindow::startScan()
     adapterCombo_->setEnabled(false);
     targetInput_->setEnabled(false);
 
-    showStatusMessage(QString("Scanning %1 host(s) via %2...").arg(hosts.size()).arg(adapter.interfaceLabel));
+    showStatusMessage(QString("Scanning %1 host(s) via %2...")
+                          .arg(hosts.size())
+                          .arg(adapter.interfaceLabel));
     statusProgressBar_->setRange(0, hosts.size());
     statusProgressBar_->setValue(0);
     statusProgressBar_->setVisible(true);
 
     cancelRequested_ = std::make_shared<std::atomic_bool>(false);
-    const ScanOptions scanOptions = captureScanOptions(adapter);
     const std::shared_ptr<std::atomic_bool> scanCancellation = cancelRequested_;
 
     QFuture<QList<ScanResult>> future = QtConcurrent::run([this, scanOptions, hosts, scanCancellation]() {
@@ -1101,10 +1127,6 @@ QList<ScanResult> ScannerWindow::scanHosts(const ScanOptions &options,
     // Shared, thread-safe accumulator for progressive per-host updates.
     QList<ScanResult> results;
     QMutex resultsMutex;
-    QSet<QString> targetIps;
-    for (const QHostAddress &host : hosts) {
-        targetIps.insert(host.toString());
-    }
     const auto publishResult = [&](const ScanResult &result) {
         if (cancellable::isCancelled(cancelRequested)) {
             return;
@@ -1151,37 +1173,7 @@ QList<ScanResult> ScannerWindow::scanHosts(const ScanOptions &options,
         }
     };
 
-    if (!options.localIp.isEmpty() && targetIps.contains(options.localIp)) {
-        ScanResult selfResult;
-        selfResult.ip = options.localIp;
-        selfResult.mac = options.localMac.isEmpty() ? "Unknown" : options.localMac;
-        selfResult.vendor = lookupVendor(selfResult.mac, options);
-        selfResult.hostname = QHostInfo::localHostName().trimmed();
-        if (selfResult.hostname.isEmpty()) {
-            selfResult.hostname = "Unknown";
-        }
-        selfResult.services = probeServices(selfResult.ip, options.localIp, cancelRequested, options);
-        selfResult.detailsText = collectDeviceDetails(selfResult, options.localIp, cancelRequested, options);
-        publishResult(selfResult);
-    }
-
     const QString gatewayIp = lookupGatewayIp(options.interfaceName);
-    if (!gatewayIp.isEmpty() && gatewayIp != options.localIp && targetIps.contains(gatewayIp)) {
-        ScanResult gatewayResult;
-        gatewayResult.ip = gatewayIp;
-        gatewayResult.mac = lookupMacAddress(gatewayIp, options.interfaceName, cancelRequested);
-        gatewayResult.vendor = lookupVendor(gatewayResult.mac, options);
-        gatewayResult.hostname = lookupHostname(gatewayIp, cancelRequested);
-        if (gatewayResult.mac.isEmpty()) {
-            gatewayResult.mac = "Unknown";
-        }
-        if (gatewayResult.hostname.isEmpty()) {
-            gatewayResult.hostname = "Unknown";
-        }
-        gatewayResult.services = probeServices(gatewayResult.ip, options.localIp, cancelRequested, options);
-        gatewayResult.detailsText = collectDeviceDetails(gatewayResult, options.localIp, cancelRequested, options);
-        publishResult(gatewayResult);
-    }
 
     const int total = hosts.size();
     std::atomic<int> nextIndex{0};
@@ -1189,7 +1181,7 @@ QList<ScanResult> ScannerWindow::scanHosts(const ScanOptions &options,
 
     QThreadPool pool;
     const int requestedWorkers = std::clamp(options.maxParallelProbes, 1, kMaxParallelProbes);
-    const int workerCount = std::min(requestedWorkers, std::max(1, pool.maxThreadCount()));
+    const int workerCount = requestedWorkers;
     pool.setMaxThreadCount(workerCount);
 
     QList<QFuture<void>> workers;
@@ -1210,56 +1202,80 @@ QList<ScanResult> ScannerWindow::scanHosts(const ScanOptions &options,
 
                 const QHostAddress host = hosts[index];
                 const QString ipString = host.toString();
+                const TargetBudget budget(options.targetDeadlineMs);
 
                 bool alive = false;
                 QString discoveredMac;
-                if (ipString == options.localIp || ipString == gatewayIp) {
+                QList<ServiceHit> discoveredServices;
+                if (ipString == options.localIp) {
+                    alive = true;
+                    discoveredMac = options.localMac;
+                } else if (ipString == gatewayIp) {
                     alive = true;
                 } else {
-                    alive = pingHost(host, options, cancelRequested);
+                    alive = pingHost(host, options, budget, cancelRequested);
                     if (!alive) {
-                        discoveredMac = lookupMacAddress(ipString, options.interfaceName, cancelRequested);
+                        discoveredMac = lookupMacAddress(
+                            ipString, options.interfaceName, budget, cancelRequested);
                         if (!discoveredMac.isEmpty()) {
                             alive = true;
                         }
                     }
-                    if (!alive && options.accuracyLevel >= 2) {
-                        for (const ServiceDefinition &def : availableServices()) {
-                            if (!options.enabledServiceIds.contains(def.id)) {
-                                continue;
-                            }
-                            if (isPortOpen(ipString,
-                                           def.port,
-                                           options.localIp,
-                                           std::max(120, options.serviceTimeoutMs / 2),
-                                           options.serviceAttempts,
-                                           cancelRequested)) {
-                                alive = true;
-                                break;
-                            }
-                        }
+                    if (!alive && options.accuracyLevel >= 2 && !budget.expired()) {
+                        discoveredServices = probeServices(
+                            ipString, options.localIp, budget, cancelRequested, options);
+                        alive = !discoveredServices.isEmpty();
                     }
                 }
 
                 if (alive) {
                     ScanResult result;
                     result.ip = ipString;
-                    result.mac = discoveredMac.isEmpty()
-                                     ? lookupMacAddress(ipString, options.interfaceName, cancelRequested)
-                                     : discoveredMac;
-                    result.vendor = lookupVendor(result.mac, options);
-                    result.hostname = lookupHostname(ipString, cancelRequested);
-                    if (result.mac.isEmpty()) {
-                        result.mac = "Unknown";
+                    for (const AliveHostStage stage : kAliveHostStageOrder) {
+                        switch (stage) {
+                        case AliveHostStage::Services:
+                            result.services = discoveredServices.isEmpty()
+                                                  ? probeServices(ipString,
+                                                                  options.localIp,
+                                                                  budget,
+                                                                  cancelRequested,
+                                                                  options)
+                                                  : discoveredServices;
+                            break;
+                        case AliveHostStage::MacAddress:
+                            result.mac = discoveredMac.isEmpty()
+                                             ? lookupMacAddress(ipString,
+                                                                options.interfaceName,
+                                                                budget,
+                                                                cancelRequested)
+                                             : discoveredMac;
+                            break;
+                        case AliveHostStage::Vendor:
+                            result.vendor = lookupVendor(result.mac, options);
+                            break;
+                        case AliveHostStage::Hostname:
+                            result.hostname = ipString == options.localIp
+                                                  ? QHostInfo::localHostName().trimmed()
+                                                  : lookupHostname(
+                                                        ipString, budget, cancelRequested);
+                            break;
+                        case AliveHostStage::NormalizeIdentity:
+                            if (result.mac.isEmpty()) {
+                                result.mac = "Unknown";
+                            }
+                            if (result.vendor.isEmpty()) {
+                                result.vendor = "Unknown";
+                            }
+                            if (result.hostname.isEmpty()) {
+                                result.hostname = "Unknown";
+                            }
+                            break;
+                        case AliveHostStage::Details:
+                            result.detailsText = collectDeviceDetails(
+                                result, options.localIp, budget, cancelRequested, options);
+                            break;
+                        }
                     }
-                    if (result.vendor.isEmpty()) {
-                        result.vendor = "Unknown";
-                    }
-                    if (result.hostname.isEmpty()) {
-                        result.hostname = "Unknown";
-                    }
-                    result.services = probeServices(ipString, options.localIp, cancelRequested, options);
-                    result.detailsText = collectDeviceDetails(result, options.localIp, cancelRequested, options);
                     publishResult(result);
                 }
 
@@ -1271,74 +1287,12 @@ QList<ScanResult> ScannerWindow::scanHosts(const ScanOptions &options,
                 if (cancelRequested && cancelRequested->load()) {
                     break;
                 }
-                QThread::msleep(kInterProbeDelayMs);
             }
         }));
     }
 
     for (QFuture<void> &worker : workers) {
         worker.waitForFinished();
-    }
-
-    // High-accuracy reconciliation pass for any targets missed in parallel probing.
-    if (!(cancelRequested && cancelRequested->load()) && options.accuracyLevel >= 2) {
-        QSet<QString> discoveredIps;
-        {
-            QMutexLocker locker(&resultsMutex);
-            for (const ScanResult &existing : results) {
-                discoveredIps.insert(existing.ip);
-            }
-        }
-
-        for (const QHostAddress &host : hosts) {
-            if (cancelRequested && cancelRequested->load()) {
-                break;
-            }
-
-            const QString ipString = host.toString();
-            if (discoveredIps.contains(ipString)) {
-                continue;
-            }
-
-            bool alive = pingHost(host, options, cancelRequested);
-            QString mac;
-            if (!alive) {
-                mac = lookupMacAddress(ipString, options.interfaceName, cancelRequested);
-                alive = !mac.isEmpty();
-            }
-            QList<ServiceHit> services;
-            if (!alive) {
-                services = probeServices(ipString, options.localIp, cancelRequested, options);
-                alive = !services.isEmpty();
-            }
-            if (!alive) {
-                continue;
-            }
-
-            ScanResult result;
-            result.ip = ipString;
-            result.mac = mac.isEmpty()
-                             ? lookupMacAddress(ipString, options.interfaceName, cancelRequested)
-                             : mac;
-            result.vendor = lookupVendor(result.mac, options);
-            result.hostname = lookupHostname(ipString, cancelRequested);
-            if (result.mac.isEmpty()) {
-                result.mac = "Unknown";
-            }
-            if (result.vendor.isEmpty()) {
-                result.vendor = "Unknown";
-            }
-            if (result.hostname.isEmpty()) {
-                result.hostname = "Unknown";
-            }
-            if (services.isEmpty()) {
-                services = probeServices(ipString, options.localIp, cancelRequested, options);
-            }
-            result.services = services;
-            result.detailsText = collectDeviceDetails(result, options.localIp, cancelRequested, options);
-            publishResult(result);
-            discoveredIps.insert(ipString);
-        }
     }
 
     std::sort(results.begin(), results.end(), [](const ScanResult &a, const ScanResult &b) {
@@ -1350,6 +1304,7 @@ QList<ScanResult> ScannerWindow::scanHosts(const ScanOptions &options,
 
 bool ScannerWindow::pingHost(const QHostAddress &address,
                              const ScanOptions &options,
+                             const TargetBudget &budget,
                              const std::shared_ptr<std::atomic_bool> &cancelRequested) const
 {
 #ifdef Q_OS_LINUX
@@ -1358,7 +1313,7 @@ bool ScannerWindow::pingHost(const QHostAddress &address,
                                     : QString("ping");
     const auto runPing = [&](const QStringList &baseArgs) {
         for (int attempt = 0; attempt < options.pingAttempts; ++attempt) {
-            if (cancellable::isCancelled(cancelRequested)) {
+            if (cancellable::isCancelled(cancelRequested) || budget.expired()) {
                 return false;
             }
             QProcess ping;
@@ -1368,8 +1323,13 @@ bool ScannerWindow::pingHost(const QHostAddress &address,
             args << address.toString();
             ping.start(pingProgram, args);
 
-            const int waitMs = (timeoutSeconds * 1000) + 2500;
-            if (cancellable::waitForProcess(ping, waitMs, cancelRequested) !=
+            const int waitMs = budget.clampTimeout(
+                pingAttemptWaitMs(timeoutSeconds), kProcessCleanupReserveMs);
+            if (cancellable::waitForProcess(
+                    ping,
+                    waitMs,
+                    cancelRequested,
+                    [&budget]() { return budget.remainingMs(); }) !=
                 cancellable::WaitResult::Completed) {
                 continue;
             }
@@ -1388,6 +1348,7 @@ bool ScannerWindow::pingHost(const QHostAddress &address,
 #else
     Q_UNUSED(address)
     Q_UNUSED(options)
+    Q_UNUSED(budget)
     Q_UNUSED(cancelRequested)
     return false;
 #endif
@@ -1396,14 +1357,15 @@ bool ScannerWindow::pingHost(const QHostAddress &address,
 QString ScannerWindow::lookupMacAddress(
     const QString &ip,
     const QString &interfaceName,
+    const TargetBudget &budget,
     const std::shared_ptr<std::atomic_bool> &cancelRequested) const
 {
 #ifdef Q_OS_LINUX
     QFile arpFile("/proc/net/arp");
-    if (!cancellable::isCancelled(cancelRequested) &&
+    if (!cancellable::isCancelled(cancelRequested) && !budget.expired() &&
         arpFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
         while (!arpFile.atEnd()) {
-            if (cancellable::isCancelled(cancelRequested)) {
+            if (cancellable::isCancelled(cancelRequested) || budget.expired()) {
                 return {};
             }
             const QString line = QString::fromUtf8(arpFile.readLine()).trimmed();
@@ -1423,13 +1385,20 @@ QString ScannerWindow::lookupMacAddress(
         }
     }
 
+    if (cancellable::isCancelled(cancelRequested) || budget.expired()) {
+        return {};
+    }
     QProcess ipNeigh;
     QStringList args{"neigh", "show", ip};
     if (!interfaceName.isEmpty()) {
         args << "dev" << interfaceName;
     }
     ipNeigh.start("ip", args);
-    if (cancellable::waitForProcess(ipNeigh, 1000, cancelRequested) ==
+    if (cancellable::waitForProcess(
+            ipNeigh,
+            budget.clampTimeout(1000, kProcessCleanupReserveMs),
+            cancelRequested,
+            [&budget]() { return budget.remainingMs(); }) ==
             cancellable::WaitResult::Completed &&
         ipNeigh.exitStatus() == QProcess::NormalExit && ipNeigh.exitCode() == 0) {
         const QString out = QString::fromUtf8(ipNeigh.readAllStandardOutput());
@@ -1442,6 +1411,7 @@ QString ScannerWindow::lookupMacAddress(
 #else
     Q_UNUSED(ip)
     Q_UNUSED(interfaceName)
+    Q_UNUSED(budget)
     Q_UNUSED(cancelRequested)
 #endif
     return {};
@@ -1461,18 +1431,20 @@ QString ScannerWindow::lookupVendor(const QString &mac, const ScanOptions &optio
 
 QString ScannerWindow::lookupHostname(
     const QString &ip,
+    const TargetBudget &budget,
     const std::shared_ptr<std::atomic_bool> &cancelRequested) const
 {
-    const QString mdnsHost = lookupMdnsHostname(ip, cancelRequested);
+    const QString mdnsHost = lookupMdnsHostname(ip, budget, cancelRequested);
     if (!mdnsHost.isEmpty()) {
         return mdnsHost;
     }
 
-    if (cancellable::isCancelled(cancelRequested)) {
+    if (cancellable::isCancelled(cancelRequested) || budget.expired()) {
         return "Unknown";
     }
     cancellable::WaitResult lookupResult = cancellable::WaitResult::Failed;
-    const QHostInfo info = cancellable::lookupHost(ip, 1500, cancelRequested, &lookupResult);
+    const QHostInfo info = cancellable::lookupHost(
+        ip, budget.clampTimeout(1500), cancelRequested, &lookupResult);
     if (lookupResult != cancellable::WaitResult::Completed) {
         return "Unknown";
     }
@@ -1490,6 +1462,7 @@ QString ScannerWindow::lookupHostname(
 
 QString ScannerWindow::lookupMdnsHostname(
     const QString &ip,
+    const TargetBudget &budget,
     const std::shared_ptr<std::atomic_bool> &cancelRequested) const
 {
 #ifdef Q_OS_LINUX
@@ -1500,7 +1473,11 @@ QString ScannerWindow::lookupMdnsHostname(
 
     QProcess proc;
     proc.start(resolver, {"-4", ip});
-    if (cancellable::waitForProcess(proc, 1200, cancelRequested) !=
+    if (cancellable::waitForProcess(
+            proc,
+            budget.clampTimeout(1200, kProcessCleanupReserveMs),
+            cancelRequested,
+            [&budget]() { return budget.remainingMs(); }) !=
         cancellable::WaitResult::Completed) {
         return {};
     }
@@ -1527,6 +1504,7 @@ QString ScannerWindow::lookupMdnsHostname(
     return host;
 #else
     Q_UNUSED(ip)
+    Q_UNUSED(budget)
     Q_UNUSED(cancelRequested)
     return {};
 #endif
@@ -1579,6 +1557,7 @@ QList<ScannerWindow::ServiceDefinition> ScannerWindow::availableServices() const
 
 QList<ServiceHit> ScannerWindow::probeServices(const QString &ip,
                                                const QString &localBindIp,
+                                               const TargetBudget &budget,
                                                const std::shared_ptr<std::atomic_bool> &cancelRequested,
                                                const ScanOptions &options) const
 {
@@ -1589,7 +1568,7 @@ QList<ServiceHit> ScannerWindow::probeServices(const QString &ip,
         if (!options.enabledServiceIds.contains(def.id)) {
             continue;
         }
-        if (cancelRequested && cancelRequested->load()) {
+        if (cancellable::isCancelled(cancelRequested) || budget.expired()) {
             break;
         }
 
@@ -1598,6 +1577,7 @@ QList<ServiceHit> ScannerWindow::probeServices(const QString &ip,
                        localBindIp,
                        options.serviceTimeoutMs,
                        options.serviceAttempts,
+                       budget,
                        cancelRequested)) {
             ServiceHit hit;
             hit.id = def.id;
@@ -1616,10 +1596,11 @@ bool ScannerWindow::isPortOpen(const QString &ip,
                                const QString &localBindIp,
                                int timeoutMs,
                                int attempts,
+                               const TargetBudget &budget,
                                const std::shared_ptr<std::atomic_bool> &cancelRequested) const
 {
     for (int attempt = 0; attempt < attempts; ++attempt) {
-        if (cancellable::isCancelled(cancelRequested)) {
+        if (cancellable::isCancelled(cancelRequested) || budget.expired()) {
             return false;
         }
         QTcpSocket socket;
@@ -1632,7 +1613,8 @@ bool ScannerWindow::isPortOpen(const QString &ip,
             }
         }
         socket.connectToHost(ip, static_cast<quint16>(port));
-        const bool connected = cancellable::waitForConnected(socket, timeoutMs, cancelRequested) ==
+        const bool connected = cancellable::waitForConnected(
+                                   socket, budget.clampTimeout(timeoutMs), cancelRequested) ==
                                cancellable::WaitResult::Completed;
         socket.abort();
         if (connected) {
@@ -1730,10 +1712,11 @@ void ScannerWindow::refreshDisplayedMacAddresses()
 
 QString ScannerWindow::fetchTcpBanner(const QString &ip, int port, int timeoutMs,
                                       const QString &localBindIp,
+                                      const TargetBudget &budget,
                                       const std::shared_ptr<std::atomic_bool> &cancelRequested,
                                       const QByteArray &prologue) const
 {
-    if (cancellable::isCancelled(cancelRequested)) {
+    if (cancellable::isCancelled(cancelRequested) || budget.expired()) {
         return {};
     }
     QTcpSocket socket;
@@ -1746,19 +1729,22 @@ QString ScannerWindow::fetchTcpBanner(const QString &ip, int port, int timeoutMs
         }
     }
     socket.connectToHost(ip, static_cast<quint16>(port));
-    if (cancellable::waitForConnected(socket, timeoutMs, cancelRequested) !=
+    if (cancellable::waitForConnected(
+            socket, budget.clampTimeout(timeoutMs), cancelRequested) !=
         cancellable::WaitResult::Completed) {
         return {};
     }
     if (!prologue.isEmpty()) {
         socket.write(prologue);
-        if (cancellable::waitForBytesWritten(socket, timeoutMs, cancelRequested) !=
+        if (cancellable::waitForBytesWritten(
+                socket, budget.clampTimeout(timeoutMs), cancelRequested) !=
             cancellable::WaitResult::Completed) {
             socket.abort();
             return {};
         }
     }
-    if (cancellable::waitForReadyRead(socket, timeoutMs, cancelRequested) !=
+    if (cancellable::waitForReadyRead(
+            socket, budget.clampTimeout(timeoutMs), cancelRequested) !=
         cancellable::WaitResult::Completed) {
         socket.abort();
         return {};
@@ -1798,6 +1784,7 @@ QString ScannerWindow::inferOsFromSignals(const QStringList &signalList) const
 
 QString ScannerWindow::collectDeviceDetails(const ScanResult &result,
                                             const QString &localBindIp,
+                                            const TargetBudget &budget,
                                             const std::shared_ptr<std::atomic_bool> &cancelRequested,
                                             const ScanOptions &options) const
 {
@@ -1811,12 +1798,12 @@ QString ScannerWindow::collectDeviceDetails(const ScanResult &result,
     lines << QString("Services: %1").arg(result.services.isEmpty() ? "None" : serviceText(result.services));
 
     for (const ServiceHit &service : result.services) {
-        if (cancellable::isCancelled(cancelRequested)) {
+        if (cancellable::isCancelled(cancelRequested) || budget.expired()) {
             break;
         }
         if (service.id == "http") {
             const QString response = fetchTcpBanner(
-                result.ip, 80, options.serviceTimeoutMs, localBindIp, cancelRequested,
+                result.ip, 80, options.serviceTimeoutMs, localBindIp, budget, cancelRequested,
                 QByteArray("HEAD / HTTP/1.0\r\nHost: " + result.ip.toUtf8() + "\r\n\r\n"));
             const QString server = extractHttpServerHeader(response);
             if (!server.isEmpty()) {
@@ -1827,7 +1814,7 @@ QString ScannerWindow::collectDeviceDetails(const ScanResult &result,
         }
         if (service.id == "ssh") {
             const QString banner = fetchTcpBanner(
-                result.ip, 22, options.serviceTimeoutMs, localBindIp, cancelRequested);
+                result.ip, 22, options.serviceTimeoutMs, localBindIp, budget, cancelRequested);
             if (!banner.isEmpty()) {
                 lines << QString("SSH banner: %1").arg(banner.left(180));
                 signalList << banner;
@@ -1836,7 +1823,7 @@ QString ScannerWindow::collectDeviceDetails(const ScanResult &result,
         }
         if (service.id == "ftp") {
             const QString banner = fetchTcpBanner(
-                result.ip, 21, options.serviceTimeoutMs, localBindIp, cancelRequested);
+                result.ip, 21, options.serviceTimeoutMs, localBindIp, budget, cancelRequested);
             if (!banner.isEmpty()) {
                 lines << QString("FTP banner: %1").arg(banner.left(180));
                 signalList << banner;
@@ -1845,7 +1832,7 @@ QString ScannerWindow::collectDeviceDetails(const ScanResult &result,
         }
         if (service.id == "telnet") {
             const QString banner = fetchTcpBanner(
-                result.ip, 23, options.serviceTimeoutMs, localBindIp, cancelRequested);
+                result.ip, 23, options.serviceTimeoutMs, localBindIp, budget, cancelRequested);
             if (!banner.isEmpty()) {
                 lines << QString("Telnet banner: %1").arg(banner.left(180));
                 signalList << banner;
@@ -2561,26 +2548,46 @@ void ScannerWindow::showSettingsDialog()
 {
     // Category list + stacked pages keeps a large settings surface organized.
     QDialog dialog(this);
+    dialog.setObjectName("settingsDialog");
     dialog.setWindowTitle("Settings");
-    dialog.resize(800, 560);
+    dialog.setFixedSize(settingslayout::kDialogWidth, settingslayout::kDialogHeight);
     dialog.setModal(true);
 
     auto *layout = new QVBoxLayout(&dialog);
+    layout->setContentsMargins(settingslayout::kOuterMargin,
+                               settingslayout::kOuterMargin,
+                               settingslayout::kOuterMargin,
+                               settingslayout::kOuterMargin);
+    layout->setSpacing(settingslayout::kSectionSpacing);
     auto *body = new QWidget(&dialog);
     auto *bodyLayout = new QHBoxLayout(body);
     bodyLayout->setContentsMargins(0, 0, 0, 0);
+    bodyLayout->setSpacing(settingslayout::kSectionSpacing);
 
     auto *categories = new QListWidget(body);
-    categories->setFixedWidth(170);
+    categories->setObjectName("settingsCategories");
+    categories->setFixedWidth(settingslayout::kNavigationWidth);
     categories->addItems({"Appearance", "Services", "Performance", "Programs", "OUI Prefixes", "Toolbar"});
 
     auto *pages = new QStackedWidget(body);
+    const auto addSettingsPage = [pages](QWidget *page) {
+        auto *scroll = new QScrollArea(pages);
+        scroll->setFrameShape(QFrame::NoFrame);
+        scroll->setWidgetResizable(true);
+        scroll->setWidget(page);
+        pages->addWidget(scroll);
+    };
     bodyLayout->addWidget(categories);
     bodyLayout->addWidget(pages, 1);
     layout->addWidget(body, 1);
 
     auto *appearancePage = new QWidget(pages);
     auto *appearanceLayout = new QVBoxLayout(appearancePage);
+    appearanceLayout->setContentsMargins(settingslayout::kOuterMargin,
+                                          settingslayout::kOuterMargin,
+                                          settingslayout::kOuterMargin,
+                                          settingslayout::kOuterMargin);
+    appearanceLayout->setSpacing(settingslayout::kControlSpacing);
     auto *ipCheck = new QCheckBox("Show IP Address column", appearancePage);
     auto *hostCheck = new QCheckBox("Show Hostname column", appearancePage);
     auto *macCheck = new QCheckBox("Show MAC Address column", appearancePage);
@@ -2606,13 +2613,20 @@ void ScannerWindow::showSettingsDialog()
     appearanceLayout->addWidget(vendorCheck);
     appearanceLayout->addWidget(svcCheck);
     auto *macFormatForm = new QFormLayout();
+    macFormatForm->setHorizontalSpacing(settingslayout::kSectionSpacing);
+    macFormatForm->setVerticalSpacing(settingslayout::kControlSpacing);
     macFormatForm->addRow("MAC display format:", macFormatCombo);
     appearanceLayout->addLayout(macFormatForm);
     appearanceLayout->addStretch(1);
-    pages->addWidget(appearancePage);
+    addSettingsPage(appearancePage);
 
     auto *servicesPage = new QWidget(pages);
     auto *servicesLayout = new QVBoxLayout(servicesPage);
+    servicesLayout->setContentsMargins(settingslayout::kOuterMargin,
+                                        settingslayout::kOuterMargin,
+                                        settingslayout::kOuterMargin,
+                                        settingslayout::kOuterMargin);
+    servicesLayout->setSpacing(settingslayout::kControlSpacing);
     QHash<QString, QCheckBox *> serviceChecks;
     for (const ServiceDefinition &def : availableServices()) {
         auto *check = new QCheckBox(QString("Probe %1 (%2)").arg(def.label).arg(def.port), servicesPage);
@@ -2621,45 +2635,90 @@ void ScannerWindow::showSettingsDialog()
         servicesLayout->addWidget(check);
     }
     servicesLayout->addStretch(1);
-    pages->addWidget(servicesPage);
+    addSettingsPage(servicesPage);
 
     auto *performancePage = new QWidget(pages);
-    auto *performanceLayout = new QFormLayout(performancePage);
+    auto *performanceLayout = new QGridLayout(performancePage);
+    performanceLayout->setContentsMargins(settingslayout::kOuterMargin,
+                                           settingslayout::kOuterMargin,
+                                           settingslayout::kOuterMargin,
+                                           settingslayout::kOuterMargin);
+    performanceLayout->setHorizontalSpacing(settingslayout::kSectionSpacing);
+    performanceLayout->setVerticalSpacing(settingslayout::kControlSpacing);
+    performanceLayout->setColumnMinimumWidth(0, settingslayout::kRowLabelWidth);
     auto *workerSlider = new QSlider(Qt::Horizontal, performancePage);
+    workerSlider->setObjectName("settingsWorkerSlider");
     workerSlider->setRange(1, kMaxParallelProbes);
+    workerSlider->setFixedWidth(settingslayout::kSliderWidth);
+    workerSlider->setTickInterval(1);
+    workerSlider->setTickPosition(QSlider::TicksBelow);
     workerSlider->setValue(maxParallelProbes_);
     auto *workerLabel = new QLabel(performancePage);
+    workerLabel->setObjectName("settingsWorkerValue");
+    workerLabel->setFixedWidth(settingslayout::kValueWidth);
     workerLabel->setText(QString("%1 thread%2").arg(maxParallelProbes_).arg(maxParallelProbes_ == 1 ? "" : "s"));
     connect(workerSlider, &QSlider::valueChanged, &dialog, [workerLabel](int value) {
         workerLabel->setText(QString("%1 thread%2").arg(value).arg(value == 1 ? "" : "s"));
     });
-    auto *workerRow = new QWidget(performancePage);
-    auto *workerRowLayout = new QHBoxLayout(workerRow);
-    workerRowLayout->setContentsMargins(0, 0, 0, 0);
-    workerRowLayout->addWidget(workerSlider, 1);
-    workerRowLayout->addWidget(workerLabel);
-    performanceLayout->addRow("Scan workers:", workerRow);
+    auto *workerRowLabel = new QLabel("Scan workers:", performancePage);
+    workerRowLabel->setObjectName("settingsWorkerRowLabel");
+    workerRowLabel->setFixedWidth(settingslayout::kRowLabelWidth);
+    performanceLayout->addWidget(workerRowLabel, 0, 0);
+    performanceLayout->addWidget(workerSlider, 0, 1);
+    performanceLayout->addWidget(workerLabel, 0, 2);
 
     auto *accuracySlider = new QSlider(Qt::Horizontal, performancePage);
+    accuracySlider->setObjectName("settingsAccuracySlider");
     accuracySlider->setRange(0, 3);
+    accuracySlider->setFixedWidth(settingslayout::kSliderWidth);
+    accuracySlider->setTickInterval(1);
+    accuracySlider->setTickPosition(QSlider::TicksBelow);
     accuracySlider->setValue(accuracyLevel_);
     auto *accuracyValueLabel = new QLabel(performancePage);
+    accuracyValueLabel->setObjectName("settingsAccuracyValue");
+    accuracyValueLabel->setFixedWidth(settingslayout::kValueWidth);
     accuracyValueLabel->setText(accuracyLabel());
-    connect(accuracySlider, &QSlider::valueChanged, &dialog, [accuracyValueLabel](int value) {
+    auto *accuracyDetailsLabel = new QLabel(performancePage);
+    accuracyDetailsLabel->setObjectName("settingsAccuracyDetails");
+    accuracyDetailsLabel->setFixedHeight(settingslayout::kDynamicDescriptionHeight);
+    accuracyDetailsLabel->setWordWrap(true);
+    accuracyDetailsLabel->setAlignment(Qt::AlignLeft | Qt::AlignTop);
+    accuracyDetailsLabel->setText(scanBudgetProfileSummary(accuracyLevel_));
+    connect(accuracySlider,
+            &QSlider::valueChanged,
+            &dialog,
+            [accuracyValueLabel, accuracyDetailsLabel](int value) {
         const int clamped = std::clamp(value, 0, 3);
         const char *labels[] = {"Fast", "Balanced", "High", "Maximum"};
         accuracyValueLabel->setText(labels[clamped]);
+        accuracyDetailsLabel->setText(scanBudgetProfileSummary(clamped));
     });
-    auto *accuracyRow = new QWidget(performancePage);
-    auto *accuracyRowLayout = new QHBoxLayout(accuracyRow);
-    accuracyRowLayout->setContentsMargins(0, 0, 0, 0);
-    accuracyRowLayout->addWidget(accuracySlider, 1);
-    accuracyRowLayout->addWidget(accuracyValueLabel);
-    performanceLayout->addRow("Accuracy:", accuracyRow);
-    pages->addWidget(performancePage);
+    auto *accuracyRowLabel = new QLabel("Accuracy:", performancePage);
+    accuracyRowLabel->setObjectName("settingsAccuracyRowLabel");
+    accuracyRowLabel->setFixedWidth(settingslayout::kRowLabelWidth);
+    performanceLayout->addWidget(accuracyRowLabel, 1, 0);
+    performanceLayout->addWidget(accuracySlider, 1, 1);
+    performanceLayout->addWidget(accuracyValueLabel, 1, 2);
+    performanceLayout->addWidget(accuracyDetailsLabel, 2, 1, 1, 2);
+    auto *accuracyHelp = new QLabel(
+        "Fast gives a quick lay of the land. Higher settings repeat ping and port probes "
+        "with longer waits so intermittent or sleeping devices have more chances to respond.",
+        performancePage);
+    accuracyHelp->setObjectName("settingsAccuracyHelp");
+    accuracyHelp->setWordWrap(true);
+    performanceLayout->addWidget(accuracyHelp, 3, 0, 1, 3);
+    performanceLayout->setRowStretch(4, 1);
+    addSettingsPage(performancePage);
 
     auto *programsPage = new QWidget(pages);
     auto *programsLayout = new QFormLayout(programsPage);
+    programsLayout->setContentsMargins(settingslayout::kOuterMargin,
+                                        settingslayout::kOuterMargin,
+                                        settingslayout::kOuterMargin,
+                                        settingslayout::kOuterMargin);
+    programsLayout->setHorizontalSpacing(settingslayout::kSectionSpacing);
+    programsLayout->setVerticalSpacing(settingslayout::kControlSpacing);
+    programsLayout->setRowWrapPolicy(QFormLayout::WrapLongRows);
     QHash<QString, QLineEdit *> commandEdits;
     for (const ServiceDefinition &def : availableServices()) {
         if (def.isWeb) {
@@ -2674,10 +2733,15 @@ void ScannerWindow::showSettingsDialog()
         programsLayout->addRow(QString("%1 command:").arg(def.label), edit);
         commandEdits.insert(def.id, edit);
     }
-    pages->addWidget(programsPage);
+    addSettingsPage(programsPage);
 
     auto *ouiPage = new QWidget(pages);
     auto *ouiLayout = new QVBoxLayout(ouiPage);
+    ouiLayout->setContentsMargins(settingslayout::kOuterMargin,
+                                  settingslayout::kOuterMargin,
+                                  settingslayout::kOuterMargin,
+                                  settingslayout::kOuterMargin);
+    ouiLayout->setSpacing(settingslayout::kControlSpacing);
     auto *ouiHelp = new QLabel("Custom OUI overrides (one per line): PREFIX=Vendor\nExamples: 00163E=My Lab Vendor, 00:11:22=VendorX", ouiPage);
     ouiHelp->setWordWrap(true);
     auto *ouiEdit = new QPlainTextEdit(ouiPage);
@@ -2691,11 +2755,18 @@ void ScannerWindow::showSettingsDialog()
     ouiEdit->setMaximumBlockCount(2000);
     ouiLayout->addWidget(ouiHelp);
     ouiLayout->addWidget(ouiEdit, 1);
-    pages->addWidget(ouiPage);
+    addSettingsPage(ouiPage);
 
     auto *toolbarPage = new QWidget(pages);
     auto *toolbarPageLayout = new QVBoxLayout(toolbarPage);
+    toolbarPageLayout->setContentsMargins(settingslayout::kOuterMargin,
+                                           settingslayout::kOuterMargin,
+                                           settingslayout::kOuterMargin,
+                                           settingslayout::kOuterMargin);
+    toolbarPageLayout->setSpacing(settingslayout::kControlSpacing);
     auto *styleForm = new QFormLayout();
+    styleForm->setHorizontalSpacing(settingslayout::kSectionSpacing);
+    styleForm->setVerticalSpacing(settingslayout::kControlSpacing);
     auto *displayModeCombo = new QComboBox(toolbarPage);
     displayModeCombo->addItem("Icon only", 0);
     displayModeCombo->addItem("Icon + Text", 1);
@@ -2734,6 +2805,7 @@ void ScannerWindow::showSettingsDialog()
     auto *listsRow = new QWidget(toolbarPage);
     auto *listsLayout = new QHBoxLayout(listsRow);
     listsLayout->setContentsMargins(0, 0, 0, 0);
+    listsLayout->setSpacing(settingslayout::kControlSpacing);
     auto *availableList = new QListWidget(listsRow);
     auto *currentList = new QListWidget(listsRow);
     availableList->setSelectionMode(QAbstractItemView::SingleSelection);
@@ -2754,6 +2826,7 @@ void ScannerWindow::showSettingsDialog()
     auto *moveButtons = new QWidget(listsRow);
     auto *moveButtonsLayout = new QVBoxLayout(moveButtons);
     moveButtonsLayout->setContentsMargins(0, 0, 0, 0);
+    moveButtonsLayout->setSpacing(settingslayout::kControlSpacing);
     moveButtonsLayout->addStretch(1);
     auto *addButton = new QPushButton(">", moveButtons);
     auto *removeButton = new QPushButton("<", moveButtons);
@@ -2764,7 +2837,6 @@ void ScannerWindow::showSettingsDialog()
     moveButtonsLayout->addWidget(removeButton);
     moveButtonsLayout->addWidget(upButton);
     moveButtonsLayout->addWidget(downButton);
-    moveButtonsLayout->addSpacing(10);
     moveButtonsLayout->addWidget(defaultsButton);
     moveButtonsLayout->addStretch(1);
 
@@ -2887,12 +2959,13 @@ void ScannerWindow::showSettingsDialog()
     if (currentList->count() > 0) {
         currentList->setCurrentRow(0);
     }
-    pages->addWidget(toolbarPage);
+    addSettingsPage(toolbarPage);
 
     connect(categories, &QListWidget::currentRowChanged, pages, &QStackedWidget::setCurrentIndex);
     categories->setCurrentRow(0);
 
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
+    buttons->setObjectName("settingsButtons");
     connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
     connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
     layout->addWidget(buttons);
@@ -3019,8 +3092,9 @@ void ScannerWindow::showHelpDialog()
         "<h3>Advanced</h3>"
         "<p><b>Performance:</b> Worker count controls parallel host probing. "
         "Higher values scan faster but increase network load.</p>"
-        "<p><b>Accuracy:</b> Increases retries and service timeout depth to find hosts that "
-        "drop ICMP or respond intermittently.</p>"
+        "<p><b>Accuracy:</b> Fast performs one short probe pass for a quick lay of the land. "
+        "Balanced through Maximum progressively repeat ping and port probes and wait longer "
+        "for intermittent, sleeping, or slower devices.</p>"
         "<p><b>Services:</b> Enable/disable per-port probing and configure launch commands in "
         "Settings &rarr; Programs.</p>"
         "<p><b>Filtering:</b> Use Find to filter by IP, hostname, MAC, vendor, services, or OUI prefix.</p>"
@@ -3053,65 +3127,24 @@ QString ScannerWindow::accuracyLabel() const
     }
 }
 
-int ScannerWindow::pingAttempts() const
-{
-    switch (std::clamp(accuracyLevel_, 0, 3)) {
-    case 0: return 1;
-    case 1: return 2;
-    case 2: return 3;
-    case 3: return 4;
-    default: return 2;
-    }
-}
-
-int ScannerWindow::pingTimeoutSeconds() const
-{
-    switch (std::clamp(accuracyLevel_, 0, 3)) {
-    case 0: return 1;
-    case 1: return 1;
-    case 2: return 2;
-    case 3: return 3;
-    default: return 1;
-    }
-}
-
-int ScannerWindow::serviceAttempts() const
-{
-    switch (std::clamp(accuracyLevel_, 0, 3)) {
-    case 0: return 1;
-    case 1: return 1;
-    case 2: return 2;
-    case 3: return 3;
-    default: return 1;
-    }
-}
-
-int ScannerWindow::serviceTimeoutMs() const
-{
-    switch (std::clamp(accuracyLevel_, 0, 3)) {
-    case 0: return 180;
-    case 1: return 280;
-    case 2: return 450;
-    case 3: return 700;
-    default: return 280;
-    }
-}
-
 ScanOptions ScannerWindow::captureScanOptions(const AdapterInfo &adapter) const
 {
     ScanOptions options;
     options.accuracyLevel = std::clamp(accuracyLevel_, 0, 3);
+    const ScanBudgetProfile budget = scanBudgetProfile(options.accuracyLevel);
     options.maxParallelProbes = std::clamp(maxParallelProbes_, 1, kMaxParallelProbes);
     options.interfaceName = adapter.interfaceName;
     options.interfaceLabel = adapter.interfaceLabel;
     options.localIp = adapter.localIp;
     options.localMac = adapter.localMac;
-    options.pingAttempts = pingAttempts();
-    options.pingTimeoutSeconds = pingTimeoutSeconds();
-    options.serviceAttempts = serviceAttempts();
-    options.serviceTimeoutMs = serviceTimeoutMs();
+    options.pingAttempts = budget.pingAttempts;
+    options.pingTimeoutSeconds = budget.pingTimeoutSeconds;
+    options.serviceAttempts = budget.serviceAttempts;
+    options.serviceTimeoutMs = budget.serviceTimeoutMs;
     options.macDisplayFormat = macDisplayFormat_;
     options.enabledServiceIds = enabledServiceIds_;
+    options.targetDeadlineMs =
+        targetDeadlineForProfile(budget, options.enabledServiceIds.size());
     options.builtInOuiVendors = builtInOuiVendors_;
     options.customOuiVendors = customOuiVendors_;
     return options;

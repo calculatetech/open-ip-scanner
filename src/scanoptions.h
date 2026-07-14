@@ -18,8 +18,9 @@ struct ScanOptions {
 
     int pingAttempts = 2;
     int pingTimeoutSeconds = 1;
-    int serviceAttempts = 1;
-    int serviceTimeoutMs = 280;
+    int serviceAttempts = 2;
+    int serviceTimeoutMs = 750;
+    int targetDeadlineMs = 11000;
     int macDisplayFormat = 0;
 
     QSet<QString> enabledServiceIds;

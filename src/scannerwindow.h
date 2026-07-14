@@ -17,6 +17,7 @@
 #include <memory>
 
 #include "scanoptions.h"
+#include "scanbudget.h"
 
 class QComboBox;
 class QCompleter;
@@ -162,14 +163,18 @@ private:
     // Host discovery helpers.
     bool pingHost(const QHostAddress &address,
                   const ScanOptions &options,
+                  const TargetBudget &budget,
                   const std::shared_ptr<std::atomic_bool> &cancelRequested) const;
     QString lookupMacAddress(const QString &ip,
                              const QString &interfaceName,
+                             const TargetBudget &budget,
                              const std::shared_ptr<std::atomic_bool> &cancelRequested) const;
     QString lookupVendor(const QString &mac, const ScanOptions &options) const;
     QString lookupHostname(const QString &ip,
+                           const TargetBudget &budget,
                            const std::shared_ptr<std::atomic_bool> &cancelRequested) const;
     QString lookupMdnsHostname(const QString &ip,
+                               const TargetBudget &budget,
                                const std::shared_ptr<std::atomic_bool> &cancelRequested) const;
     QString lookupGatewayIp(const QString &interfaceName) const;
 
@@ -177,14 +182,17 @@ private:
     QList<ServiceDefinition> availableServices() const;
     QList<ServiceHit> probeServices(const QString &ip,
                                     const QString &localBindIp,
+                                    const TargetBudget &budget,
                                     const std::shared_ptr<std::atomic_bool> &cancelRequested,
                                     const ScanOptions &options) const;
     QString collectDeviceDetails(const ScanResult &result,
                                  const QString &localBindIp,
+                                 const TargetBudget &budget,
                                  const std::shared_ptr<std::atomic_bool> &cancelRequested,
                                  const ScanOptions &options) const;
     QString fetchTcpBanner(const QString &ip, int port, int timeoutMs,
                            const QString &localBindIp,
+                           const TargetBudget &budget,
                            const std::shared_ptr<std::atomic_bool> &cancelRequested,
                            const QByteArray &prologue = {}) const;
     QString extractHttpServerHeader(const QString &rawResponse) const;
@@ -195,6 +203,7 @@ private:
                     const QString &localBindIp,
                     int timeoutMs,
                     int attempts,
+                    const TargetBudget &budget,
                     const std::shared_ptr<std::atomic_bool> &cancelRequested) const;
     QString serviceText(const QList<ServiceHit> &services) const;
     QString formatMacForDisplay(const QString &mac) const;
@@ -215,10 +224,6 @@ private:
     static QString normalizeOuiPrefix(const QString &prefix);
     static QString normalizeMacHex12(const QString &mac);
     QString accuracyLabel() const;
-    int pingAttempts() const;
-    int pingTimeoutSeconds() const;
-    int serviceAttempts() const;
-    int serviceTimeoutMs() const;
     ScanOptions captureScanOptions(const AdapterInfo &adapter) const;
     void applyDefaultSettings();
     void loadSettings();

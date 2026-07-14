@@ -2,7 +2,7 @@
 
 This file is the single source of truth for unfinished product, engineering, documentation, and release work. Detailed evidence for why each 1.0 item exists is in [the production-readiness audit](production-readiness-audit.md). New ideas belong here rather than in a second backlog.
 
-The audited baseline is `0.2.0` at commit `91e0a7a`; the current development increment is `0.3.1`. Version 1.0 is not ready. Every unchecked item under “Required for 1.0” is a release gate; the post-1.0 section is explicitly outside the first production release.
+The audited baseline is `0.2.0` at commit `91e0a7a`; the current development increment is `0.4.0`. Version 1.0 is not ready. Every unchecked item under “Required for 1.0” is a release gate; the post-1.0 section is explicitly outside the first production release.
 
 ## Priority definitions
 
@@ -33,7 +33,8 @@ Priority matches the most severe audit finding an item closes. All items in the 
 - [ ] **SCAN-BUDGETS — Replace the duplicate accuracy pass with a budgeted scan engine.** `High`
   - Remove the serial retry of every missed host. Represent discovery methods as bounded attempts in one scheduler, avoid probing the same port twice, and cap total work per target and per scan mode.
   - Surface an estimated upper bound before starting a large scan and make the worker count meaningful across all discovery stages.
-  - Done when virtual-clock tests prove each host/mode attempt budget, a fully unresponsive 4,096-target scan never starts an unbounded second pass, and Stop interrupts the current budget rather than waiting for all retries.
+  - Current progress: every target runs once in the configured worker pool with a safety ceiling derived from the accuracy profile and enabled-port count; the serial reconciliation pass is removed; TCP discovery evidence is reused; enabled-port evidence is collected before optional enrichment; and the accuracy slider scales ping and port attempts from one short pass through four longer passes. Only scans whose worst-case estimate exceeds ten minutes require confirmation. Unit tests cover profiles, derived ceilings, stage priority, deadline expiry, and worker-wave estimates.
+  - Remaining for completion: add a virtual-clock scheduler fixture that executes fully unresponsive 4,096-target scans, counts every attempt/port, and proves Stop interrupts the active budget without real network timing.
 
 <a id="target-defaults"></a>
 - [ ] **TARGET-DEFAULTS — Make target and adapter defaults valid by construction.** `High`
@@ -163,6 +164,7 @@ Priority matches the most severe audit finding an item closes. All items in the 
 - [ ] **ACCESSIBILITY — Fix startup warnings, accessibility, and theme behavior.** `Medium`
   - Set the Qt high-DPI rounding policy through the supported pre-application API or remove the override; clean startup must not emit the current policy-order warning.
   - Give icon-only controls explicit accessible names and keyboard paths, avoid hard-coded selection/service colors that defeat system contrast, test screen-reader labels and high scaling, and add scrolling/responsive sizing to dense settings pages.
+  - Current progress: the canonical [UI layout specification](ui-layout-spec.md) limits Settings to 600 by 440, standardizes spacing and aligned Performance controls, reserves stable geometry for dynamic descriptions, and requires internal page scrolling. An automated geometry contract protects the dimensions and row fit.
   - Done when offscreen and real-session startup are warning-free, automated accessibility inspection finds names/roles for interactive controls, and light, dark, high-contrast, 200% scale, and keyboard-only smoke tests pass.
 
 <a id="release-docs"></a>
