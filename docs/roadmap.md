@@ -13,7 +13,7 @@ The unchecked milestone boxes below mean their complete acceptance criteria are 
 - `0.3.2` through `0.3.4` — **SCAN-BUDGETS:** removed the duplicate serial pass, added per-target safety ceilings, prioritized service evidence, restored active-port reporting, clarified large-scan estimates, and made Accuracy scale retry depth and timeouts.
 - `0.4.0` — **ACCESSIBILITY:** added the canonical UI layout specification and a stable, internally scrolling 600-by-440 Settings dialog with aligned Performance controls.
 
-Next correctness increment: `0.4.1` returns to the highest-priority open blocker, **SCAN-CONFIGURATION**, to add the deterministic production `ScannerWindow` fixture described in that milestone’s remaining-work line. Category interleaving no longer forces a new minor version; later increments continue `0.4.x` unless a human explicitly starts another minor series.
+Next correctness work returns to the highest-priority open blocker, **SCAN-CONFIGURATION**, to add the deterministic production `ScannerWindow` fixture described in that milestone’s remaining-work line. It remains unversioned while under development and human review. If it is the next human-approved merge after `0.4.0`, the merge commit will assign `0.4.1`; abandoned or superseded work consumes no version.
 
 ## Priority definitions
 
