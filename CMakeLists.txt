@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(OpenIpScanner VERSION 0.4.0 LANGUAGES CXX)
+project(OpenIpScanner VERSION 0.4.1 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -24,6 +24,8 @@ add_executable(open_ip_scanner
     src/scanbudget.h
     src/scanoptions.h
     src/settingslayout.h
+    src/targetdefaults.h
+    src/targetdefaults.cpp
     src/scannerwindow.h
     src/scannerwindow.cpp
     resources/resources.qrc
@@ -57,6 +59,15 @@ if(BUILD_TESTING)
     target_include_directories(settings_layout_test PRIVATE src)
     add_test(NAME settings_layout_contract COMMAND settings_layout_test)
 
+    add_executable(target_defaults_test
+        tests/targetdefaults_test.cpp
+        src/targetdefaults.h
+        src/targetdefaults.cpp
+    )
+    target_include_directories(target_defaults_test PRIVATE src)
+    target_link_libraries(target_defaults_test PRIVATE ${QT_PACKAGE}::Network)
+    add_test(NAME target_default_planning COMMAND target_defaults_test)
+
     add_executable(settings_dialog_test
         tests/settingsdialog_test.cpp
         src/cancellablewait.h
@@ -64,6 +75,8 @@ if(BUILD_TESTING)
         src/scanbudget.h
         src/scanoptions.h
         src/settingslayout.h
+        src/targetdefaults.h
+        src/targetdefaults.cpp
         src/scannerwindow.h
         src/scannerwindow.cpp
         resources/resources.qrc

@@ -2,7 +2,7 @@
 
 This file is the single source of truth for unfinished product, engineering, documentation, and release work. Detailed evidence for why each 1.0 item exists is in [the production-readiness audit](production-readiness-audit.md). New ideas belong here rather than in a second backlog.
 
-The audited baseline is `0.2.0` at commit `91e0a7a`; the current development increment is `0.4.0`. Version 1.0 is not ready. Every unchecked item under “Required for 1.0” is a release gate; the post-1.0 section is explicitly outside the first production release.
+The audited baseline is `0.2.0` at commit `91e0a7a`; the active implementation branch is `0.4.1`, while `0.4.0` remains the latest human-verified version on `main`. Version 1.0 is not ready. Every unchecked item under “Required for 1.0” is a release gate; the post-1.0 section is explicitly outside the first production release.
 
 ## Delivered implementation increments
 
@@ -13,7 +13,7 @@ The unchecked milestone boxes below mean their complete acceptance criteria are 
 - `0.3.2` through `0.3.4` — **SCAN-BUDGETS:** removed the duplicate serial pass, added per-target safety ceilings, prioritized service evidence, restored active-port reporting, clarified large-scan estimates, and made Accuracy scale retry depth and timeouts.
 - `0.4.0` — **ACCESSIBILITY:** added the canonical UI layout specification and a stable, internally scrolling 600-by-440 Settings dialog with aligned Performance controls.
 
-Next correctness work resumes at **TARGET-DEFAULTS**, the first unchecked item in that category. Creating that implementation branch from merged `main` assigns `0.4.1`; the branch remains `0.4.1` through implementation, review, human validation, and merge. No `0.4.2` work begins before `0.4.1` is merged.
+Correctness work is active at **TARGET-DEFAULTS**, the first unchecked item in that category. Its implementation branch was created from merged `main` as `0.4.1`; the branch remains `0.4.1` through implementation, review, human validation, and merge. No `0.4.2` work begins before `0.4.1` is merged.
 
 ## Priority definitions
 
@@ -55,7 +55,9 @@ Priority matches the most severe audit finding an item closes. All items in the 
 - [ ] **Make target and adapter defaults valid by construction.** `High`
   - Never place a subnet in the target field that the parser will immediately reject. For networks larger than the 4,096-host limit, offer a bounded local slice or require an explicit range choice.
   - Cover multiple adapters, cumulative limits, `/31` links, virtual adapters, overlapping private ranges, and route selection. Keep every probe tied to the selected interface/source address.
-  - Done when automated cases for `/8`, `/16`, `/20`, `/24`, `/31`, multiple subnets, and overlapping routes all produce a valid target or a clear decision prompt; pressing Auto can always be followed by Scan.
+  - Current progress on `0.4.1`: `/1` through `/19` defaults become the adapter-local `/24`; `/20` through `/32` preserve their usable host semantics; overlapping addresses deduplicate; defaults stop at 4,096 unique hosts and at the target field's 2,048-character limit, reporting partial omissions. Auto Select uses only the preferred adapter so its probes retain one valid source and route, while selecting another adapter rebuilds the defaults for that adapter. Deterministic tests cover `/8`, `/16`, `/19`, `/20`, `/24`, `/30`, `/31`, `/32`, overlaps, cumulative limits, fragmented `/32` inputs, and production-parser acceptance.
+  - Remaining before completion: human validation must confirm pressing Auto yields a directly scannable target for both Auto Select and a specific adapter, including a clear notice when other adapters or addresses are omitted.
+  - Done when automated cases for `/8`, `/16`, `/19`, `/20`, `/24`, `/30`, `/31`, `/32`, multiple subnets, and overlapping routes all produce a valid target or a clear decision prompt; pressing Auto can always be followed by Scan.
 
 #### NEIGHBOR-VALIDATION
 

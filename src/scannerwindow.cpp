@@ -543,7 +543,7 @@ QList<ScannerWindow::NetworkTarget> ScannerWindow::detectDefaultNetworks() const
             }
 
             const int prefix = entry.prefixLength();
-            if (prefix < 1 || prefix > 30) {
+            if (prefix < 1 || prefix > 32) {
                 continue;
             }
 
@@ -643,26 +643,44 @@ QList<ScannerWindow::AdapterInfo> ScannerWindow::buildAdapters() const
     return adapters;
 }
 
-QString ScannerWindow::buildDefaultTargetText(const QList<NetworkTarget> &targets) const
+DefaultTargetPlan ScannerWindow::buildDefaultTargetPlanForNetworks(
+    const QList<NetworkTarget> &targets) const
 {
-    QStringList cidrs;
-    for (const NetworkTarget &target : targets) {
-        cidrs.append(QString("%1/%2").arg(target.baseAddress.toString()).arg(target.prefixLength));
+    QList<DefaultNetworkInput> inputs;
+    QSet<QString> includedInterfaces;
+    const auto appendInterface = [&](const QString &interfaceName) {
+        for (const NetworkTarget &target : targets) {
+            if (target.interfaceName != interfaceName) {
+                continue;
+            }
+            inputs.append({ipv4ToInt(QHostAddress(target.localIp)),
+                           target.prefixLength,
+                           target.interfaceName,
+                           target.interfaceLabel});
+        }
+        includedInterfaces.insert(interfaceName);
+    };
+    for (const AdapterInfo &adapter : adapters_) {
+        appendInterface(adapter.interfaceName);
     }
-    cidrs.removeDuplicates();
-    return cidrs.join(", ");
-}
-
-QString ScannerWindow::buildDefaultTargetTextForAdapter(const QString &interfaceName) const
-{
-    QStringList cidrs;
-    for (const NetworkTarget &target : networkTargets_) {
-        if (target.interfaceName == interfaceName) {
-            cidrs.append(QString("%1/%2").arg(target.baseAddress.toString()).arg(target.prefixLength));
+    for (const NetworkTarget &target : targets) {
+        if (!includedInterfaces.contains(target.interfaceName)) {
+            appendInterface(target.interfaceName);
         }
     }
-    cidrs.removeDuplicates();
-    return cidrs.join(", ");
+    return ::buildDefaultTargetPlan(inputs, kMaxHostsToScan);
+}
+
+DefaultTargetPlan ScannerWindow::buildDefaultTargetPlanForAdapter(
+    const QString &interfaceName) const
+{
+    QList<NetworkTarget> targets;
+    for (const NetworkTarget &target : networkTargets_) {
+        if (target.interfaceName == interfaceName) {
+            targets.append(target);
+        }
+    }
+    return buildDefaultTargetPlanForNetworks(targets);
 }
 
 int ScannerWindow::preferredAdapterIndex() const
@@ -715,7 +733,26 @@ void ScannerWindow::refreshAdapters()
 
     networkTargets_ = detectDefaultNetworks();
     adapters_ = buildAdapters();
-    defaultTargetText_ = buildDefaultTargetText(networkTargets_);
+    const int preferred = preferredAdapterIndex();
+    const DefaultTargetPlan defaultPlan =
+        preferred >= 0 ? buildDefaultTargetPlanForAdapter(adapters_[preferred].interfaceName)
+                       : DefaultTargetPlan{};
+    defaultTargetText_ = defaultPlan.targetText;
+    QStringList defaultNotices;
+    if (!defaultPlan.omittedInterfaces.isEmpty()) {
+        defaultNotices.append(
+            QString("Auto targets were bounded by the host or input limit; omitted some "
+                    "addresses from: %1.")
+                .arg(defaultPlan.omittedInterfaces.join(", ")));
+    }
+    if (preferred >= 0 && adapters_.size() > 1) {
+        const AdapterInfo &adapter = adapters_[preferred];
+        defaultNotices.append(
+            QString("Auto targets use %1 [%2] so every probe stays on one adapter; select "
+                    "another adapter to target its network.")
+                .arg(adapter.interfaceLabel, adapter.localIp));
+    }
+    defaultTargetNotice_ = defaultNotices.join(' ');
 
     adapterCombo_->clear();
     adapterCombo_->addItem("Auto Select", -1);
@@ -756,6 +793,8 @@ void ScannerWindow::refreshAdapters()
 
     if (!hasNetwork) {
         showStatusMessage("No connected routable IPv4 adapter detected.");
+    } else if (!appliedDefaultTargetNotice_.isEmpty()) {
+        showStatusMessage(appliedDefaultTargetNotice_);
     } else {
         showStatusMessage("Ready.");
     }
@@ -780,20 +819,33 @@ void ScannerWindow::closeEvent(QCloseEvent *event)
 void ScannerWindow::applyDefaultTargets()
 {
     const int selected = adapterCombo_->currentData().toInt();
+    appliedDefaultTargetNotice_.clear();
     if (selected == -1) {
         targetInput_->setText(defaultTargetText_);
+        appliedDefaultTargetNotice_ = defaultTargetNotice_;
     } else if (selected >= 0 && selected < adapters_.size()) {
-        const QString adapterTargets = buildDefaultTargetTextForAdapter(adapters_[selected].interfaceName);
-        if (!adapterTargets.isEmpty()) {
-            targetInput_->setText(adapterTargets);
+        const DefaultTargetPlan adapterPlan =
+            buildDefaultTargetPlanForAdapter(adapters_[selected].interfaceName);
+        if (!adapterPlan.targetText.isEmpty()) {
+            targetInput_->setText(adapterPlan.targetText);
         } else {
             targetInput_->setText(QString("%1/32").arg(adapters_[selected].localIp));
         }
+        if (!adapterPlan.omittedInterfaces.isEmpty()) {
+            appliedDefaultTargetNotice_ =
+                QString("Auto targets were bounded by the host or input limit; omitted some "
+                        "addresses from: %1.")
+                    .arg(adapterPlan.omittedInterfaces.join(", "));
+        }
     } else {
         targetInput_->setText(defaultTargetText_);
+        appliedDefaultTargetNotice_ = defaultTargetNotice_;
     }
     userCustomizedTargets_ = false;
     validateTargetLimitFeedback(targetInput_->text());
+    if (!appliedDefaultTargetNotice_.isEmpty()) {
+        showStatusMessage(appliedDefaultTargetNotice_);
+    }
 }
 
 void ScannerWindow::startScan()
