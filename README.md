@@ -40,13 +40,14 @@ Yes, this project is **100% vibe coded**.
 
 ### Build
 
-- CMake >= 3.16
+- CMake >= 3.28
 - C++17 compiler (GCC/Clang)
-- Qt 6 dev packages (or Qt 5 fallback is supported by CMake):
+- Qt 6.4 or newer development packages:
   - `Widgets`
   - `Network`
   - `Concurrent`
   - `PrintSupport`
+  - `DBus`
 
 Example (Debian/Ubuntu):
 

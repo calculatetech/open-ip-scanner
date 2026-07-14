@@ -2,7 +2,7 @@
 
 This file is the single source of truth for unfinished product, engineering, documentation, and release work. Detailed evidence for why each 1.0 item exists is in [the production-readiness audit](production-readiness-audit.md). New ideas belong here rather than in a second backlog.
 
-The audited baseline is `0.2.0` at commit `91e0a7a`; `0.5.2` is the latest human-verified version, versions through `0.5.5` are reviewed and merged, and `0.5.6` is the active SCAN-PRIVACY branch. Version 1.0 is not ready. Every unchecked item under “Required for 1.0” is a release gate; the post-1.0 section is explicitly outside the first production release.
+The audited baseline is `0.2.0` at commit `91e0a7a`; `0.5.2` is the latest manually tested version, versions through `0.5.6` were adversarially reviewed and merged under the explicit waiver for remaining pre-1.0 work, and `0.5.7` is the active APPLICATION-LAYERS foundation branch. Version 1.0 is not ready. Every unchecked item under “Required for 1.0” is a release gate; the post-1.0 section is explicitly outside the first production release.
 
 ## Delivered implementation increments
 
@@ -23,6 +23,7 @@ The unchecked milestone boxes below mean their complete acceptance criteria are 
 - `0.5.3` — **TARGET-FORMAT-PREFERENCE:** added exact persisted CIDR/range generation while preserving target sets, adapter selection, and limits.
 - `0.5.4` — **SETTINGS-MIGRATIONS:** made schema upgrades lossless, preserved empty service sets and toolbar inheritance, validated OUI input atomically, and debounced remembered-target writes.
 - `0.5.5` — **CSV-EXPORT:** added explicit filtered/all scope, spreadsheet-safe UTF-8, immutable snapshots, and checked atomic replacement.
+- `0.5.6` — **SCAN-PRIVACY:** added disabled-by-default checked retention, first-scan authorization, and an exact immutable active-probe summary.
 
 **RESULT-SCALING** is human-verified on version `0.4.4`. DUPLICATE-IP-CONFLICTS remains Post-1.0.
 
@@ -188,6 +189,8 @@ Priority matches the most severe audit finding an item closes. All items in the 
 - [ ] **Split the 3,534-line window into testable layers.** `Medium`
   - Extract target parsing, scan scheduling, process execution, name resolution, neighbor parsing, service verification, OUI lookup, settings serialization, and export from `ScannerWindow` behind small interfaces.
   - Keep UI objects on the GUI thread and pass plain immutable values across worker boundaries.
+  - Current progress on `0.5.7`: the build now has explicit reusable `ois_core`, `ois_scan`, `ois_linux`, and `ois_ui` targets with narrow public include paths and one-way link dependencies. The installed executable compiles only `main.cpp` and resources; tests link production libraries rather than duplicating their source lists. The supported floor is enforced as CMake 3.28 and Qt 6.4 with no Qt 5 fallback, and versioned presets cover developer, release, ASan/UBSan, TSan, and Clang-Tidy configurations. Existing deterministic parsing, defaults, evidence, resolver, neighbor, export, fixture, and model components are reachable without constructing a window. Remaining work in this roadmap category is to extract the still window-owned target parser, persistence/OUI policy, scan orchestration/backends, and presentation coordination before checking this item complete.
+  - Foundation evidence: normal and strict-warning layered suites pass 12/12, all eleven non-rendering layered tests pass under ThreadSanitizer, `BUILD_TESTING=OFF` configures and builds without Qt Test, preset discovery succeeds, and package metadata reports version 0.5.7. Adversarial review findings were repaired by moving the fixture above core into `ois_scan`, narrowing Linux exports, making Qt Test conditional, and reconciling README/toolchain/status language; full normal and strict suites plus the production-only build passed after those repairs.
   - Done when core behavior can run without constructing a window, test doubles can inject time/process/network outcomes, and `ScannerWindow` contains presentation and coordination rather than the scan implementation.
 
 #### QUALITY-GATE

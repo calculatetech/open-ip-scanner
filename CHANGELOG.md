@@ -2,6 +2,21 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.5.7] - 2026-07-14
+
+### Changed
+
+- Split the build into reusable `ois_core`, `ois_scan`, `ois_linux`, and
+  `ois_ui` targets; the executable now owns only startup and resources.
+- Tests link the narrowest production layer instead of recompiling production
+  implementations into each test executable.
+- Raised the build floor to CMake 3.28 and Qt 6.4, removing the untested Qt 5
+  fallback.
+
+### Added
+
+- Added developer, release, ASan/UBSan, TSan, and Clang-Tidy CMake presets.
+
 ## [0.5.6] - 2026-07-14
 
 ### Added

@@ -1,5 +1,5 @@
-cmake_minimum_required(VERSION 3.16)
-project(OpenIpScanner VERSION 0.5.6 LANGUAGES CXX)
+cmake_minimum_required(VERSION 3.28)
+project(OpenIpScanner VERSION 0.5.7 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -9,46 +9,68 @@ set(CMAKE_AUTORCC ON)
 
 include(GNUInstallDirs)
 
-find_package(Qt6 QUIET COMPONENTS Widgets Network Concurrent PrintSupport DBus)
-if (Qt6_FOUND)
-    set(QT_PACKAGE Qt6)
-else()
-    find_package(Qt5 REQUIRED COMPONENTS Widgets Network Concurrent PrintSupport DBus)
-    set(QT_PACKAGE Qt5)
-endif()
+find_package(Qt6 6.4 REQUIRED COMPONENTS
+    Core Widgets Network Concurrent PrintSupport DBus)
 
-add_executable(open_ip_scanner
-    src/main.cpp
-    src/cancellablewait.h
-    src/cancellablewait.cpp
+add_library(ois_core STATIC
     src/csvexporter.h
     src/csvexporter.cpp
-    src/debugscanfixture.h
-    src/debugscanfixture.cpp
     src/hostnameevidence.h
     src/hostnameevidence.cpp
-    src/mdnsresolver.h
-    src/mdnsresolver.cpp
     src/neighborentry.h
     src/neighborentry.cpp
-    src/scanbudget.h
-    src/scanoptions.h
-    src/scanresult.h
-    src/resulttablemodel.h
-    src/resulttablemodel.cpp
     src/resolverdiagnostics.h
     src/resolverdiagnostics.cpp
     src/serviceevidence.h
     src/serviceevidence.cpp
+    src/targetdefaults.h
+    src/targetdefaults.cpp
+)
+target_include_directories(ois_core PUBLIC src)
+target_link_libraries(ois_core PUBLIC Qt6::Core Qt6::Network)
+
+add_library(ois_scan STATIC
+    src/debugscanfixture.h
+    src/debugscanfixture.cpp
+    src/scanbudget.h
+    src/scanoptions.h
+    src/scanresult.h
+)
+target_include_directories(ois_scan PUBLIC src)
+target_link_libraries(ois_scan PUBLIC ois_core Qt6::Core Qt6::Network)
+
+add_library(ois_linux STATIC
+    src/cancellablewait.h
+    src/cancellablewait.cpp
+    src/mdnsresolver.h
+    src/mdnsresolver.cpp
+)
+target_include_directories(ois_linux PUBLIC src)
+target_link_libraries(ois_linux
+    PUBLIC Qt6::Core Qt6::Network
+    PRIVATE ois_core Qt6::DBus)
+
+add_library(ois_ui STATIC
+    src/resulttablemodel.h
+    src/resulttablemodel.cpp
     src/servicetagdelegate.h
     src/servicetagdelegate.cpp
     src/settingslayout.h
-    src/targetdefaults.h
-    src/targetdefaults.cpp
     src/scannerwindow.h
     src/scannerwindow.cpp
+)
+target_include_directories(ois_ui PUBLIC src)
+target_link_libraries(ois_ui PUBLIC
+    ois_core ois_scan ois_linux
+    Qt6::Widgets Qt6::Network Qt6::Concurrent Qt6::PrintSupport Qt6::DBus)
+target_compile_definitions(ois_ui PUBLIC
+    OPEN_IP_SCANNER_VERSION="${PROJECT_VERSION}")
+
+add_executable(open_ip_scanner
+    src/main.cpp
     resources/resources.qrc
 )
+target_link_libraries(open_ip_scanner PRIVATE ois_ui)
 
 include(CTest)
 option(OIS_MDNS_CONTROLLED_FIXTURE
@@ -56,47 +78,17 @@ option(OIS_MDNS_CONTROLLED_FIXTURE
        OFF)
 
 if(BUILD_TESTING)
-    add_executable(csv_exporter_test
-        tests/csvexporter_test.cpp
-        src/csvexporter.h
-        src/csvexporter.cpp
-    )
-    target_include_directories(csv_exporter_test PRIVATE src)
-    target_link_libraries(csv_exporter_test PRIVATE ${QT_PACKAGE}::Core)
+    find_package(Qt6 6.4 REQUIRED COMPONENTS Test)
+    add_executable(csv_exporter_test tests/csvexporter_test.cpp)
+    target_link_libraries(csv_exporter_test PRIVATE ois_core)
     add_test(NAME csv_exporter_contract COMMAND csv_exporter_test)
 
-    add_executable(mdns_resolver_test
-        tests/mdnsresolver_test.cpp
-        src/cancellablewait.h
-        src/cancellablewait.cpp
-        src/hostnameevidence.h
-        src/hostnameevidence.cpp
-        src/mdnsresolver.h
-        src/mdnsresolver.cpp
-    )
-    target_include_directories(mdns_resolver_test PRIVATE src)
-    target_link_libraries(mdns_resolver_test PRIVATE
-        ${QT_PACKAGE}::Core
-        ${QT_PACKAGE}::Network
-        ${QT_PACKAGE}::DBus
-    )
+    add_executable(mdns_resolver_test tests/mdnsresolver_test.cpp)
+    target_link_libraries(mdns_resolver_test PRIVATE ois_linux Qt6::DBus)
     add_test(NAME mdns_resolver_contract COMMAND mdns_resolver_test)
 
-    add_executable(mdns_integration_test
-        tests/mdnsintegration_test.cpp
-        src/cancellablewait.h
-        src/cancellablewait.cpp
-        src/hostnameevidence.h
-        src/hostnameevidence.cpp
-        src/mdnsresolver.h
-        src/mdnsresolver.cpp
-    )
-    target_include_directories(mdns_integration_test PRIVATE src)
-    target_link_libraries(mdns_integration_test PRIVATE
-        ${QT_PACKAGE}::Core
-        ${QT_PACKAGE}::Network
-        ${QT_PACKAGE}::DBus
-    )
+    add_executable(mdns_integration_test tests/mdnsintegration_test.cpp)
+    target_link_libraries(mdns_integration_test PRIVATE ois_linux)
     if(OIS_MDNS_CONTROLLED_FIXTURE)
         add_test(NAME mdns_controlled_responder
                  COMMAND mdns_integration_test
@@ -105,131 +97,45 @@ if(BUILD_TESTING)
                          --hostname fixture.local)
     endif()
 
-    add_executable(enrichment_provenance_test
-        tests/enrichmentprovenance_test.cpp
-        src/hostnameevidence.h
-        src/hostnameevidence.cpp
-        src/resolverdiagnostics.h
-        src/resolverdiagnostics.cpp
-    )
-    target_include_directories(enrichment_provenance_test PRIVATE src)
-    target_link_libraries(enrichment_provenance_test PRIVATE
-        ${QT_PACKAGE}::Core
-        ${QT_PACKAGE}::Network
-    )
+    add_executable(enrichment_provenance_test tests/enrichmentprovenance_test.cpp)
+    target_link_libraries(enrichment_provenance_test PRIVATE ois_core)
     add_test(NAME enrichment_provenance_contract COMMAND enrichment_provenance_test)
 
-    add_executable(debug_scan_fixture_test
-        tests/debugscanfixture_test.cpp
-        src/debugscanfixture.h
-        src/debugscanfixture.cpp
-        src/neighborentry.h
-        src/neighborentry.cpp
-        src/scanresult.h
-        src/serviceevidence.h
-        src/serviceevidence.cpp
-    )
-    target_include_directories(debug_scan_fixture_test PRIVATE src)
-    target_link_libraries(debug_scan_fixture_test PRIVATE ${QT_PACKAGE}::Core ${QT_PACKAGE}::Network)
+    add_executable(debug_scan_fixture_test tests/debugscanfixture_test.cpp)
+    target_link_libraries(debug_scan_fixture_test PRIVATE ois_core ois_scan)
     add_test(NAME debug_scan_fixture_contract COMMAND debug_scan_fixture_test)
 
-    add_executable(scan_options_test
-        tests/scanoptions_test.cpp
-        src/scanoptions.h
-    )
-    target_include_directories(scan_options_test PRIVATE src)
-    target_link_libraries(scan_options_test PRIVATE ${QT_PACKAGE}::Core)
+    add_executable(scan_options_test tests/scanoptions_test.cpp)
+    target_link_libraries(scan_options_test PRIVATE ois_scan)
     add_test(NAME scan_options_snapshot_isolation COMMAND scan_options_test)
 
-    add_executable(scan_cancellation_test
-        tests/scancancellation_test.cpp
-        src/cancellablewait.h
-        src/cancellablewait.cpp
-        src/hostnameevidence.h
-        src/hostnameevidence.cpp
-    )
-    target_include_directories(scan_cancellation_test PRIVATE src)
-    target_link_libraries(scan_cancellation_test PRIVATE ${QT_PACKAGE}::Core ${QT_PACKAGE}::Network)
+    add_executable(scan_cancellation_test tests/scancancellation_test.cpp)
+    target_link_libraries(scan_cancellation_test PRIVATE ois_linux)
     add_test(NAME scan_cancellation_deadlines COMMAND scan_cancellation_test)
 
     add_executable(scan_budget_test tests/scanbudget_test.cpp)
-    target_include_directories(scan_budget_test PRIVATE src)
+    target_link_libraries(scan_budget_test PRIVATE ois_scan)
     add_test(NAME scan_budget_profiles COMMAND scan_budget_test)
 
     add_executable(settings_layout_test tests/settingslayout_test.cpp)
-    target_include_directories(settings_layout_test PRIVATE src)
+    target_link_libraries(settings_layout_test PRIVATE ois_ui)
     add_test(NAME settings_layout_contract COMMAND settings_layout_test)
 
-    add_executable(target_defaults_test
-        tests/targetdefaults_test.cpp
-        src/targetdefaults.h
-        src/targetdefaults.cpp
-    )
-    target_include_directories(target_defaults_test PRIVATE src)
-    target_link_libraries(target_defaults_test PRIVATE ${QT_PACKAGE}::Network)
+    add_executable(target_defaults_test tests/targetdefaults_test.cpp)
+    target_link_libraries(target_defaults_test PRIVATE ois_core)
     add_test(NAME target_default_planning COMMAND target_defaults_test)
 
-    add_executable(neighbor_entry_test
-        tests/neighborentry_test.cpp
-        src/neighborentry.h
-        src/neighborentry.cpp
-    )
-    target_include_directories(neighbor_entry_test PRIVATE src)
-    target_link_libraries(neighbor_entry_test PRIVATE ${QT_PACKAGE}::Network)
+    add_executable(neighbor_entry_test tests/neighborentry_test.cpp)
+    target_link_libraries(neighbor_entry_test PRIVATE ois_core)
     add_test(NAME neighbor_entry_validation COMMAND neighbor_entry_test)
 
-    add_executable(service_evidence_test
-        tests/serviceevidence_test.cpp
-        src/serviceevidence.h
-        src/serviceevidence.cpp
-    )
-    target_include_directories(service_evidence_test PRIVATE src)
-    target_link_libraries(service_evidence_test PRIVATE ${QT_PACKAGE}::Core)
+    add_executable(service_evidence_test tests/serviceevidence_test.cpp)
+    target_link_libraries(service_evidence_test PRIVATE ois_core)
     add_test(NAME service_evidence_classification COMMAND service_evidence_test)
 
     add_executable(settings_dialog_test
-        tests/settingsdialog_test.cpp
-        src/cancellablewait.h
-        src/cancellablewait.cpp
-        src/csvexporter.h
-        src/csvexporter.cpp
-        src/debugscanfixture.h
-        src/debugscanfixture.cpp
-        src/hostnameevidence.h
-        src/hostnameevidence.cpp
-        src/mdnsresolver.h
-        src/mdnsresolver.cpp
-        src/neighborentry.h
-        src/neighborentry.cpp
-        src/scanbudget.h
-        src/scanoptions.h
-        src/scanresult.h
-        src/resulttablemodel.h
-        src/resulttablemodel.cpp
-        src/resolverdiagnostics.h
-        src/resolverdiagnostics.cpp
-        src/serviceevidence.h
-        src/serviceevidence.cpp
-        src/servicetagdelegate.h
-        src/servicetagdelegate.cpp
-        src/settingslayout.h
-        src/targetdefaults.h
-        src/targetdefaults.cpp
-        src/scannerwindow.h
-        src/scannerwindow.cpp
-        resources/resources.qrc
-    )
-    target_include_directories(settings_dialog_test PRIVATE src)
-    target_link_libraries(settings_dialog_test PRIVATE
-        ${QT_PACKAGE}::Widgets
-        ${QT_PACKAGE}::Network
-        ${QT_PACKAGE}::Concurrent
-        ${QT_PACKAGE}::PrintSupport
-        ${QT_PACKAGE}::DBus
-    )
-    target_compile_definitions(settings_dialog_test PRIVATE
-        OPEN_IP_SCANNER_VERSION="${PROJECT_VERSION}"
-    )
+        tests/settingsdialog_test.cpp resources/resources.qrc)
+    target_link_libraries(settings_dialog_test PRIVATE ois_ui Qt6::Test)
     add_test(NAME settings_dialog_stability COMMAND settings_dialog_test)
     set_tests_properties(settings_dialog_stability PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
@@ -238,18 +144,6 @@ endif()
 
 set_target_properties(open_ip_scanner PROPERTIES
     OUTPUT_NAME "open-ip-scanner"
-)
-
-target_link_libraries(open_ip_scanner PRIVATE
-    ${QT_PACKAGE}::Widgets
-    ${QT_PACKAGE}::Network
-    ${QT_PACKAGE}::Concurrent
-    ${QT_PACKAGE}::PrintSupport
-    ${QT_PACKAGE}::DBus
-)
-
-target_compile_definitions(open_ip_scanner PRIVATE
-    OPEN_IP_SCANNER_VERSION="${PROJECT_VERSION}"
 )
 
 install(TARGETS open_ip_scanner
