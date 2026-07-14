@@ -2,7 +2,7 @@
 
 This file is the single source of truth for unfinished product, engineering, documentation, and release work. Detailed evidence for why each 1.0 item exists is in [the production-readiness audit](production-readiness-audit.md). New ideas belong here rather than in a second backlog.
 
-The audited baseline is `0.2.0` at commit `91e0a7a`; `0.4.1` is the latest human-verified version. Version 1.0 is not ready. Every unchecked item under “Required for 1.0” is a release gate; the post-1.0 section is explicitly outside the first production release.
+The audited baseline is `0.2.0` at commit `91e0a7a`; `0.4.2` is the active implementation branch, while `0.4.1` remains the latest human-verified version on `main`. Version 1.0 is not ready. Every unchecked item under “Required for 1.0” is a release gate; the post-1.0 section is explicitly outside the first production release.
 
 ## Delivered implementation increments
 
@@ -14,7 +14,7 @@ The unchecked milestone boxes below mean their complete acceptance criteria are 
 - `0.4.0` — **ACCESSIBILITY:** added the canonical UI layout specification and a stable, internally scrolling 600-by-440 Settings dialog with aligned Performance controls.
 - `0.4.1` — **TARGET-DEFAULTS:** generated bounded, parser-valid targets for large and point-to-point networks while keeping Auto Select probes on one valid adapter and route.
 
-The next correctness increment resumes at **NEIGHBOR-VALIDATION**. Its new implementation branch will receive the next available correctness patch version and keep that version unchanged through human verification and merge.
+Correctness work is active at **NEIGHBOR-VALIDATION** on version `0.4.2`; that version remains unchanged through implementation, review, human verification, and merge.
 
 ## Priority definitions
 
@@ -62,9 +62,20 @@ Priority matches the most severe audit finding an item closes. All items in the 
 #### NEIGHBOR-VALIDATION
 
 - [ ] **Validate neighbor entries before calling a host alive.** `High`
-  - Reject incomplete, failed, zero, broadcast, multicast, and malformed MAC entries from `/proc/net/arp` and `ip neigh`. Treat stale-but-valid entries according to a documented freshness policy.
+  - Reject incomplete, failed, zero, broadcast, multicast, and malformed neighbor entries. Replace the state-blind `/proc/net/arp` shortcut with validated `ip neigh` data and treat stale-but-valid entries according to a documented freshness policy.
   - Preserve the interface in the identity key so duplicate addresses on different links do not collapse into one device.
+  - Freshness policy: use the Linux kernel's Neighbor Unreachability Detection state instead of inventing an unavailable wall-clock age. Only a valid unicast-MAC entry in `REACHABLE` may establish liveness. `STALE`, `DELAY`, `PROBE`, and `PERMANENT` supply supplementary MAC metadata only after ping or a service probe establishes liveness. `INCOMPLETE`, `FAILED`, `NONE`, and `NOARP`, as well as entries with missing, zero, broadcast, multicast, or malformed MAC addresses, establish nothing.
+  - Current progress on `0.4.2`: production discovery uses interface-scoped `ip -j neigh` JSON instead of `/proc/net/arp`, applies the freshness policy before consuming evidence, and keys neighbor observations and scan-result merging by interface plus IPv4 address. Deterministic tests cover every listed NUD state, invalid MAC forms, malformed JSON, interface filtering, and overlapping addresses on separate links.
+  - Remaining before completion: human validation must confirm a normal local scan still reports legitimate neighbors while incomplete or failed entries do not create rows.
   - Done when fixture tests cover Linux neighbor states and no incomplete `00:00:00:00:00:00` entry creates a result row.
+
+#### DUPLICATE-IP-CONFLICTS
+
+- [ ] **Flag repeated evidence that one address belongs to different devices.** `High`
+  - Persist bounded network context across scans, including the scanned address range, interface or network identity, and DNS suffix, so observations are compared only within the same logical subnet.
+  - Treat flip-flopping neighbor MAC addresses as one signal rather than definitive proof. Combine repeated contradictions with other strong identity evidence, record when and where each observation occurred, and visibly flag a probable duplicate-IP conflict without silently merging the devices.
+  - Define retention, privacy, expiry, subnet-change, and user-clear behavior before storing network history.
+  - Done when deterministic multi-scan fixtures distinguish a real duplicate-IP conflict from adapter changes, DHCP reassignment, randomized MAC addresses, stale neighbor data, and unrelated overlapping private subnets.
 
 #### SERVICE-EVIDENCE
 

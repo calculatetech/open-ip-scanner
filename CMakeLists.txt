@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(OpenIpScanner VERSION 0.4.1 LANGUAGES CXX)
+project(OpenIpScanner VERSION 0.4.2 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -21,6 +21,8 @@ add_executable(open_ip_scanner
     src/main.cpp
     src/cancellablewait.h
     src/cancellablewait.cpp
+    src/neighborentry.h
+    src/neighborentry.cpp
     src/scanbudget.h
     src/scanoptions.h
     src/settingslayout.h
@@ -68,10 +70,21 @@ if(BUILD_TESTING)
     target_link_libraries(target_defaults_test PRIVATE ${QT_PACKAGE}::Network)
     add_test(NAME target_default_planning COMMAND target_defaults_test)
 
+    add_executable(neighbor_entry_test
+        tests/neighborentry_test.cpp
+        src/neighborentry.h
+        src/neighborentry.cpp
+    )
+    target_include_directories(neighbor_entry_test PRIVATE src)
+    target_link_libraries(neighbor_entry_test PRIVATE ${QT_PACKAGE}::Network)
+    add_test(NAME neighbor_entry_validation COMMAND neighbor_entry_test)
+
     add_executable(settings_dialog_test
         tests/settingsdialog_test.cpp
         src/cancellablewait.h
         src/cancellablewait.cpp
+        src/neighborentry.h
+        src/neighborentry.cpp
         src/scanbudget.h
         src/scanoptions.h
         src/settingslayout.h

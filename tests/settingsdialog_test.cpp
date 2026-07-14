@@ -10,6 +10,7 @@
 #include <QPoint>
 #include <QSlider>
 #include <QStandardPaths>
+#include <QTableWidget>
 #include <QTimer>
 
 #include <cstdio>
@@ -21,6 +22,40 @@ struct ScannerWindowTestAccess {
                                             QString *error)
     {
         return window.parseTargetsInput(text, error);
+    }
+
+    static bool preservesInterfaceIdentity(ScannerWindow &window)
+    {
+        ScanResult ethernet;
+        ethernet.ip = "192.0.2.10";
+        ethernet.interfaceName = "eth0";
+        ethernet.mac = "02:00:00:00:00:01";
+        ethernet.vendor = "Ethernet device";
+        ethernet.hostname = "ethernet-host";
+        ethernet.services.append({"ssh", "SSH", 22, false});
+        ethernet.detailsText = "Ethernet details";
+
+        ScanResult vpn = ethernet;
+        vpn.interfaceName = "vpn0";
+        vpn.mac = "02:00:00:00:00:02";
+        vpn.vendor = "VPN device";
+        vpn.hostname = "vpn-host";
+        vpn.services = {{"https", "HTTPS", 443, true}};
+        vpn.detailsText = "VPN details";
+
+        window.addOrUpdateResultRow(ethernet);
+        window.addOrUpdateResultRow(vpn);
+        const QString ethernetKey = neighborIdentityKey(ethernet.interfaceName, ethernet.ip);
+        const QString vpnKey = neighborIdentityKey(vpn.interfaceName, vpn.ip);
+        return window.table_->rowCount() == 2 &&
+               window.findRowByIdentity(ethernetKey) >= 0 &&
+               window.findRowByIdentity(vpnKey) >= 0 &&
+               window.servicesByIdentity_.value(ethernetKey).size() == 1 &&
+               window.servicesByIdentity_.value(vpnKey).size() == 1 &&
+               window.servicesByIdentity_.value(ethernetKey).first().id == "ssh" &&
+               window.servicesByIdentity_.value(vpnKey).first().id == "https" &&
+               window.detailsByIdentity_.value(ethernetKey) == "Ethernet details" &&
+               window.detailsByIdentity_.value(vpnKey) == "VPN details";
     }
 };
 
@@ -56,6 +91,7 @@ int main(int argc, char **argv)
     REQUIRE(parserError.isEmpty());
     REQUIRE(parsedTargets.size() == parserPlan.uniqueHostCount);
     REQUIRE(parserPlan.targetText.size() <= 2048);
+    REQUIRE(ScannerWindowTestAccess::preservesInterfaceIdentity(window));
 
     QTimer::singleShot(0, &window, [&window]() {
         QMetaObject::invokeMethod(&window, "showSettingsDialog", Qt::DirectConnection);

@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.4.2] - 2026-07-13
+
+### Changed
+- Replaced unvalidated `/proc/net/arp` discovery with interface-scoped `ip -j neigh` parsing and kernel NUD freshness rules.
+- Allow only `REACHABLE` entries with valid unicast MAC addresses to establish liveness; treat `STALE`, `DELAY`, `PROBE`, and `PERMANENT` as supplementary metadata and reject non-evidentiary states.
+
+### Added
+- Added deterministic coverage for every supported Linux NUD state, invalid MAC forms, malformed JSON, interface filtering, and overlapping addresses on different links.
+
 ## [0.4.1] - 2026-07-13
 
 ### Changed

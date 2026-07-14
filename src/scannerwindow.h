@@ -18,6 +18,7 @@
 
 #include "scanoptions.h"
 #include "scanbudget.h"
+#include "neighborentry.h"
 #include "targetdefaults.h"
 
 class QComboBox;
@@ -52,6 +53,7 @@ struct ServiceHit {
 struct ScanResult {
     // Core identity fields for a discovered host.
     QString ip;
+    QString interfaceName;
     QString mac;
     QString vendor;
     QString hostname;
@@ -170,10 +172,10 @@ private:
                   const ScanOptions &options,
                   const TargetBudget &budget,
                   const std::shared_ptr<std::atomic_bool> &cancelRequested) const;
-    QString lookupMacAddress(const QString &ip,
-                             const QString &interfaceName,
-                             const TargetBudget &budget,
-                             const std::shared_ptr<std::atomic_bool> &cancelRequested) const;
+    NeighborObservation lookupNeighbor(const QString &ip,
+                                       const QString &interfaceName,
+                                       const TargetBudget &budget,
+                                       const std::shared_ptr<std::atomic_bool> &cancelRequested) const;
     QString lookupVendor(const QString &mac, const ScanOptions &options) const;
     QString lookupHostname(const QString &ip,
                            const TargetBudget &budget,
@@ -240,7 +242,8 @@ private:
     void applyToolbarDisplayMode();
     bool openPreferredTerminal(const QStringList &args = {}, QString *error = nullptr) const;
     QString preferredTerminalProgram() const;
-    int findRowByIp(const QString &ip) const;
+    QString rowIdentityKey(int row) const;
+    int findRowByIdentity(const QString &identityKey) const;
     void validateTargetLimitFeedback(const QString &text);
 
     // Utility conversion helpers.
@@ -296,8 +299,8 @@ private:
     QHash<QString, QString> customOuiVendors_;
 
     std::shared_ptr<std::atomic_bool> cancelRequested_;
-    QHash<QString, QList<ServiceHit>> servicesByIp_;
-    QHash<QString, QString> detailsByIp_;
+    QHash<QString, QList<ServiceHit>> servicesByIdentity_;
+    QHash<QString, QString> detailsByIdentity_;
     QFutureWatcher<QList<ScanResult>> scanWatcher_;
     bool scanInProgress_ = false;
     bool closePending_ = false;
