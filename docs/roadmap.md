@@ -2,7 +2,7 @@
 
 This file is the single source of truth for unfinished product, engineering, documentation, and release work. Detailed evidence for why each 1.0 item exists is in [the production-readiness audit](production-readiness-audit.md). New ideas belong here rather than in a second backlog.
 
-The audited baseline is `0.2.0` at commit `91e0a7a`; `0.4.2` is the latest human-verified version. Version 1.0 is not ready. Every unchecked item under “Required for 1.0” is a release gate; the post-1.0 section is explicitly outside the first production release.
+The audited baseline is `0.2.0` at commit `91e0a7a`; `0.4.3` is the active implementation branch, while `0.4.2` remains the latest human-verified version on `main`. Version 1.0 is not ready. Every unchecked item under “Required for 1.0” is a release gate; the post-1.0 section is explicitly outside the first production release.
 
 ## Delivered implementation increments
 
@@ -15,7 +15,7 @@ The unchecked milestone boxes below mean their complete acceptance criteria are 
 - `0.4.1` — **TARGET-DEFAULTS:** generated bounded, parser-valid targets for large and point-to-point networks while keeping Auto Select probes on one valid adapter and route.
 - `0.4.2` — **NEIGHBOR-VALIDATION:** validated interface-scoped Linux neighbor evidence, applied conservative kernel-state freshness rules, and preserved interface-plus-IP result identity.
 
-The next required correctness increment resumes at **SERVICE-EVIDENCE**. DUPLICATE-IP-CONFLICTS is recorded under Post-1.0 and is not part of the first production release.
+Correctness work is active at **SERVICE-EVIDENCE** on version `0.4.3`; that version remains unchanged through implementation, review, human verification, and merge. DUPLICATE-IP-CONFLICTS remains Post-1.0.
 
 ## Priority definitions
 
@@ -74,7 +74,9 @@ Priority matches the most severe audit finding an item closes. All items in the 
 - [ ] **Separate open-port evidence from verified service identity.** `High`
   - Display an open TCP port as an open port or “probable service” until a protocol-specific handshake confirms it. Do not claim HTTPS, SSH, RDP, SMTP, or an operating system merely from a conventional port number or an ambiguous banner.
   - Make banner and device-detail collection explicit, bounded, and lazy so a hidden details pane does not generate extra traffic for service-positive devices. Rebuild details when better host data arrives.
-  - Done when mock endpoints on conventional and unconventional ports produce truthful labels, OS text is either evidence-backed or removed, and opening the details pane is the documented trigger for any extra application-layer request.
+  - Current progress on `0.4.3`: every successful TCP connection is shown as an open port and probable service unless the same connection yields protocol-specific evidence. HTTP requires a status line; HTTPS requires both TLS and an HTTP status line; SMTPS requires TLS and an SMTP greeting; SSH requires an `SSH-` banner; FTP and SMTP require matching greetings; and SMTP-STARTTLS additionally requires advertised STARTTLS capability. RDP, SMB, Telnet, and mismatches remain probable. Higher accuracy can retry verification while retaining open-port evidence, fragmented responses are bounded and accumulated, and the automatic detail stage sends no separate requests or OS inference. Pure fixtures cover every classifier and conventional/unconventional display, while production loopback coverage exercises plain verified, mismatched, fragmented, and retried probes on ephemeral ports.
+  - Remaining before completion: human validation of the new labels and active-port behavior.
+  - Done when mock-port fixtures produce truthful labels independent of conventional port numbers, OS text is removed, enabled protocol-verification traffic is documented, and the details pane sends no hidden request.
 
 #### RESULT-SCALING
 

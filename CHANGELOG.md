@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.4.3] - 2026-07-13
+
+### Changed
+- Distinguish open-port evidence from protocol-verified service identity and remove separate automatic device-detail traffic.
+- Verify HTTP status lines, SSH banners, FTP/SMTP greetings, STARTTLS capability, and TLS-plus-application evidence on the original probe connection; label unsupported or mismatched protocols as probable services on open ports.
+- Removed heuristic operating-system claims and separate automatic banner/detail requests; the details pane now renders only evidence already collected by enabled probes.
+
+### Added
+- Added deterministic response-classification coverage plus production plain-loopback coverage for verified, mismatched, fragmented, retried, and unconventional-port probes.
+
 ## [0.4.2] - 2026-07-13
 
 ### Changed
