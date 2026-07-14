@@ -1,0 +1,7 @@
+.git
+.agent
+build
+build-*
+cmake-build-*
+_CPack_Packages
+*.deb

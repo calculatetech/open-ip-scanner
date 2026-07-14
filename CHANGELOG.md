@@ -2,6 +2,23 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.5.2] - 2026-07-14
+
+### Added
+
+- Added a deterministic mDNS compatibility matrix covering positive and negative
+  observations, cache expiry, malformed and mismatched replies, overlapping
+  addresses, concurrent duplicate requests, cancellation, timeout, daemon
+  recovery, missing backends, and hostname precedence and fallback.
+- Added an isolated Avahi/D-Bus controlled responder that validates the real
+  production backend, interface scoping, and active cancellation under CTest
+  without depending on devices on the consumer LAN.
+
+### Fixed
+
+- Report an unavailable injected mDNS backend as `BackendUnavailable` instead
+  of classifying it as a malformed response.
+
 ## [0.5.1] - 2026-07-14
 
 - Capture the selected adapter's assigned DNS search suffixes, prefer the explicit PTR record matching that scope, qualify a short PTR when necessary, retain `.local` mDNS evidence separately, and place source labels directly after each hostname in Details.

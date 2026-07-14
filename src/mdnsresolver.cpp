@@ -235,7 +235,10 @@ ScanMdnsResolver::~ScanMdnsResolver()
 MdnsLookupResult ScanMdnsResolver::resolve(const QString &address, int timeoutMs)
 {
     const QString normalizedAddress = normalizedIpv4(address);
-    if (interfaceIndex_ <= 0 || normalizedAddress.isEmpty() || backend_ == nullptr) {
+    if (backend_ == nullptr) {
+        return {MdnsLookupStatus::BackendUnavailable, {}};
+    }
+    if (interfaceIndex_ <= 0 || normalizedAddress.isEmpty()) {
         return {MdnsLookupStatus::InvalidResponse, {}};
     }
     if (timeoutMs <= 0) {

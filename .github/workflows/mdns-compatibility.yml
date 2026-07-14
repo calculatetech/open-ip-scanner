@@ -1,0 +1,42 @@
+name: mDNS compatibility
+
+"on":
+  push:
+    paths:
+      - '.github/workflows/mdns-compatibility.yml'
+      - '.dockerignore'
+      - 'CMakeLists.txt'
+      - 'src/cancellablewait.*'
+      - 'src/hostnameevidence.*'
+      - 'src/mdnsresolver.*'
+      - 'tests/fixtures/avahi/**'
+      - 'tests/mdnsintegration_test.cpp'
+      - 'tests/mdnsresolver_test.cpp'
+  pull_request:
+    paths:
+      - '.github/workflows/mdns-compatibility.yml'
+      - '.dockerignore'
+      - 'CMakeLists.txt'
+      - 'src/cancellablewait.*'
+      - 'src/hostnameevidence.*'
+      - 'src/mdnsresolver.*'
+      - 'tests/fixtures/avahi/**'
+      - 'tests/mdnsintegration_test.cpp'
+      - 'tests/mdnsresolver_test.cpp'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  controlled-responder:
+    name: controlled Avahi responder
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Build isolated fixture
+        run: docker build --tag open-ip-scanner-avahi-fixture --file tests/fixtures/avahi/Dockerfile .
+      - name: Run controlled CTest
+        run: docker run --rm --cap-add NET_ADMIN open-ip-scanner-avahi-fixture

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(OpenIpScanner VERSION 0.5.1 LANGUAGES CXX)
+project(OpenIpScanner VERSION 0.5.2 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -49,6 +49,9 @@ add_executable(open_ip_scanner
 )
 
 include(CTest)
+option(OIS_MDNS_CONTROLLED_FIXTURE
+       "Enable the isolated Avahi controlled-responder CTest"
+       OFF)
 
 if(BUILD_TESTING)
     add_executable(mdns_resolver_test
@@ -67,6 +70,29 @@ if(BUILD_TESTING)
         ${QT_PACKAGE}::DBus
     )
     add_test(NAME mdns_resolver_contract COMMAND mdns_resolver_test)
+
+    add_executable(mdns_integration_test
+        tests/mdnsintegration_test.cpp
+        src/cancellablewait.h
+        src/cancellablewait.cpp
+        src/hostnameevidence.h
+        src/hostnameevidence.cpp
+        src/mdnsresolver.h
+        src/mdnsresolver.cpp
+    )
+    target_include_directories(mdns_integration_test PRIVATE src)
+    target_link_libraries(mdns_integration_test PRIVATE
+        ${QT_PACKAGE}::Core
+        ${QT_PACKAGE}::Network
+        ${QT_PACKAGE}::DBus
+    )
+    if(OIS_MDNS_CONTROLLED_FIXTURE)
+        add_test(NAME mdns_controlled_responder
+                 COMMAND mdns_integration_test
+                         --interface ois0
+                         --address 10.77.0.2
+                         --hostname fixture.local)
+    endif()
 
     add_executable(enrichment_provenance_test
         tests/enrichmentprovenance_test.cpp

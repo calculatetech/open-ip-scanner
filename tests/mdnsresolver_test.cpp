@@ -8,6 +8,7 @@
 #include <QNetworkInterface>
 #include <QStringList>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -85,6 +86,28 @@ private:
     std::thread worker_;
 };
 
+class SequenceBackend final : public MdnsLookupBackend {
+public:
+    explicit SequenceBackend(QList<MdnsBackendReply> replies)
+        : replies_(std::move(replies))
+    {
+    }
+
+    void resolve(int, const QString &, int, Callback callback) override
+    {
+        const int request = requestCount.fetch_add(1);
+        callback(replies_.at(
+            std::min(request, static_cast<int>(replies_.size()) - 1)));
+    }
+
+    void cancelAll() override { }
+
+    std::atomic<int> requestCount{0};
+
+private:
+    QList<MdnsBackendReply> replies_;
+};
+
 std::unique_ptr<FakeBackend> resolvedBackend(int delayMs = 0)
 {
     MdnsBackendReply reply;
@@ -95,6 +118,20 @@ std::unique_ptr<FakeBackend> resolvedBackend(int delayMs = 0)
     reply.address = "192.0.2.10";
     reply.hostname = "fixture.local.";
     return std::make_unique<FakeBackend>(reply, delayMs);
+}
+
+std::unique_ptr<FakeBackend> resolvedBackendFor(int interfaceIndex,
+                                                const QString &address,
+                                                const QString &hostname)
+{
+    MdnsBackendReply reply;
+    reply.status = MdnsLookupStatus::Resolved;
+    reply.interfaceIndex = interfaceIndex;
+    reply.lookupProtocol = 0;
+    reply.addressProtocol = 0;
+    reply.address = address;
+    reply.hostname = hostname;
+    return std::make_unique<FakeBackend>(reply);
 }
 
 } // namespace
@@ -154,12 +191,20 @@ int main(int argc, char **argv)
             "org.freedesktop.DBus.Error.ServiceUnknown", "Avahi is unavailable"));
         const QDBusError noNetwork(QDBusMessage::createError(
             "org.freedesktop.Avahi.NoNetworkError", "No multicast interface"));
+        const QDBusError noOwner(QDBusMessage::createError(
+            "org.freedesktop.DBus.Error.NameHasNoOwner", "No daemon owner"));
+        const QDBusError accessDenied(QDBusMessage::createError(
+            "org.freedesktop.DBus.Error.AccessDenied", "Policy rejected request"));
         REQUIRE(mdnsStatusForDbusError(avahiNoAnswer) == MdnsLookupStatus::NoRecord);
         REQUIRE(mdnsStatusForDbusError(transportTimeout) == MdnsLookupStatus::TimedOut);
         REQUIRE(mdnsStatusForDbusError(backendFailure) ==
                 MdnsLookupStatus::DaemonUnavailable);
         REQUIRE(mdnsStatusForDbusError(noNetwork) ==
                 MdnsLookupStatus::MulticastUnavailable);
+        REQUIRE(mdnsStatusForDbusError(noOwner) ==
+                MdnsLookupStatus::DaemonUnavailable);
+        REQUIRE(mdnsStatusForDbusError(accessDenied) ==
+                MdnsLookupStatus::BackendUnavailable);
     }
 
     {
@@ -206,6 +251,75 @@ int main(int argc, char **argv)
     }
 
     {
+        MdnsBackendReply wrongAddress;
+        wrongAddress.status = MdnsLookupStatus::Resolved;
+        wrongAddress.interfaceIndex = 7;
+        wrongAddress.lookupProtocol = 0;
+        wrongAddress.addressProtocol = 0;
+        wrongAddress.address = "192.0.2.11";
+        wrongAddress.hostname = "wrong.local";
+        ScanMdnsResolver resolver(
+            7, {}, std::make_unique<FakeBackend>(wrongAddress));
+        REQUIRE(resolver.resolve("192.0.2.10", 500).status ==
+                MdnsLookupStatus::InvalidResponse);
+    }
+
+    {
+        MdnsBackendReply wrongAddressProtocol;
+        wrongAddressProtocol.status = MdnsLookupStatus::Resolved;
+        wrongAddressProtocol.interfaceIndex = 7;
+        wrongAddressProtocol.lookupProtocol = 0;
+        wrongAddressProtocol.addressProtocol = -1;
+        wrongAddressProtocol.address = "192.0.2.10";
+        wrongAddressProtocol.hostname = "wrong.local";
+        ScanMdnsResolver resolver(
+            7, {}, std::make_unique<FakeBackend>(wrongAddressProtocol));
+        REQUIRE(resolver.resolve("192.0.2.10", 500).status ==
+                MdnsLookupStatus::InvalidResponse);
+    }
+
+    for (const QString &malformed : QStringList({
+             "", "bad name.local", "-bad.local", "bad..local", "192.0.2.10"})) {
+        ScanMdnsResolver resolver(
+            7, {}, resolvedBackendFor(7, "192.0.2.10", malformed));
+        REQUIRE(resolver.resolve("192.0.2.10", 500).status ==
+                MdnsLookupStatus::InvalidResponse);
+    }
+
+    {
+        ScanMdnsResolver first(
+            7, {}, resolvedBackendFor(7, "192.0.2.10", "first.local"));
+        ScanMdnsResolver overlapping(
+            8, {}, resolvedBackendFor(8, "192.0.2.10", "second.local"));
+        REQUIRE(first.resolve("192.0.2.10", 500).hostname == "first.local");
+        REQUIRE(overlapping.resolve("192.0.2.10", 500).hostname ==
+                "second.local");
+    }
+
+    {
+        MdnsBackendReply unavailable;
+        unavailable.status = MdnsLookupStatus::DaemonUnavailable;
+        MdnsBackendReply recovered;
+        recovered.status = MdnsLookupStatus::Resolved;
+        recovered.interfaceIndex = 7;
+        recovered.lookupProtocol = 0;
+        recovered.addressProtocol = 0;
+        recovered.address = "192.0.2.10";
+        recovered.hostname = "recovered.local";
+        auto backend = std::make_unique<SequenceBackend>(
+            QList<MdnsBackendReply>{unavailable, recovered});
+        SequenceBackend *observed = backend.get();
+        ScanMdnsResolver resolver(7, {}, std::move(backend));
+        REQUIRE(resolver.resolve("192.0.2.10", 500).status ==
+                MdnsLookupStatus::DaemonUnavailable);
+        const MdnsLookupResult afterRestart =
+            resolver.resolve("192.0.2.10", 500);
+        REQUIRE(afterRestart.status == MdnsLookupStatus::Resolved);
+        REQUIRE(afterRestart.hostname == "recovered.local");
+        REQUIRE(observed->requestCount.load() == 2);
+    }
+
+    {
         auto backend = resolvedBackend(5000);
         auto cancellation = std::make_shared<std::atomic_bool>(false);
         ScanMdnsResolver resolver(7, cancellation, std::move(backend));
@@ -238,17 +352,35 @@ int main(int argc, char **argv)
     REQUIRE(ScanMdnsResolver(7, {}, resolvedBackend())
                 .resolve("not-an-ip", 500)
                 .status == MdnsLookupStatus::InvalidResponse);
+    REQUIRE(ScanMdnsResolver(7, {}, {})
+                .resolve("192.0.2.10", 500)
+                .status == MdnsLookupStatus::BackendUnavailable);
 
     const HostnameEvidence preliminary{"gateway", HostnameSource::Preliminary};
     const HostnameEvidence system{"gateway.example", HostnameSource::SystemResolver};
     const HostnameEvidence mdns{"gateway.local", HostnameSource::AvahiMdns};
     const HostnameEvidence ptr{"gateway.ptr.example", HostnameSource::DnsPtr};
+    const HostnameEvidence local{"gateway.localdomain", HostnameSource::LocalHost};
     REQUIRE(preferredHostname(preliminary, system).hostname == "gateway.example");
     REQUIRE(preferredHostname(system, mdns).hostname == "gateway.example");
     REQUIRE(preferredHostname(mdns, system).hostname == "gateway.example");
     REQUIRE(preferredHostname(system, ptr).hostname == "gateway.ptr.example");
+    REQUIRE(preferredHostname(ptr, local).hostname == "gateway.localdomain");
     REQUIRE(preferredHostname(mdns,
                               {"other.local", HostnameSource::AvahiMdns})
                 .hostname == "gateway.local");
+    const QList<HostnameDisplayRow> retained = hostnameDisplayRows(
+        {system, mdns, ptr, local});
+    REQUIRE(retained.size() == 4);
+    REQUIRE(retained.first().hostname == "gateway.localdomain");
+
+    MdnsBackendReply fallbackNoRecord;
+    fallbackNoRecord.status = MdnsLookupStatus::NoRecord;
+    ScanMdnsResolver fallbackResolver(
+        7, {}, std::make_unique<FakeBackend>(fallbackNoRecord));
+    REQUIRE(fallbackResolver.resolve("192.0.2.10", 500).status ==
+            MdnsLookupStatus::NoRecord);
+    REQUIRE(preferredHostname({preliminary, system}).hostname ==
+            "gateway.example");
     return EXIT_SUCCESS;
 }
