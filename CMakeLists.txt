@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.28)
-project(OpenIpScanner VERSION 0.5.9 LANGUAGES CXX)
+project(OpenIpScanner VERSION 0.5.10 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -10,7 +10,7 @@ set(CMAKE_AUTORCC ON)
 include(GNUInstallDirs)
 
 find_package(Qt6 6.4 REQUIRED COMPONENTS
-    Core Widgets Network Concurrent PrintSupport DBus)
+    Core Widgets Network PrintSupport DBus)
 
 add_library(ois_core STATIC
     src/csvexporter.h
@@ -39,6 +39,8 @@ add_library(ois_scan STATIC
     src/debugscanfixture.h
     src/debugscanfixture.cpp
     src/scanbudget.h
+    src/scanengine.h
+    src/scanengine.cpp
     src/scanoptions.h
     src/scanresult.h
     src/scansession.h
@@ -70,7 +72,7 @@ add_library(ois_ui STATIC
 target_include_directories(ois_ui PUBLIC src)
 target_link_libraries(ois_ui PUBLIC
     ois_core ois_scan ois_linux
-    Qt6::Widgets Qt6::Network Qt6::Concurrent Qt6::PrintSupport Qt6::DBus)
+    Qt6::Widgets Qt6::Network Qt6::PrintSupport Qt6::DBus)
 target_compile_definitions(ois_ui PUBLIC
     OPEN_IP_SCANNER_VERSION="${PROJECT_VERSION}")
 
@@ -120,6 +122,10 @@ if(BUILD_TESTING)
     add_executable(scan_session_test tests/scansession_test.cpp)
     target_link_libraries(scan_session_test PRIVATE ois_scan)
     add_test(NAME scan_session_lifecycle COMMAND scan_session_test)
+
+    add_executable(scan_engine_test tests/scanengine_test.cpp)
+    target_link_libraries(scan_engine_test PRIVATE ois_scan)
+    add_test(NAME scan_engine_scheduling COMMAND scan_engine_test)
 
     add_executable(scan_cancellation_test tests/scancancellation_test.cpp)
     target_link_libraries(scan_cancellation_test PRIVATE ois_linux)

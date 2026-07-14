@@ -16,6 +16,7 @@
 #include <memory>
 
 #include "scanoptions.h"
+#include "scanengine.h"
 #include "scanbudget.h"
 #include "neighborentry.h"
 #include "scanresult.h"
@@ -166,6 +167,12 @@ private:
                                 const std::shared_ptr<std::atomic_bool> &cancelRequested,
                                 const std::function<void(int, int)> &onProgress,
                                 const std::function<void(const ScanResult &)> &onResult) const;
+    HostScanOutcome scanHost(
+        const ScanOptions &options,
+        const QHostAddress &host,
+        const QString &gatewayIp,
+        const std::shared_ptr<ScanMdnsResolver> &mdnsResolver,
+        const std::shared_ptr<std::atomic_bool> &cancelRequested) const;
     void startDebugScan();
     QList<ScanResult> runDebugScan(
         int accuracyLevel,

@@ -45,7 +45,6 @@ Yes, this project is **100% vibe coded**.
 - Qt 6.4 or newer development packages:
   - `Widgets`
   - `Network`
-  - `Concurrent`
   - `PrintSupport`
   - `DBus`
 

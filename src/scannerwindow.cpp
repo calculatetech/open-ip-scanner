@@ -31,7 +31,6 @@
 #include <QFontDatabase>
 #include <QFormLayout>
 #include <QFontMetrics>
-#include <QFuture>
 #include <QGuiApplication>
 #include <QGridLayout>
 #include <QHeaderView>
@@ -48,8 +47,6 @@
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QMetaObject>
-#include <QMutex>
-#include <QMutexLocker>
 #include <QNetworkAddressEntry>
 #include <QNetworkInterface>
 #include <QPainter>
@@ -85,14 +82,12 @@
 #include <QTextBrowser>
 #include <QPlainTextEdit>
 #include <QTextStream>
-#include <QThreadPool>
 #include <QTimer>
 #include <QToolBar>
 #include <QToolButton>
 #include <QUrl>
 #include <QVBoxLayout>
 #include <QScrollBar>
-#include <QtConcurrent>
 
 #include <algorithm>
 #include <atomic>
@@ -1147,238 +1142,141 @@ QList<ScanResult> ScannerWindow::scanHosts(const ScanOptions &options,
                                            const std::function<void(int, int)> &onProgress,
                                            const std::function<void(const ScanResult &)> &onResult) const
 {
-    // Shared, thread-safe accumulator for progressive per-host updates.
-    QList<ScanResult> results;
-    QMutex resultsMutex;
-    const auto publishResult = [&](const ScanResult &result) {
-        if (cancellable::isCancelled(cancelRequested)) {
-            return;
-        }
-        // Merge data by interface plus IP so overlapping links retain distinct identities.
-        bool shouldEmit = false;
-        ScanResult emitResult = result;
-        {
-            QMutexLocker locker(&resultsMutex);
-            auto it = std::find_if(results.begin(), results.end(), [&](const ScanResult &existing) {
-                return existing.ip == result.ip &&
-                       existing.interfaceName == result.interfaceName;
-            });
-
-            if (it == results.end()) {
-                results.append(result);
-                shouldEmit = true;
-            } else {
-                if (it->mac == "Unknown" && result.mac != "Unknown") {
-                    it->mac = result.mac;
-                    shouldEmit = true;
-                }
-                if (it->vendor == "Unknown" && result.vendor != "Unknown") {
-                    it->vendor = result.vendor;
-                    shouldEmit = true;
-                }
-                const HostnameEvidence currentHostname{
-                    it->hostname, it->hostnameSource};
-                for (const HostnameEvidence &candidate : result.hostnameEvidence) {
-                    it->hostnameEvidence = mergeHostnameEvidence(
-                        it->hostnameEvidence, candidate);
-                }
-                const HostnameEvidence mergedHostname = preferredHostname(
-                    it->hostnameEvidence);
-                if (mergedHostname.hostname != currentHostname.hostname ||
-                    mergedHostname.source != currentHostname.source) {
-                    it->hostname = mergedHostname.hostname;
-                    it->hostnameSource = mergedHostname.source;
-                    shouldEmit = true;
-                }
-                for (const ResolverEvent &event : result.resolverEvents) {
-                    const QList<ResolverEvent> mergedEvents = mergeResolverEvents(
-                        it->resolverEvents, event);
-                    if (mergedEvents.size() != it->resolverEvents.size()) {
-                        it->resolverEvents = mergedEvents;
-                        shouldEmit = true;
-                    }
-                }
-                if (it->services.isEmpty() && !result.services.isEmpty()) {
-                    it->services = result.services;
-                    shouldEmit = true;
-                }
-                emitResult = *it;
-            }
-        }
-
-        if (shouldEmit && onResult) {
-            onResult(emitResult);
-        }
-    };
-
     const QString gatewayIp = lookupGatewayIp(options.interfaceName);
     const int interfaceIndex = QNetworkInterface::interfaceIndexFromName(
         options.interfaceName);
     auto mdnsResolver = std::make_shared<ScanMdnsResolver>(
         interfaceIndex, cancelRequested, createAvahiDbusBackend());
+    CallbackHostScanBackend backend(
+        [this, options, gatewayIp, mdnsResolver](
+            const QHostAddress &host,
+            const std::shared_ptr<std::atomic_bool> &cancellation) {
+            return scanHost(options, host, gatewayIp, mdnsResolver, cancellation);
+        });
+    return ScanEngine::run(hosts,
+                           options.maxParallelProbes,
+                           cancelRequested,
+                           backend,
+                           onProgress,
+                           onResult);
+}
 
-    const int total = hosts.size();
-    std::atomic<int> nextIndex{0};
-    std::atomic<int> scannedCount{0};
+HostScanOutcome ScannerWindow::scanHost(
+    const ScanOptions &options,
+    const QHostAddress &host,
+    const QString &gatewayIp,
+    const std::shared_ptr<ScanMdnsResolver> &mdnsResolver,
+    const std::shared_ptr<std::atomic_bool> &cancelRequested) const
+{
+    const QString ipString = host.toString();
+    const TargetBudget budget(options.targetDeadlineMs);
+    bool alive = false;
+    QString discoveredMac;
+    NeighborObservation neighbor;
+    QList<ServiceHit> discoveredServices;
+    bool servicesProbed = false;
+    if (ipString == options.localIp) {
+        alive = true;
+        discoveredMac = options.localMac;
+    } else if (ipString == gatewayIp) {
+        alive = true;
+    } else {
+        alive = pingHost(host, options, budget, cancelRequested);
+        if (shouldProbeServicesForDiscovery(
+                alive, options.enabledServiceIds.size()) && !budget.expired()) {
+            servicesProbed = true;
+            discoveredServices = probeServices(
+                ipString, options.localIp, budget, cancelRequested, options);
+            alive = !discoveredServices.isEmpty();
+        }
+        if (!alive) {
+            neighbor = lookupNeighbor(
+                ipString, options.interfaceName, budget, cancelRequested);
+            neighbor = confirmNeighborLiveness(neighbor,
+                                               ipString,
+                                               options.interfaceName,
+                                               options,
+                                               budget,
+                                               cancelRequested);
+            if (neighbor.suppliesMacMetadata()) {
+                discoveredMac = neighbor.mac;
+            }
+            alive = neighbor.establishesLiveness();
+        }
+    }
+    if (!alive) {
+        return {};
+    }
 
-    QThreadPool pool;
-    const int requestedWorkers = std::clamp(options.maxParallelProbes, 1, kMaxParallelProbes);
-    const int workerCount = requestedWorkers;
-    pool.setMaxThreadCount(workerCount);
-
-    QList<QFuture<void>> workers;
-    workers.reserve(workerCount);
-
-    for (int worker = 0; worker < workerCount; ++worker) {
-        // Worker threads pull host indices atomically to avoid overlap.
-        workers.append(QtConcurrent::run(&pool, [&, gatewayIp, cancelRequested]() {
-            while (true) {
-                if (cancelRequested && cancelRequested->load()) {
-                    break;
+    ScanResult result;
+    result.ip = ipString;
+    result.interfaceName = options.interfaceName;
+    for (const AliveHostStage stage : kAliveHostStageOrder) {
+        switch (stage) {
+        case AliveHostStage::Services:
+            result.services = servicesProbed
+                                  ? discoveredServices
+                                  : probeServices(ipString,
+                                                  options.localIp,
+                                                  budget,
+                                                  cancelRequested,
+                                                  options);
+            break;
+        case AliveHostStage::MacAddress:
+            if (discoveredMac.isEmpty()) {
+                if (neighbor.ip.isEmpty()) {
+                    neighbor = lookupNeighbor(
+                        ipString, options.interfaceName, budget, cancelRequested);
                 }
-
-                const int index = nextIndex.fetch_add(1);
-                if (index >= total) {
-                    break;
-                }
-
-                const QHostAddress host = hosts[index];
-                const QString ipString = host.toString();
-                const TargetBudget budget(options.targetDeadlineMs);
-
-                bool alive = false;
-                QString discoveredMac;
-                NeighborObservation neighbor;
-                QList<ServiceHit> discoveredServices;
-                bool servicesProbed = false;
-                if (ipString == options.localIp) {
-                    alive = true;
-                    discoveredMac = options.localMac;
-                } else if (ipString == gatewayIp) {
-                    alive = true;
-                } else {
-                    alive = pingHost(host, options, budget, cancelRequested);
-                    if (shouldProbeServicesForDiscovery(
-                            alive, options.enabledServiceIds.size()) && !budget.expired()) {
-                        servicesProbed = true;
-                        discoveredServices = probeServices(
-                            ipString, options.localIp, budget, cancelRequested, options);
-                        alive = !discoveredServices.isEmpty();
-                    }
-                    if (!alive) {
-                        neighbor = lookupNeighbor(
-                            ipString, options.interfaceName, budget, cancelRequested);
-                        neighbor = confirmNeighborLiveness(neighbor,
-                                                          ipString,
-                                                          options.interfaceName,
-                                                          options,
-                                                          budget,
-                                                          cancelRequested);
-                        if (neighbor.suppliesMacMetadata()) {
-                            discoveredMac = neighbor.mac;
-                        }
-                        if (neighbor.establishesLiveness()) {
-                            alive = true;
-                        }
-                    }
-                }
-
-                if (alive) {
-                    ScanResult result;
-                    result.ip = ipString;
-                    result.interfaceName = options.interfaceName;
-                    for (const AliveHostStage stage : kAliveHostStageOrder) {
-                        switch (stage) {
-                        case AliveHostStage::Services:
-                            result.services = servicesProbed
-                                                  ? discoveredServices
-                                                  : probeServices(ipString,
-                                                                  options.localIp,
-                                                                  budget,
-                                                                  cancelRequested,
-                                                                  options);
-                            break;
-                        case AliveHostStage::MacAddress:
-                            if (discoveredMac.isEmpty()) {
-                                if (neighbor.ip.isEmpty()) {
-                                    neighbor = lookupNeighbor(ipString,
-                                                              options.interfaceName,
-                                                              budget,
-                                                              cancelRequested);
-                                }
-                                if (neighbor.suppliesMacMetadata()) {
-                                    discoveredMac = neighbor.mac;
-                                }
-                            }
-                            result.mac = discoveredMac;
-                            break;
-                        case AliveHostStage::Vendor:
-                            result.vendor = lookupVendor(result.mac, options);
-                            break;
-                        case AliveHostStage::Hostname: {
-                            HostnameEvidence preliminary;
-                            if (ipString == options.localIp) {
-                                preliminary.hostname = qualifyHostname(
-                                    QHostInfo::localHostName(),
-                                    options.dnsSuffixes.value(0));
-                                preliminary.source = HostnameSource::LocalHost;
-                            }
-                            const HostnameResolution resolved = lookupHostname(
-                                ipString,
-                                preliminary,
-                                options.dnsSuffixes,
-                                options.accuracyLevel,
-                                budget,
-                                cancelRequested,
-                                *mdnsResolver);
-                            result.hostnameEvidence = resolved.evidence;
-                            result.resolverEvents = resolved.resolverEvents;
-                            const HostnameEvidence preferred = preferredHostname(
-                                result.hostnameEvidence);
-                            result.hostname = preferred.hostname;
-                            result.hostnameSource = preferred.source;
-                            break;
-                        }
-                        case AliveHostStage::NormalizeIdentity:
-                            if (result.mac.isEmpty()) {
-                                result.mac = "Unknown";
-                            }
-                            if (result.vendor.isEmpty()) {
-                                result.vendor = "Unknown";
-                            }
-                            if (result.hostname.isEmpty()) {
-                                result.hostname = "Unknown";
-                            }
-                            break;
-                        case AliveHostStage::Details:
-                            result.detailsText = collectDeviceDetails(result, options);
-                            break;
-                        }
-                    }
-                    publishResult(result);
-                }
-
-                const int current = scannedCount.fetch_add(1) + 1;
-                if (onProgress) {
-                    onProgress(current, total);
-                }
-
-                if (cancelRequested && cancelRequested->load()) {
-                    break;
+                if (neighbor.suppliesMacMetadata()) {
+                    discoveredMac = neighbor.mac;
                 }
             }
-        }));
+            result.mac = discoveredMac;
+            break;
+        case AliveHostStage::Vendor:
+            result.vendor = lookupVendor(result.mac, options);
+            break;
+        case AliveHostStage::Hostname: {
+            HostnameEvidence preliminary;
+            if (ipString == options.localIp) {
+                preliminary.hostname = qualifyHostname(
+                    QHostInfo::localHostName(), options.dnsSuffixes.value(0));
+                preliminary.source = HostnameSource::LocalHost;
+            }
+            const HostnameResolution resolved = lookupHostname(
+                ipString,
+                preliminary,
+                options.dnsSuffixes,
+                options.accuracyLevel,
+                budget,
+                cancelRequested,
+                *mdnsResolver);
+            result.hostnameEvidence = resolved.evidence;
+            result.resolverEvents = resolved.resolverEvents;
+            const HostnameEvidence preferred = preferredHostname(
+                result.hostnameEvidence);
+            result.hostname = preferred.hostname;
+            result.hostnameSource = preferred.source;
+            break;
+        }
+        case AliveHostStage::NormalizeIdentity:
+            if (result.mac.isEmpty()) {
+                result.mac = "Unknown";
+            }
+            if (result.vendor.isEmpty()) {
+                result.vendor = "Unknown";
+            }
+            if (result.hostname.isEmpty()) {
+                result.hostname = "Unknown";
+            }
+            break;
+        case AliveHostStage::Details:
+            result.detailsText = collectDeviceDetails(result, options);
+            break;
+        }
     }
-
-    for (QFuture<void> &worker : workers) {
-        worker.waitForFinished();
-    }
-
-    std::sort(results.begin(), results.end(), [](const ScanResult &a, const ScanResult &b) {
-        return ipv4ToInt(QHostAddress(a.ip)) < ipv4ToInt(QHostAddress(b.ip));
-    });
-
-    return results;
+    return {true, result};
 }
 
 bool ScannerWindow::pingHost(const QHostAddress &address,

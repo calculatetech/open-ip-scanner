@@ -2,6 +2,27 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.5.10] - 2026-07-14
+
+### Changed
+
+- Moved bounded host scheduling, parallel dispatch, cancellation, progress,
+  identity merging, progressive publication, and deterministic final ordering
+  from `ScannerWindow` into a window-free `ScanEngine`.
+- Routed the production per-host probe path through an explicit injectable
+  `IHostScanBackend` boundary without changing discovery or enrichment order.
+- Removed the final Qt Concurrent dependency; scan session and engine workers
+  now have explicit join-based shutdown and synchronization.
+- Contained backend and publication-callback failures as cancellation, suppressed
+  post-cancel publication, and made same-address ordering deterministic by
+  interface without merging distinct interface identities.
+
+### Added
+
+- Added deterministic engine coverage for concurrency bounds, exact host
+  dispatch, result ordering, duplicate identity enrichment, publication, and
+  cancellation.
+
 ## [0.5.9] - 2026-07-14
 
 ### Changed
