@@ -8,6 +8,7 @@
 #include "settingslayout.h"
 
 #include <QAction>
+#include <QAbstractButton>
 #include <QApplication>
 #include <QCheckBox>
 #include <QCloseEvent>
@@ -96,8 +97,9 @@
 namespace {
 constexpr int kMaxHostsToScan = 4096;
 constexpr int kMaxParallelProbes = 16;
-constexpr int kSettingsSchemaVersion = 2;
+constexpr int kSettingsSchemaVersion = 3;
 constexpr int kSettingsSaveDebounceMs = 350;
+constexpr int kAuthorizationAcknowledgementVersion = 1;
 // Default toolbar layout used on first launch and settings reset.
 const QStringList kToolbarDefaultOrder = {
     "targets_label", "target_input", "scan", "sep", "auto", "find", "terminal", "sep", "adapter_label", "adapter_combo", "refresh"
@@ -328,10 +330,13 @@ ScannerWindow::ScannerWindow(QWidget *parent)
     setCentralWidget(central);
 
     statusTextLabel_ = new QLabel(this);
+    probeSummaryLabel_ = new QLabel(this);
+    probeSummaryLabel_->setObjectName("probeSummaryLabel");
     statusProgressBar_ = new QProgressBar(this);
     statusProgressBar_->setMinimumWidth(240);
     statusProgressBar_->setVisible(false);
     statusBar()->addWidget(statusTextLabel_, 1);
+    statusBar()->addPermanentWidget(probeSummaryLabel_);
     statusBar()->addPermanentWidget(statusProgressBar_);
 
     resultFlushTimer_ = new QTimer(this);
@@ -353,6 +358,7 @@ ScannerWindow::ScannerWindow(QWidget *parent)
 
     setupMenuBar();
     loadSettings();
+    updateProbeSummary();
     refreshAdapters();
     if (rememberLastTargetOnLaunch_ && !pendingLastTarget_.isEmpty()) {
         targetInput_->setText(pendingLastTarget_);
@@ -378,7 +384,7 @@ ScannerWindow::ScannerWindow(QWidget *parent)
     });
     connect(targetInput_, &QLineEdit::textChanged, this, &ScannerWindow::validateTargetLimitFeedback);
     connect(targetInput_, &QLineEdit::textChanged, this, [this](const QString &text) {
-        if (rememberLastTargetOnLaunch_) {
+        if (saveTargetHistory_ && rememberLastTargetOnLaunch_) {
             scheduleSettingsSave();
         }
         if (!scanInProgress_) {
@@ -440,13 +446,26 @@ void ScannerWindow::setupMenuBar()
     QMenu *settingsMenu = menuBar()->addMenu("Settings");
     QAction *settingsAction = settingsMenu->addAction("Preferences...");
     connect(settingsAction, &QAction::triggered, this, &ScannerWindow::showSettingsDialog);
+    settingsMenu->addSeparator();
+    saveTargetHistoryAction_ = settingsMenu->addAction("Save Target History");
+    saveTargetHistoryAction_->setCheckable(true);
+    saveTargetHistoryAction_->setChecked(false);
+    connect(saveTargetHistoryAction_, &QAction::toggled, this,
+            [this](bool checked) { setTargetHistoryRetention(checked); });
     rememberLastTargetAction_ = settingsMenu->addAction("Remember Last Target On Launch");
     rememberLastTargetAction_->setCheckable(true);
     rememberLastTargetAction_->setChecked(false);
     connect(rememberLastTargetAction_, &QAction::toggled, this, [this](bool checked) {
-        rememberLastTargetOnLaunch_ = checked;
+        rememberLastTargetOnLaunch_ = saveTargetHistory_ && checked;
         saveSettings();
+        updateProbeSummary();
     });
+    rememberLastTargetAction_->setEnabled(false);
+    clearTargetHistoryAction_ = settingsMenu->addAction("Clear Target History");
+    clearTargetHistoryAction_->setEnabled(false);
+    connect(clearTargetHistoryAction_, &QAction::triggered,
+            this, &ScannerWindow::clearTargetHistory);
+    settingsMenu->addSeparator();
     showDetailsPaneAction_ = settingsMenu->addAction("Show Details Pane");
     showDetailsPaneAction_->setCheckable(true);
     showDetailsPaneAction_->setChecked(false);
@@ -952,8 +971,6 @@ void ScannerWindow::startScan()
         showStatusMessage("Select a valid adapter.");
         return;
     }
-    recordTargetHistory(targetText);
-
     const AdapterInfo adapter = adapters_[adapterIdx];
     QHostAddress bindAddress;
     if (!bindAddress.setAddress(adapter.localIp) || bindAddress.protocol() != QAbstractSocket::IPv4Protocol) {
@@ -972,6 +989,11 @@ void ScannerWindow::startScan()
     }
 
     const ScanOptions scanOptions = captureScanOptions(adapter);
+    if (!confirmScanAuthorization(scanOptions)) {
+        showStatusMessage("Scan canceled before launch.");
+        return;
+    }
+    const bool targetRetained = recordTargetHistory(targetText);
     const qint64 estimatedMs = estimatedScanUpperBoundMs(
         hosts.size(), scanOptions.maxParallelProbes, scanOptions.targetDeadlineMs);
     const qint64 estimatedSeconds = (estimatedMs + 999) / 1000;
@@ -1001,6 +1023,10 @@ void ScannerWindow::startScan()
     resultModel_->clear();
 
     scanInProgress_ = true;
+    activeScanOptions_ = scanOptions;
+    hasActiveScanOptions_ = true;
+    activeScanTargetRetained_ = targetRetained;
+    updateProbeSummary();
     scanButton_->setToolTip("Stop scan");
     applyToolbarDisplayMode();
     refreshAdaptersButton_->setEnabled(false);
@@ -2408,6 +2434,9 @@ void ScannerWindow::completeScanPresentation()
 {
     scanCompletionPending_ = false;
     scanInProgress_ = false;
+    hasActiveScanOptions_ = false;
+    activeScanTargetRetained_ = false;
+    updateProbeSummary();
     scanButton_->setToolTip("Start scan");
     applyToolbarDisplayMode();
     scanButton_->setEnabled(!adapters_.isEmpty() ||
@@ -3394,6 +3423,7 @@ void ScannerWindow::showSettingsDialog()
 
     applyTableColumnSizing();
     saveSettings();
+    updateProbeSummary();
 }
 
 void ScannerWindow::showAboutDialog()
@@ -3432,6 +3462,12 @@ void ScannerWindow::showHelpDialog()
         "Balanced through Maximum progressively repeat ping and port probes and allow cached "
         "neighbor evidence time to become actively confirmed for intermittent, sleeping, or "
         "slower devices.</p>"
+        "<p><b>Scan traffic:</b> The status bar summarizes the active mode before launch; hover "
+        "it for exact attempts and enabled ports. Scans send ICMP echo requests, open TCP "
+        "connections only to enabled service ports, may send HTTP HEAD, TLS handshakes, or "
+        "SMTP EHLO and read bounded banners when those services are enabled, inspect the local "
+        "adapter neighbor cache, and perform PTR, system-resolver, and interface-scoped mDNS "
+        "reverse lookups for responding devices.</p>"
         "<p><b>Services:</b> Enable/disable per-port probing and configure launch commands in "
         "Settings &rarr; Programs. An unverified connection is shown as "
         "<code>Unknown:&lt;port&gt;</code>; a service name appears after a bounded protocol check "
@@ -3441,6 +3477,8 @@ void ScannerWindow::showHelpDialog()
         "<p><b>Hostname diagnostics:</b> Help &rarr; Hostname Diagnostics shows resolver and "
         "Avahi health counts and can save a redacted JSON support bundle.</p>"
         "<p><b>Filtering:</b> Use Find to filter by IP, hostname, MAC, vendor, services, or OUI prefix.</p>"
+        "<p><b>Privacy:</b> Target history is off by default. Settings can enable local history, "
+        "optionally restore its last target on launch, or clear retained targets immediately.</p>"
         "<p><b>Safety:</b> Scan only networks you own or are authorized to test.</p>");
     layout->addWidget(browser, 1);
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close, &dialog);
@@ -3468,6 +3506,128 @@ QString ScannerWindow::accuracyLabel() const
     default:
         return "Maximum";
     }
+}
+
+QString ScannerWindow::activeProbeSummary(bool detailed) const
+{
+    if (scanInProgress_ && hasActiveScanOptions_) {
+        return probeSummary(
+            activeScanOptions_, detailed, activeScanTargetRetained_);
+    }
+    ScanOptions options;
+    options.accuracyLevel = accuracyLevel_;
+    options.enabledServiceIds = enabledServiceIds_;
+    const ScanBudgetProfile configuredBudget = scanBudgetProfile(accuracyLevel_);
+    options.pingAttempts = configuredBudget.pingAttempts;
+    options.pingTimeoutSeconds = configuredBudget.pingTimeoutSeconds;
+    options.serviceAttempts = configuredBudget.serviceAttempts;
+    return probeSummary(options, detailed, saveTargetHistory_);
+}
+
+QString ScannerWindow::probeSummary(const ScanOptions &options,
+                                    bool detailed,
+                                    bool targetRetained) const
+{
+    QStringList ports;
+    bool sendsHttp = false;
+    bool usesTls = false;
+    bool sendsSmtpEhlo = false;
+    bool readsBanners = false;
+    for (const ServiceDefinition &definition : availableServices()) {
+        if (!options.enabledServiceIds.contains(definition.id)) {
+            continue;
+        }
+        ports.append(QString::number(definition.port));
+        sendsHttp = sendsHttp || definition.id == "http" || definition.id == "https";
+        usesTls = usesTls || definition.id == "https" || definition.id == "smtps465";
+        sendsSmtpEhlo = sendsSmtpEhlo || definition.id == "smtp587";
+        readsBanners = readsBanners || definition.id == "ssh" ||
+                       definition.id == "ftp" || definition.id == "smtp25" ||
+                       definition.id == "smtps465" || definition.id == "smtp587";
+    }
+
+    const QString history = targetRetained ? "history on" : "history off";
+    if (!detailed) {
+        static const std::array<const char *, 4> labels = {
+            "Fast", "Balanced", "High", "Maximum"};
+        const QString mode = QString::fromLatin1(
+            labels[static_cast<std::size_t>(
+                std::clamp(options.accuracyLevel, 0, 3))]);
+        const QString tcp = ports.isEmpty()
+                                ? "no TCP service ports"
+                                : QString("TCP %1").arg(ports.join(','));
+        return QString("%1 · ICMP + %2 + PTR/System/mDNS · %3")
+            .arg(mode, tcp, history);
+    }
+
+    QStringList details;
+    details.append(QString("ICMP: up to %1 echo attempt(s) per target with a %2-second timeout.")
+                       .arg(options.pingAttempts)
+                       .arg(options.pingTimeoutSeconds));
+    details.append("Neighbor evidence: reads the selected adapter's local IPv4 neighbor cache; this does not transmit a separate neighbor-discovery packet.");
+    if (ports.isEmpty()) {
+        details.append("TCP: no service ports are enabled.");
+    } else {
+        details.append(QString("TCP: up to %1 connection attempt(s) to enabled port(s) %2, bound to the selected adapter.")
+                           .arg(options.serviceAttempts)
+                           .arg(ports.join(", ")));
+    }
+    QStringList applicationTraffic;
+    if (sendsHttp) {
+        applicationTraffic.append("HTTP HEAD on enabled HTTP/HTTPS ports");
+    }
+    if (usesTls) {
+        applicationTraffic.append("TLS handshakes on enabled TLS ports");
+    }
+    if (sendsSmtpEhlo) {
+        applicationTraffic.append("SMTP EHLO on port 587");
+    }
+    if (readsBanners) {
+        applicationTraffic.append("bounded banner reads on enabled SSH/FTP/SMTP ports");
+    }
+    details.append(applicationTraffic.isEmpty()
+                       ? "Application traffic: no application payloads are sent."
+                       : QString("Application traffic: %1.")
+                             .arg(applicationTraffic.join("; ")));
+    details.append("Names: responding devices receive explicit PTR, system-resolver, and interface-scoped mDNS reverse lookups.");
+    details.append(targetRetained
+                       ? "Privacy: target history is saved locally."
+                       : "Privacy: target history is not saved.");
+    return details.join('\n');
+}
+
+bool ScannerWindow::confirmScanAuthorization(const ScanOptions &options)
+{
+    QSettings settings("OpenIPScanner", "OpenIPScanner");
+    if (settings.value("safety/authorization_ack_version", 0).toInt() >=
+        kAuthorizationAcknowledgementVersion) {
+        return true;
+    }
+
+    QMessageBox dialog(this);
+    dialog.setIcon(QMessageBox::Warning);
+    dialog.setWindowTitle("Authorized Scanning Required");
+    dialog.setText("Scan only networks and devices you own or are explicitly authorized to test.");
+    dialog.setInformativeText(probeSummary(options, true, saveTargetHistory_));
+    dialog.setStandardButtons(QMessageBox::Yes | QMessageBox::Cancel);
+    dialog.button(QMessageBox::Yes)->setText("I Am Authorized — Start Scan");
+    dialog.setDefaultButton(QMessageBox::Cancel);
+    if (dialog.exec() != QMessageBox::Yes) {
+        return false;
+    }
+    settings.setValue("safety/authorization_ack_version",
+                      kAuthorizationAcknowledgementVersion);
+    settings.sync();
+    return settings.status() == QSettings::NoError;
+}
+
+void ScannerWindow::updateProbeSummary()
+{
+    if (probeSummaryLabel_ == nullptr) {
+        return;
+    }
+    probeSummaryLabel_->setText(activeProbeSummary(false));
+    probeSummaryLabel_->setToolTip(activeProbeSummary(true));
 }
 
 ScanOptions ScannerWindow::captureScanOptions(const AdapterInfo &adapter) const
@@ -3505,6 +3665,7 @@ void ScannerWindow::applyDefaultSettings()
 {
     maxParallelProbes_ = 4;
     accuracyLevel_ = 1;
+    saveTargetHistory_ = false;
     rememberLastTargetOnLaunch_ = false;
     targetTextFormat_ = TargetTextFormat::Cidr;
     pendingLastTarget_.clear();
@@ -3531,29 +3692,52 @@ void ScannerWindow::applyDefaultSettings()
     toolbarOrder_ = kToolbarDefaultOrder;
 }
 
-void ScannerWindow::migrateSettings(QSettings &settings)
+bool ScannerWindow::migrateSettings(QSettings &settings, QString *error)
 {
     const int schema = settings.value("settings/schema_version", 0).toInt();
     if (schema >= kSettingsSchemaVersion) {
-        return;
+        if (error != nullptr) {
+            error->clear();
+        }
+        return true;
     }
 
-    // Schemas 0 and 1 use the same general key names. Schema 2 changes how
-    // absent and explicitly empty collections and the -1 toolbar inheritance
-    // sentinel are interpreted. It also applies the planned privacy migration:
-    // legacy target data survives only when retention was explicitly enabled.
-    if (!settings.value("targets/remember_last", false).toBool()) {
-        settings.remove("targets/history");
-        settings.remove("targets/last_input");
+    // Schema 2 made history private by default. Schema 3 separates retention
+    // from launch restoration while preserving an explicit legacy opt-in.
+    const bool legacyRetention =
+        settings.value("targets/remember_last", false).toBool();
+    if (schema < 3 && !settings.contains("targets/save_history")) {
+        settings.setValue("targets/save_history", legacyRetention);
+    }
+    if (!settings.value("targets/save_history", false).toBool()) {
+        if (!clearRetainedTargetSettings(settings, true, error)) {
+            return false;
+        }
     }
     settings.setValue("settings/schema_version", kSettingsSchemaVersion);
     settings.sync();
+    if (settings.status() != QSettings::NoError ||
+        settings.value("settings/schema_version", 0).toInt() !=
+            kSettingsSchemaVersion) {
+        if (error != nullptr) {
+            *error = "Could not complete the settings privacy migration. Check settings-file permissions and restart.";
+        }
+        return false;
+    }
+    if (error != nullptr) {
+        error->clear();
+    }
+    return true;
 }
 
 void ScannerWindow::loadSettings()
 {
     QSettings settings("OpenIPScanner", "OpenIPScanner");
-    migrateSettings(settings);
+    QString migrationError;
+    if (!migrateSettings(settings, &migrationError)) {
+        QMessageBox::warning(this, "Settings Migration", migrationError);
+        showStatusMessage(migrationError);
+    }
 
     // On Wayland, compositor controls window placement, so only restore size.
     const bool isWayland = QGuiApplication::platformName().contains("wayland", Qt::CaseInsensitive);
@@ -3571,7 +3755,9 @@ void ScannerWindow::loadSettings()
 
     maxParallelProbes_ = std::clamp(settings.value("performance/max_parallel_probes", 4).toInt(), 1, kMaxParallelProbes);
     accuracyLevel_ = std::clamp(settings.value("performance/accuracy_level", 1).toInt(), 0, 3);
-    rememberLastTargetOnLaunch_ = settings.value("targets/remember_last", false).toBool();
+    saveTargetHistory_ = settings.value("targets/save_history", false).toBool();
+    rememberLastTargetOnLaunch_ =
+        saveTargetHistory_ && settings.value("targets/remember_last", false).toBool();
     targetTextFormat_ = settings.value("targets/generated_format", "cidr").toString() ==
                                 "range"
                             ? TargetTextFormat::Range
@@ -3580,6 +3766,14 @@ void ScannerWindow::loadSettings()
     if (rememberLastTargetAction_ != nullptr) {
         const QSignalBlocker blocker(rememberLastTargetAction_);
         rememberLastTargetAction_->setChecked(rememberLastTargetOnLaunch_);
+        rememberLastTargetAction_->setEnabled(saveTargetHistory_);
+    }
+    if (saveTargetHistoryAction_ != nullptr) {
+        const QSignalBlocker blocker(saveTargetHistoryAction_);
+        saveTargetHistoryAction_->setChecked(saveTargetHistory_);
+    }
+    if (clearTargetHistoryAction_ != nullptr) {
+        clearTargetHistoryAction_->setEnabled(saveTargetHistory_);
     }
     toolbarDisplayMode_ = std::clamp(settings.value("toolbar/display_mode", 0).toInt(), 0, 2);
     macDisplayFormat_ = std::clamp(settings.value("appearance/mac_display_format", static_cast<int>(MacColonUpper)).toInt(),
@@ -3664,7 +3858,9 @@ void ScannerWindow::loadSettings()
     rebuildMainToolbar();
 
     targetHistory_.clear();
-    const QStringList history = settings.value("targets/history").toStringList();
+    const QStringList history = saveTargetHistory_
+                                    ? settings.value("targets/history").toStringList()
+                                    : QStringList{};
     for (const QString &entry : history) {
         const QString trimmed = entry.trimmed();
         if (!trimmed.isEmpty() && isSafeTextInput(trimmed, 2048)) {
@@ -3725,12 +3921,27 @@ void ScannerWindow::saveSettings() const
     for (auto it = customCommands_.begin(); it != customCommands_.end(); ++it) {
         settings.setValue(QString("programs/%1").arg(it.key()), it.value());
     }
-    settings.setValue("targets/history", targetHistory_);
+    settings.setValue("targets/save_history", saveTargetHistory_);
     settings.setValue("targets/remember_last", rememberLastTargetOnLaunch_);
     settings.setValue("targets/generated_format",
                       targetTextFormat_ == TargetTextFormat::Cidr ? "cidr"
                                                                   : "range");
-    settings.setValue("targets/last_input", targetInput_->text().trimmed());
+    if (saveTargetHistory_) {
+        if (targetHistory_.isEmpty()) {
+            settings.remove("targets/history");
+        } else {
+            settings.setValue("targets/history", targetHistory_);
+        }
+        const QString lastInput = targetInput_->text().trimmed();
+        if (rememberLastTargetOnLaunch_ && !lastInput.isEmpty()) {
+            settings.setValue("targets/last_input", lastInput);
+        } else {
+            settings.remove("targets/last_input");
+        }
+    } else {
+        settings.remove("targets/history");
+        settings.remove("targets/last_input");
+    }
 
     settings.beginWriteArray("oui/custom_entries");
     int index = 0;
@@ -3813,11 +4024,14 @@ bool ScannerWindow::isSafeTextInput(const QString &text, int maxLength)
     return true;
 }
 
-void ScannerWindow::recordTargetHistory(const QString &text)
+bool ScannerWindow::recordTargetHistory(const QString &text)
 {
+    if (!saveTargetHistory_) {
+        return false;
+    }
     const QString trimmed = text.trimmed();
     if (trimmed.isEmpty() || !isSafeTextInput(trimmed, 2048)) {
-        return;
+        return false;
     }
 
     targetHistory_.removeAll(trimmed);
@@ -3826,7 +4040,146 @@ void ScannerWindow::recordTargetHistory(const QString &text)
         targetHistory_.removeLast();
     }
     targetHistoryModel_->setStringList(targetHistory_);
+    QSettings settings("OpenIPScanner", "OpenIPScanner");
+    QString error;
+    if (!persistTargetHistorySettings(settings,
+                                      targetHistory_,
+                                      targetInput_->text().trimmed(),
+                                      rememberLastTargetOnLaunch_,
+                                      &error)) {
+        targetHistory_.removeAll(trimmed);
+        targetHistoryModel_->setStringList(targetHistory_);
+        QMessageBox::warning(this, "Target History", error);
+        showStatusMessage(error);
+        return false;
+    }
+    return true;
+}
+
+void ScannerWindow::setTargetHistoryRetention(bool enabled)
+{
+    if (!enabled && saveTargetHistory_) {
+        QSettings settings("OpenIPScanner", "OpenIPScanner");
+        QString error;
+        if (!clearRetainedTargetSettings(settings, true, &error)) {
+            if (saveTargetHistoryAction_ != nullptr) {
+                const QSignalBlocker blocker(saveTargetHistoryAction_);
+                saveTargetHistoryAction_->setChecked(true);
+            }
+            QMessageBox::warning(this, "Target History", error);
+            showStatusMessage(error);
+            return;
+        }
+    }
+    saveTargetHistory_ = enabled;
+    if (!enabled) {
+        activeScanTargetRetained_ = false;
+        rememberLastTargetOnLaunch_ = false;
+        targetHistory_.clear();
+        targetHistoryModel_->setStringList({});
+    }
+    if (saveTargetHistoryAction_ != nullptr &&
+        saveTargetHistoryAction_->isChecked() != enabled) {
+        const QSignalBlocker blocker(saveTargetHistoryAction_);
+        saveTargetHistoryAction_->setChecked(enabled);
+    }
+    if (rememberLastTargetAction_ != nullptr) {
+        const QSignalBlocker blocker(rememberLastTargetAction_);
+        rememberLastTargetAction_->setEnabled(enabled);
+        rememberLastTargetAction_->setChecked(rememberLastTargetOnLaunch_);
+    }
+    if (clearTargetHistoryAction_ != nullptr) {
+        clearTargetHistoryAction_->setEnabled(enabled);
+    }
     saveSettings();
+    updateProbeSummary();
+}
+
+void ScannerWindow::clearTargetHistory()
+{
+    QSettings settings("OpenIPScanner", "OpenIPScanner");
+    QString error;
+    if (!clearRetainedTargetSettings(settings, false, &error)) {
+        QMessageBox::warning(this, "Target History", error);
+        showStatusMessage(error);
+        return;
+    }
+    targetHistory_.clear();
+    activeScanTargetRetained_ = false;
+    targetHistoryModel_->setStringList({});
+    rememberLastTargetOnLaunch_ = false;
+    pendingLastTarget_.clear();
+    if (rememberLastTargetAction_ != nullptr) {
+        const QSignalBlocker blocker(rememberLastTargetAction_);
+        rememberLastTargetAction_->setChecked(false);
+    }
+    updateProbeSummary();
+    showStatusMessage("Saved target history cleared.");
+}
+
+bool ScannerWindow::clearRetainedTargetSettings(QSettings &settings,
+                                                bool disableRetention,
+                                                QString *error)
+{
+    settings.remove("targets/history");
+    settings.remove("targets/last_input");
+    settings.setValue("targets/remember_last", false);
+    if (disableRetention) {
+        settings.setValue("targets/save_history", false);
+    }
+    settings.sync();
+    const bool failed = settings.status() != QSettings::NoError ||
+                        settings.contains("targets/history") ||
+                        settings.contains("targets/last_input") ||
+                        (disableRetention &&
+                         settings.value("targets/save_history", true).toBool());
+    if (!failed) {
+        if (error != nullptr) {
+            error->clear();
+        }
+        return true;
+    }
+    if (error != nullptr) {
+        *error = "Could not remove saved target data. Check settings-file permissions and try again.";
+    }
+    return false;
+}
+
+bool ScannerWindow::persistTargetHistorySettings(QSettings &settings,
+                                                 const QStringList &history,
+                                                 const QString &lastInput,
+                                                 bool rememberLast,
+                                                 QString *error)
+{
+    settings.setValue("targets/save_history", true);
+    settings.setValue("targets/remember_last", rememberLast);
+    if (history.isEmpty()) {
+        settings.remove("targets/history");
+    } else {
+        settings.setValue("targets/history", history);
+    }
+    if (rememberLast && !lastInput.isEmpty()) {
+        settings.setValue("targets/last_input", lastInput);
+    } else {
+        settings.remove("targets/last_input");
+    }
+    settings.sync();
+    const bool failed = settings.status() != QSettings::NoError ||
+                        settings.value("targets/save_history", false).toBool() != true ||
+                        settings.value("targets/history").toStringList() != history ||
+                        (rememberLast &&
+                         settings.value("targets/last_input").toString() != lastInput) ||
+                        (!rememberLast && settings.contains("targets/last_input"));
+    if (!failed) {
+        if (error != nullptr) {
+            error->clear();
+        }
+        return true;
+    }
+    if (error != nullptr) {
+        *error = "Could not save target history. Check settings-file permissions; this scan target was not retained.";
+    }
+    return false;
 }
 
 QList<int> ScannerWindow::visibleColumnsInDisplayOrder() const

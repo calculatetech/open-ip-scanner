@@ -37,6 +37,23 @@
 #include <thread>
 #include <utility>
 
+namespace {
+bool readFailingSettings(QIODevice &, QSettings::SettingsMap &map)
+{
+    map.insert("targets/history", QStringList{"10.66.0.0/24"});
+    map.insert("targets/last_input", "10.66.0.0/24");
+    map.insert("targets/save_history", false);
+    map.insert("targets/remember_last", false);
+    map.insert("settings/schema_version", 2);
+    return true;
+}
+
+bool writeFailingSettings(QIODevice &, const QSettings::SettingsMap &)
+{
+    return false;
+}
+} // namespace
+
 struct ScannerWindowTestAccess {
     static QList<QHostAddress> parseTargets(const ScannerWindow &window,
                                             const QString &text,
@@ -68,7 +85,7 @@ struct ScannerWindowTestAccess {
     static bool settingsMigrationContract(ScannerWindow &window)
     {
         QSettings settings("OpenIPScanner", "OpenIPScanner");
-        for (int schema : {0, 1}) {
+        for (int schema : {0, 1, 2}) {
             for (int globalMode = 0; globalMode <= 2; ++globalMode) {
                 for (int explicitMode = 0; explicitMode <= 2; ++explicitMode) {
                     settings.clear();
@@ -85,7 +102,7 @@ struct ScannerWindowTestAccess {
 
                     window.applyDefaultSettings();
                     window.loadSettings();
-                    if (settings.value("settings/schema_version").toInt() != 2 ||
+                    if (settings.value("settings/schema_version").toInt() != 3 ||
                         settings.value("unrelated/keep").toString() != "preserved" ||
                         settings.contains("targets/history") ||
                         settings.contains("targets/last_input") ||
@@ -128,7 +145,8 @@ struct ScannerWindowTestAccess {
         window.loadSettings();
         if (settings.value("targets/history").toStringList() !=
                 QStringList{"10.0.0.0/24"} ||
-            settings.value("targets/last_input").toString() != "10.0.0.0/24") {
+            settings.value("targets/last_input").toString() != "10.0.0.0/24" ||
+            !settings.value("targets/save_history").toBool()) {
             return false;
         }
 
@@ -141,6 +159,150 @@ struct ScannerWindowTestAccess {
         window.applyDefaultSettings();
         window.saveSettings();
         return resetPreservedUnrelated;
+    }
+
+    static bool scanPrivacyContract(ScannerWindow &window)
+    {
+        QSettings settings("OpenIPScanner", "OpenIPScanner");
+        settings.clear();
+        window.applyDefaultSettings();
+        window.targetHistory_.clear();
+        window.targetInput_->setText("10.44.0.0/24");
+        window.saveSettings();
+        settings.sync();
+        if (settings.contains("targets/history") ||
+            settings.contains("targets/last_input") ||
+            settings.value("targets/save_history", true).toBool()) {
+            return false;
+        }
+
+        window.setTargetHistoryRetention(true);
+        window.rememberLastTargetOnLaunch_ = true;
+        if (!window.recordTargetHistory("10.44.0.0/24")) {
+            return false;
+        }
+        settings.sync();
+        if (settings.value("targets/history").toStringList() !=
+                QStringList{"10.44.0.0/24"} ||
+            settings.value("targets/last_input").toString() != "10.44.0.0/24") {
+            return false;
+        }
+
+        window.clearTargetHistory();
+        settings.sync();
+        if (settings.contains("targets/history") ||
+            settings.contains("targets/last_input") ||
+            window.rememberLastTargetOnLaunch_ || !window.saveTargetHistory_) {
+            return false;
+        }
+
+        window.recordTargetHistory("10.55.0.0/24");
+        window.setTargetHistoryRetention(false);
+        settings.sync();
+        if (settings.contains("targets/history") ||
+            settings.contains("targets/last_input") ||
+            settings.value("targets/save_history", true).toBool() ||
+            !window.targetHistory_.isEmpty()) {
+            return false;
+        }
+
+        window.accuracyLevel_ = 0;
+        window.enabledServiceIds_ = {"http", "ssh", "smtp587"};
+        const QString concise = window.activeProbeSummary(false);
+        const QString detailed = window.activeProbeSummary(true);
+        if (!concise.contains("Fast") ||
+            !concise.contains("TCP 80,22,587") ||
+            !concise.contains("history off") ||
+            !detailed.contains("1 echo attempt") ||
+            !detailed.contains("80, 22, 587") ||
+            !detailed.contains("HTTP HEAD") ||
+            !detailed.contains("SMTP EHLO") ||
+            !detailed.contains("PTR") || detailed.contains("443")) {
+            return false;
+        }
+        ScanOptions captured;
+        captured.accuracyLevel = 0;
+        captured.pingAttempts = 1;
+        captured.pingTimeoutSeconds = 1;
+        captured.serviceAttempts = 1;
+        captured.enabledServiceIds = {"http"};
+        window.activeScanOptions_ = captured;
+        window.hasActiveScanOptions_ = true;
+        window.activeScanTargetRetained_ = false;
+        window.scanInProgress_ = true;
+        window.accuracyLevel_ = 3;
+        window.enabledServiceIds_ = {"ssh"};
+        window.saveTargetHistory_ = true;
+        const QString pinned = window.activeProbeSummary(false);
+        window.scanInProgress_ = false;
+        window.hasActiveScanOptions_ = false;
+        const QString nextScan = window.activeProbeSummary(false);
+        if (!pinned.contains("Fast") || !pinned.contains("TCP 80") ||
+            pinned.contains("TCP 22") || !pinned.contains("history off") ||
+            !nextScan.contains("Maximum") || !nextScan.contains("TCP 22") ||
+            !nextScan.contains("history on")) {
+            return false;
+        }
+
+        const QSettings::Format failingFormat = QSettings::registerFormat(
+            "ois-failing-settings", readFailingSettings, writeFailingSettings);
+        QTemporaryDir failingDirectory;
+        if (!failingDirectory.isValid()) {
+            return false;
+        }
+        const QString failingPath = failingDirectory.filePath("privacy.ois-failing-settings");
+        {
+            QFile seed(failingPath);
+            if (!seed.open(QIODevice::WriteOnly) || seed.write("seed") != 4) {
+                return false;
+            }
+        }
+        QSettings failingSettings(failingPath, failingFormat);
+        QString deletionError;
+        if (ScannerWindow::clearRetainedTargetSettings(
+                failingSettings, true, &deletionError) || deletionError.isEmpty() ||
+            failingSettings.status() == QSettings::NoError) {
+            return false;
+        }
+        const QString persistencePath =
+            failingDirectory.filePath("persistence.ois-failing-settings");
+        {
+            QFile seed(persistencePath);
+            if (!seed.open(QIODevice::WriteOnly) || seed.write("seed") != 4) {
+                return false;
+            }
+        }
+        QSettings failingPersistence(persistencePath, failingFormat);
+        QString persistenceError;
+        if (ScannerWindow::persistTargetHistorySettings(
+                failingPersistence,
+                QStringList{"10.77.0.0/24"},
+                "10.77.0.0/24",
+                true,
+                &persistenceError) || persistenceError.isEmpty()) {
+            return false;
+        }
+
+        const QString migrationPath =
+            failingDirectory.filePath("migration.ois-failing-settings");
+        {
+            QFile seed(migrationPath);
+            if (!seed.open(QIODevice::WriteOnly) || seed.write("seed") != 4) {
+                return false;
+            }
+        }
+        QSettings failingMigration(migrationPath, failingFormat);
+        QString migrationError;
+        if (ScannerWindow::migrateSettings(failingMigration, &migrationError) ||
+            migrationError.isEmpty() ||
+            failingMigration.value("settings/schema_version").toInt() == 3) {
+            return false;
+        }
+
+        settings.setValue("safety/authorization_ack_version", 1);
+        const bool acknowledged = window.confirmScanAuthorization(captured);
+        window.applyDefaultSettings();
+        return acknowledged;
     }
 
     static bool customOuiValidationContract()
@@ -174,6 +336,7 @@ struct ScannerWindowTestAccess {
         QSettings settings("OpenIPScanner", "OpenIPScanner");
         settings.remove("targets/last_input");
         settings.sync();
+        window.saveTargetHistory_ = true;
         window.rememberLastTargetOnLaunch_ = true;
         window.targetInput_->setText("192.0.2.1");
         window.targetInput_->setText("192.0.2.2");
@@ -190,6 +353,7 @@ struct ScannerWindowTestAccess {
             settings.value("targets/last_input").toString() == "192.0.2.3" &&
             !window.settingsSaveTimer_->isActive();
         window.rememberLastTargetOnLaunch_ = false;
+        window.saveTargetHistory_ = false;
         window.saveSettings();
         return savedLastValue;
     }
@@ -965,6 +1129,7 @@ int main(int argc, char **argv)
     ScannerWindow window;
     bool ok = true;
     REQUIRE(ScannerWindowTestAccess::settingsMigrationContract(window));
+    REQUIRE(ScannerWindowTestAccess::scanPrivacyContract(window));
     REQUIRE(ScannerWindowTestAccess::customOuiValidationContract());
     REQUIRE(ScannerWindowTestAccess::debouncedTargetSaveContract(window));
 

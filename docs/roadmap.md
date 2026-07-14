@@ -2,7 +2,7 @@
 
 This file is the single source of truth for unfinished product, engineering, documentation, and release work. Detailed evidence for why each 1.0 item exists is in [the production-readiness audit](production-readiness-audit.md). New ideas belong here rather than in a second backlog.
 
-The audited baseline is `0.2.0` at commit `91e0a7a`; `0.5.2` is the latest human-verified version, `0.5.3` and `0.5.4` are reviewed and merged, and `0.5.5` is the active CSV-EXPORT branch. Version 1.0 is not ready. Every unchecked item under “Required for 1.0” is a release gate; the post-1.0 section is explicitly outside the first production release.
+The audited baseline is `0.2.0` at commit `91e0a7a`; `0.5.2` is the latest human-verified version, versions through `0.5.5` are reviewed and merged, and `0.5.6` is the active SCAN-PRIVACY branch. Version 1.0 is not ready. Every unchecked item under “Required for 1.0” is a release gate; the post-1.0 section is explicitly outside the first production release.
 
 ## Delivered implementation increments
 
@@ -22,6 +22,7 @@ The unchecked milestone boxes below mean their complete acceptance criteria are 
 - `0.5.2` — **MDNS-TESTS:** added the deterministic compatibility matrix, isolated controlled Avahi responder, and bounded hosted CI for both mDNS tests.
 - `0.5.3` — **TARGET-FORMAT-PREFERENCE:** added exact persisted CIDR/range generation while preserving target sets, adapter selection, and limits.
 - `0.5.4` — **SETTINGS-MIGRATIONS:** made schema upgrades lossless, preserved empty service sets and toolbar inheritance, validated OUI input atomically, and debounced remembered-target writes.
+- `0.5.5` — **CSV-EXPORT:** added explicit filtered/all scope, spreadsheet-safe UTF-8, immutable snapshots, and checked atomic replacement.
 
 **RESULT-SCALING** is human-verified on version `0.4.4`. DUPLICATE-IP-CONFLICTS remains Post-1.0.
 
@@ -163,9 +164,11 @@ Priority matches the most severe audit finding an item closes. All items in the 
 
 #### SCAN-PRIVACY
 
-- [ ] **Define target-history privacy and safe-scan behavior.** `Medium`
+- [x] **Define target-history privacy and safe-scan behavior.** `Medium`
   - Explain that target history is persisted even when “Remember Last Target On Launch” is off, or change the behavior so the control governs retention. Provide clear-history and disable-history controls.
   - Document exactly which ICMP, TCP, HTTP, and name-resolution traffic each mode sends. Put the authorization warning where a first-time user sees it before scanning, not only in Help and README.
+  - Current progress on `0.5.6`: schema 3 separates Save Target History from Remember Last Target On Launch, keeps retention disabled on clean installs, preserves an explicit schema-2 opt-in, and prevents the dependent restore choice unless retention is enabled. Disabling retention or choosing Clear removes both saved history and last-input keys immediately. A versioned first-real-scan authorization dialog appears after validation and local bind checks but before history recording or network traffic, states the authorization requirement, and lists exact active ICMP attempts, enabled TCP ports, application payload/banner behavior, neighbor-cache reads, reverse-name lookups, and retention state. The main status bar continuously shows a concise active summary with the exact detail in its tooltip; Help documents the same behavior.
+  - Completion evidence: deterministic contracts cover schemas 0–2, clean-install non-retention, explicit retention and restore, immediate clear, disable-and-delete, dependent control state, mode/port/application/resolver summary content, active-scan policy and actual-retention pinning, acknowledged authorization without a modal prompt, and injected settings deletion/migration/history-write failures. Normal and strict-warning suites pass 12/12, all eleven non-rendering tests pass under ThreadSanitizer, and package metadata reports version 0.5.6. Adversarial review findings covering checked persistence, migration failure, and immutable active summaries were repaired; focused normal and strict builds/tests pass after the final repair.
   - Done when retention controls have tests, disabling retention removes saved target data, and the in-app scan summary describes the active probe set before launch.
 
 ### Testability, platform contract, and diagnostics

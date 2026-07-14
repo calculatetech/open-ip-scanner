@@ -2,6 +2,22 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.5.6] - 2026-07-14
+
+### Added
+
+- Added a versioned first-scan authorization acknowledgement with the active
+  ICMP, TCP, application, neighbor-cache, name-resolution, and retention
+  behavior shown before any network probe starts.
+- Added a persistent status-bar probe summary and detailed tooltip.
+- Added separate Save Target History, Remember Last Target On Launch, and Clear
+  Target History controls.
+
+### Changed
+
+- Target history is disabled on clean installs; disabling or clearing retention
+  removes saved history and the saved last target immediately.
+
 ## [0.5.5] - 2026-07-14
 
 ### Changed

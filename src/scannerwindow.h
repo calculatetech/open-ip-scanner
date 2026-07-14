@@ -259,12 +259,28 @@ private:
     void loadSettings();
     void saveSettings() const;
     void scheduleSettingsSave();
-    static void migrateSettings(QSettings &settings);
+    static bool migrateSettings(QSettings &settings, QString *error = nullptr);
     static bool parseCustomOuiOverrides(const QString &text,
                                         QHash<QString, QString> *vendors,
                                         QString *error);
     static bool isSafeTextInput(const QString &text, int maxLength);
-    void recordTargetHistory(const QString &text);
+    bool recordTargetHistory(const QString &text);
+    void setTargetHistoryRetention(bool enabled);
+    void clearTargetHistory();
+    QString activeProbeSummary(bool detailed = false) const;
+    QString probeSummary(const ScanOptions &options,
+                         bool detailed,
+                         bool targetRetained) const;
+    bool confirmScanAuthorization(const ScanOptions &options);
+    static bool clearRetainedTargetSettings(QSettings &settings,
+                                            bool disableRetention,
+                                            QString *error);
+    static bool persistTargetHistorySettings(QSettings &settings,
+                                             const QStringList &history,
+                                             const QString &lastInput,
+                                             bool rememberLast,
+                                             QString *error);
+    void updateProbeSummary();
     void setDetailsPaneVisible(bool visible);
     void rebuildMainToolbar();
     void applyToolbarDisplayMode();
@@ -316,6 +332,7 @@ private:
     bool userCustomizedTargets_ = false;
     bool targetLimitWarningActive_ = false;
     bool rememberLastTargetOnLaunch_ = false;
+    bool saveTargetHistory_ = false;
     QString pendingLastTarget_;
     TargetTextFormat targetTextFormat_ = TargetTextFormat::Cidr;
 
@@ -338,6 +355,9 @@ private:
     bool scanCompletionPending_ = false;
     bool completedScanWasCanceled_ = false;
     bool scanInProgress_ = false;
+    bool hasActiveScanOptions_ = false;
+    bool activeScanTargetRetained_ = false;
+    ScanOptions activeScanOptions_;
     bool closePending_ = false;
 
     QIcon playIcon_;
@@ -347,4 +367,7 @@ private:
     QStringListModel *targetHistoryModel_ = nullptr;
     QAction *showDetailsPaneAction_ = nullptr;
     QAction *rememberLastTargetAction_ = nullptr;
+    QAction *saveTargetHistoryAction_ = nullptr;
+    QAction *clearTargetHistoryAction_ = nullptr;
+    QLabel *probeSummaryLabel_ = nullptr;
 };
