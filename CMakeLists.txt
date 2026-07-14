@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.28)
-project(OpenIpScanner VERSION 0.5.10 LANGUAGES CXX)
+project(OpenIpScanner VERSION 0.5.11 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -41,6 +41,8 @@ add_library(ois_scan STATIC
     src/scanbudget.h
     src/scanengine.h
     src/scanengine.cpp
+    src/productionhostscanbackend.h
+    src/productionhostscanbackend.cpp
     src/scanoptions.h
     src/scanresult.h
     src/scansession.h
@@ -126,6 +128,12 @@ if(BUILD_TESTING)
     add_executable(scan_engine_test tests/scanengine_test.cpp)
     target_link_libraries(scan_engine_test PRIVATE ois_scan)
     add_test(NAME scan_engine_scheduling COMMAND scan_engine_test)
+
+    add_executable(production_host_backend_test
+        tests/productionhostscanbackend_test.cpp)
+    target_link_libraries(production_host_backend_test PRIVATE ois_scan)
+    add_test(NAME production_host_backend_contract
+        COMMAND production_host_backend_test)
 
     add_executable(scan_cancellation_test tests/scancancellation_test.cpp)
     target_link_libraries(scan_cancellation_test PRIVATE ois_linux)

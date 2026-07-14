@@ -1147,136 +1147,69 @@ QList<ScanResult> ScannerWindow::scanHosts(const ScanOptions &options,
         options.interfaceName);
     auto mdnsResolver = std::make_shared<ScanMdnsResolver>(
         interfaceIndex, cancelRequested, createAvahiDbusBackend());
-    CallbackHostScanBackend backend(
-        [this, options, gatewayIp, mdnsResolver](
-            const QHostAddress &host,
-            const std::shared_ptr<std::atomic_bool> &cancellation) {
-            return scanHost(options, host, gatewayIp, mdnsResolver, cancellation);
-        });
+    ProductionHostScanDependencies dependencies;
+    dependencies.ping = [this](const QHostAddress &host,
+                               const ScanOptions &scanOptions,
+                               const TargetBudget &budget,
+                               const auto &cancellation) {
+        return pingHost(host, scanOptions, budget, cancellation);
+    };
+    dependencies.services = [this](const QString &ip,
+                                   const QString &localIp,
+                                   const TargetBudget &budget,
+                                   const auto &cancellation,
+                                   const ScanOptions &scanOptions) {
+        return probeServices(ip, localIp, budget, cancellation, scanOptions);
+    };
+    dependencies.neighbor = [this](const QString &ip,
+                                   const QString &interfaceName,
+                                   const TargetBudget &budget,
+                                   const auto &cancellation) {
+        return lookupNeighbor(ip, interfaceName, budget, cancellation);
+    };
+    dependencies.confirmNeighbor = [this](const NeighborObservation &initial,
+                                          const QString &ip,
+                                          const QString &interfaceName,
+                                          const ScanOptions &scanOptions,
+                                          const TargetBudget &budget,
+                                          const auto &cancellation) {
+        return confirmNeighborLiveness(initial,
+                                       ip,
+                                       interfaceName,
+                                       scanOptions,
+                                       budget,
+                                       cancellation);
+    };
+    dependencies.vendor = [this](const QString &mac,
+                                 const ScanOptions &scanOptions) {
+        return lookupVendor(mac, scanOptions);
+    };
+    dependencies.hostname = [this, mdnsResolver](
+                                const QString &ip,
+                                const HostnameEvidence &preliminary,
+                                const QStringList &dnsSuffixes,
+                                int accuracyLevel,
+                                const TargetBudget &budget,
+                                const auto &cancellation) {
+        return lookupHostname(ip,
+                              preliminary,
+                              dnsSuffixes,
+                              accuracyLevel,
+                              budget,
+                              cancellation,
+                              *mdnsResolver);
+    };
+    dependencies.details = [this](const ScanResult &result,
+                                  const ScanOptions &scanOptions) {
+        return collectDeviceDetails(result, scanOptions);
+    };
+    ProductionHostScanBackend backend(options, gatewayIp, std::move(dependencies));
     return ScanEngine::run(hosts,
                            options.maxParallelProbes,
                            cancelRequested,
                            backend,
                            onProgress,
                            onResult);
-}
-
-HostScanOutcome ScannerWindow::scanHost(
-    const ScanOptions &options,
-    const QHostAddress &host,
-    const QString &gatewayIp,
-    const std::shared_ptr<ScanMdnsResolver> &mdnsResolver,
-    const std::shared_ptr<std::atomic_bool> &cancelRequested) const
-{
-    const QString ipString = host.toString();
-    const TargetBudget budget(options.targetDeadlineMs);
-    bool alive = false;
-    QString discoveredMac;
-    NeighborObservation neighbor;
-    QList<ServiceHit> discoveredServices;
-    bool servicesProbed = false;
-    if (ipString == options.localIp) {
-        alive = true;
-        discoveredMac = options.localMac;
-    } else if (ipString == gatewayIp) {
-        alive = true;
-    } else {
-        alive = pingHost(host, options, budget, cancelRequested);
-        if (shouldProbeServicesForDiscovery(
-                alive, options.enabledServiceIds.size()) && !budget.expired()) {
-            servicesProbed = true;
-            discoveredServices = probeServices(
-                ipString, options.localIp, budget, cancelRequested, options);
-            alive = !discoveredServices.isEmpty();
-        }
-        if (!alive) {
-            neighbor = lookupNeighbor(
-                ipString, options.interfaceName, budget, cancelRequested);
-            neighbor = confirmNeighborLiveness(neighbor,
-                                               ipString,
-                                               options.interfaceName,
-                                               options,
-                                               budget,
-                                               cancelRequested);
-            if (neighbor.suppliesMacMetadata()) {
-                discoveredMac = neighbor.mac;
-            }
-            alive = neighbor.establishesLiveness();
-        }
-    }
-    if (!alive) {
-        return {};
-    }
-
-    ScanResult result;
-    result.ip = ipString;
-    result.interfaceName = options.interfaceName;
-    for (const AliveHostStage stage : kAliveHostStageOrder) {
-        switch (stage) {
-        case AliveHostStage::Services:
-            result.services = servicesProbed
-                                  ? discoveredServices
-                                  : probeServices(ipString,
-                                                  options.localIp,
-                                                  budget,
-                                                  cancelRequested,
-                                                  options);
-            break;
-        case AliveHostStage::MacAddress:
-            if (discoveredMac.isEmpty()) {
-                if (neighbor.ip.isEmpty()) {
-                    neighbor = lookupNeighbor(
-                        ipString, options.interfaceName, budget, cancelRequested);
-                }
-                if (neighbor.suppliesMacMetadata()) {
-                    discoveredMac = neighbor.mac;
-                }
-            }
-            result.mac = discoveredMac;
-            break;
-        case AliveHostStage::Vendor:
-            result.vendor = lookupVendor(result.mac, options);
-            break;
-        case AliveHostStage::Hostname: {
-            HostnameEvidence preliminary;
-            if (ipString == options.localIp) {
-                preliminary.hostname = qualifyHostname(
-                    QHostInfo::localHostName(), options.dnsSuffixes.value(0));
-                preliminary.source = HostnameSource::LocalHost;
-            }
-            const HostnameResolution resolved = lookupHostname(
-                ipString,
-                preliminary,
-                options.dnsSuffixes,
-                options.accuracyLevel,
-                budget,
-                cancelRequested,
-                *mdnsResolver);
-            result.hostnameEvidence = resolved.evidence;
-            result.resolverEvents = resolved.resolverEvents;
-            const HostnameEvidence preferred = preferredHostname(
-                result.hostnameEvidence);
-            result.hostname = preferred.hostname;
-            result.hostnameSource = preferred.source;
-            break;
-        }
-        case AliveHostStage::NormalizeIdentity:
-            if (result.mac.isEmpty()) {
-                result.mac = "Unknown";
-            }
-            if (result.vendor.isEmpty()) {
-                result.vendor = "Unknown";
-            }
-            if (result.hostname.isEmpty()) {
-                result.hostname = "Unknown";
-            }
-            break;
-        case AliveHostStage::Details:
-            result.detailsText = collectDeviceDetails(result, options);
-            break;
-        }
-    }
-    return {true, result};
 }
 
 bool ScannerWindow::pingHost(const QHostAddress &address,
@@ -1416,7 +1349,7 @@ QString ScannerWindow::lookupVendor(const QString &mac, const ScanOptions &optio
         mac, options.customOuiVendors, options.builtInOuiVendors);
 }
 
-ScannerWindow::HostnameResolution ScannerWindow::lookupHostname(
+HostnameScanResolution ScannerWindow::lookupHostname(
     const QString &ip,
     const HostnameEvidence &preliminary,
     const QStringList &adapterDnsSuffixes,
@@ -1425,7 +1358,7 @@ ScannerWindow::HostnameResolution ScannerWindow::lookupHostname(
     const std::shared_ptr<std::atomic_bool> &cancelRequested,
     ScanMdnsResolver &mdnsResolver) const
 {
-    HostnameResolution resolution;
+    HostnameScanResolution resolution;
     resolution.evidence = mergeHostnameEvidence(resolution.evidence, preliminary);
     const HostnameTimeoutProfile timeouts = hostnameTimeoutProfile(accuracyLevel);
     const auto addEvent = [&resolution](ResolverKind resolver,

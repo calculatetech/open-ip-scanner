@@ -17,6 +17,7 @@
 
 #include "scanoptions.h"
 #include "scanengine.h"
+#include "productionhostscanbackend.h"
 #include "scanbudget.h"
 #include "neighborentry.h"
 #include "scanresult.h"
@@ -144,11 +145,6 @@ private:
         int scrollValue = 0;
     };
 
-    struct HostnameResolution {
-        QList<HostnameEvidence> evidence;
-        QList<ResolverEvent> resolverEvents;
-    };
-
     // Detect routable IPv4 networks and build initial scan defaults.
     QList<NetworkTarget> detectDefaultNetworks() const;
     QList<AdapterInfo> buildAdapters() const;
@@ -167,12 +163,6 @@ private:
                                 const std::shared_ptr<std::atomic_bool> &cancelRequested,
                                 const std::function<void(int, int)> &onProgress,
                                 const std::function<void(const ScanResult &)> &onResult) const;
-    HostScanOutcome scanHost(
-        const ScanOptions &options,
-        const QHostAddress &host,
-        const QString &gatewayIp,
-        const std::shared_ptr<ScanMdnsResolver> &mdnsResolver,
-        const std::shared_ptr<std::atomic_bool> &cancelRequested) const;
     void startDebugScan();
     QList<ScanResult> runDebugScan(
         int accuracyLevel,
@@ -197,7 +187,7 @@ private:
         const TargetBudget &budget,
         const std::shared_ptr<std::atomic_bool> &cancelRequested) const;
     QString lookupVendor(const QString &mac, const ScanOptions &options) const;
-    HostnameResolution lookupHostname(
+    HostnameScanResolution lookupHostname(
         const QString &ip,
         const HostnameEvidence &preliminary,
         const QStringList &adapterDnsSuffixes,

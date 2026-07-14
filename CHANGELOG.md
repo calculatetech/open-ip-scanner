@@ -2,6 +2,22 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.5.11] - 2026-07-14
+
+### Changed
+
+- Moved per-host discovery, service-first liveness, neighbor confirmation,
+  enrichment ordering, normalization, and cancellation boundaries from
+  `ScannerWindow` into an injectable `ProductionHostScanBackend`.
+- Reduced the window's production scan role to wiring existing concrete probe
+  helpers into the scan-layer backend and starting `ScanEngine`.
+
+### Added
+
+- Added direct window-free production-backend contracts for service-first
+  discovery, cached service reuse, neighbor confirmation, dead hosts, local
+  identity, hostname evidence, and cancellation between stages.
+
 ## [0.5.10] - 2026-07-14
 
 ### Changed
