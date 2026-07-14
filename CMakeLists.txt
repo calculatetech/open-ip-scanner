@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.28)
-project(OpenIpScanner VERSION 0.5.15 LANGUAGES CXX)
+project(OpenIpScanner VERSION 0.5.16 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -56,6 +56,8 @@ add_library(ois_linux STATIC
     src/cancellablewait.cpp
     src/linuxneighborprobe.h
     src/linuxneighborprobe.cpp
+    src/hostnameresolver.h
+    src/hostnameresolver.cpp
     src/linuxpingprobe.h
     src/linuxpingprobe.cpp
     src/mdnsresolver.h
@@ -157,6 +159,10 @@ if(BUILD_TESTING)
     target_link_libraries(service_probe_test PRIVATE ois_linux)
     add_test(NAME service_probe_contract COMMAND service_probe_test --skip-tls)
     add_test(NAME service_probe_tls_integration COMMAND service_probe_test)
+
+    add_executable(hostname_resolver_test tests/hostnameresolver_test.cpp)
+    target_link_libraries(hostname_resolver_test PRIVATE ois_linux)
+    add_test(NAME hostname_resolver_contract COMMAND hostname_resolver_test)
 
     add_executable(scan_budget_test tests/scanbudget_test.cpp)
     target_link_libraries(scan_budget_test PRIVATE ois_scan)

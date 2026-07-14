@@ -2,6 +2,21 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.5.16] - 2026-07-14
+
+### Changed
+
+- Moved explicit PTR, system-hostname, and mDNS resolution coordination out of
+  `ScannerWindow` into a shared, window-free `HostnameResolver`.
+- Preserved adapter-suffix-aware PTR selection, independent `.local` mDNS
+  evidence, resolver diagnostics, accuracy timeouts, cancellation, and the
+  per-target budget across the new boundary.
+
+### Added
+
+- Added deterministic resolver contracts for evidence merging, every resolver
+  outcome, timeout selection, cancellation boundaries, and budget expiry.
+
 ## [0.5.15] - 2026-07-14
 
 ### Changed

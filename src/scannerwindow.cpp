@@ -2,6 +2,7 @@
 #include "cancellablewait.h"
 #include "csvexporter.h"
 #include "debugscanfixture.h"
+#include "hostnameresolver.h"
 #include "mdnsresolver.h"
 #include "linuxneighborprobe.h"
 #include "linuxpingprobe.h"
@@ -37,7 +38,6 @@
 #include <QGuiApplication>
 #include <QGridLayout>
 #include <QHeaderView>
-#include <QHostInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -1148,6 +1148,7 @@ QList<ScanResult> ScannerWindow::scanHosts(const ScanOptions &options,
         options.interfaceName);
     auto mdnsResolver = std::make_shared<ScanMdnsResolver>(
         interfaceIndex, cancelRequested, createAvahiDbusBackend());
+    auto hostnameResolver = std::make_shared<HostnameResolver>(mdnsResolver);
     auto neighborProbe = std::make_shared<LinuxNeighborProbe>();
     auto pingProbe = std::make_shared<LinuxPingProbe>();
     auto serviceProbe = std::make_shared<ServiceProbe>();
@@ -1200,20 +1201,19 @@ QList<ScanResult> ScannerWindow::scanHosts(const ScanOptions &options,
                                  const ScanOptions &scanOptions) {
         return lookupVendor(mac, scanOptions);
     };
-    dependencies.hostname = [this, mdnsResolver](
+    dependencies.hostname = [hostnameResolver](
                                 const QString &ip,
                                 const HostnameEvidence &preliminary,
                                 const QStringList &dnsSuffixes,
                                 int accuracyLevel,
                                 const TargetBudget &budget,
                                 const auto &cancellation) {
-        return lookupHostname(ip,
-                              preliminary,
-                              dnsSuffixes,
-                              accuracyLevel,
-                              budget,
-                              cancellation,
-                              *mdnsResolver);
+        return hostnameResolver->resolve(ip,
+                                         preliminary,
+                                         dnsSuffixes,
+                                         accuracyLevel,
+                                         budget,
+                                         cancellation);
     };
     dependencies.details = [this](const ScanResult &result,
                                   const ScanOptions &scanOptions) {
@@ -1232,115 +1232,6 @@ QString ScannerWindow::lookupVendor(const QString &mac, const ScanOptions &optio
 {
     return OuiDatabase::lookup(
         mac, options.customOuiVendors, options.builtInOuiVendors);
-}
-
-HostnameScanResolution ScannerWindow::lookupHostname(
-    const QString &ip,
-    const HostnameEvidence &preliminary,
-    const QStringList &adapterDnsSuffixes,
-    int accuracyLevel,
-    const TargetBudget &budget,
-    const std::shared_ptr<std::atomic_bool> &cancelRequested,
-    ScanMdnsResolver &mdnsResolver) const
-{
-    HostnameScanResolution resolution;
-    resolution.evidence = mergeHostnameEvidence(resolution.evidence, preliminary);
-    const HostnameTimeoutProfile timeouts = hostnameTimeoutProfile(accuracyLevel);
-    const auto addEvent = [&resolution](ResolverKind resolver,
-                                        ResolverOutcome outcome) {
-        resolution.resolverEvents = mergeResolverEvents(
-            resolution.resolverEvents, {resolver, outcome});
-    };
-
-    const cancellable::DnsPtrLookupResult ptr = cancellable::lookupPtr(
-        ip, budget.clampTimeout(timeouts.ptrMs), cancelRequested);
-    if (ptr.waitResult == cancellable::WaitResult::Cancelled) {
-        addEvent(ResolverKind::DnsPtr, ResolverOutcome::Cancelled);
-        return resolution;
-    }
-    if (ptr.waitResult == cancellable::WaitResult::TimedOut ||
-        cancellable::isDnsLookupTimeoutError(ptr.error)) {
-        addEvent(ResolverKind::DnsPtr, ResolverOutcome::TimedOut);
-    } else if (ptr.error == QDnsLookup::NoError && !ptr.hostnames.isEmpty()) {
-        addEvent(ResolverKind::DnsPtr, ResolverOutcome::Resolved);
-        const QString hostname = preferredPtrHostname(
-            ptr.hostnames, adapterDnsSuffixes);
-        if (!hostname.isEmpty()) {
-            resolution.evidence = mergeHostnameEvidence(
-                resolution.evidence, {hostname, HostnameSource::DnsPtr});
-        }
-    } else if (ptr.error == QDnsLookup::NotFoundError ||
-               (ptr.error == QDnsLookup::NoError && ptr.hostnames.isEmpty())) {
-        addEvent(ResolverKind::DnsPtr, ResolverOutcome::NoRecord);
-    } else if (ptr.error == QDnsLookup::InvalidRequestError ||
-               ptr.error == QDnsLookup::InvalidReplyError) {
-        addEvent(ResolverKind::DnsPtr, ResolverOutcome::InvalidResponse);
-    } else {
-        addEvent(ResolverKind::DnsPtr, ResolverOutcome::BackendUnavailable);
-    }
-
-    if (cancellable::isCancelled(cancelRequested) || budget.expired()) {
-        return resolution;
-    }
-    cancellable::WaitResult lookupResult = cancellable::WaitResult::Failed;
-    const QHostInfo info = cancellable::lookupHost(
-        ip, budget.clampTimeout(timeouts.systemMs), cancelRequested, &lookupResult);
-    if (lookupResult == cancellable::WaitResult::Cancelled) {
-        addEvent(ResolverKind::System, ResolverOutcome::Cancelled);
-        return resolution;
-    }
-    if (lookupResult == cancellable::WaitResult::TimedOut) {
-        addEvent(ResolverKind::System, ResolverOutcome::TimedOut);
-    } else if (info.error() == QHostInfo::NoError &&
-               !normalizedHostnameKey(info.hostName()).isEmpty() &&
-               info.hostName() != ip) {
-        addEvent(ResolverKind::System, ResolverOutcome::Resolved);
-        resolution.evidence = mergeHostnameEvidence(
-            resolution.evidence,
-            {qualifyHostname(info.hostName(), adapterDnsSuffixes.value(0)),
-             HostnameSource::SystemResolver});
-    } else if (info.error() == QHostInfo::HostNotFound ||
-               (info.error() == QHostInfo::NoError &&
-                normalizedHostnameKey(info.hostName()).isEmpty())) {
-        addEvent(ResolverKind::System, ResolverOutcome::NoRecord);
-    } else {
-        addEvent(ResolverKind::System, ResolverOutcome::BackendUnavailable);
-    }
-
-    if (cancellable::isCancelled(cancelRequested) || budget.expired()) {
-        return resolution;
-    }
-    const MdnsLookupResult mdns = mdnsResolver.resolve(
-        ip, budget.clampTimeout(timeouts.mdnsMs));
-    switch (mdns.status) {
-    case MdnsLookupStatus::Resolved:
-        addEvent(ResolverKind::Mdns, ResolverOutcome::Resolved);
-        resolution.evidence = mergeHostnameEvidence(
-            resolution.evidence, {mdns.hostname, HostnameSource::AvahiMdns});
-        break;
-    case MdnsLookupStatus::NoRecord:
-        addEvent(ResolverKind::Mdns, ResolverOutcome::NoRecord);
-        break;
-    case MdnsLookupStatus::TimedOut:
-        addEvent(ResolverKind::Mdns, ResolverOutcome::TimedOut);
-        break;
-    case MdnsLookupStatus::Cancelled:
-        addEvent(ResolverKind::Mdns, ResolverOutcome::Cancelled);
-        break;
-    case MdnsLookupStatus::BackendUnavailable:
-        addEvent(ResolverKind::Mdns, ResolverOutcome::BackendUnavailable);
-        break;
-    case MdnsLookupStatus::DaemonUnavailable:
-        addEvent(ResolverKind::Mdns, ResolverOutcome::DaemonUnavailable);
-        break;
-    case MdnsLookupStatus::MulticastUnavailable:
-        addEvent(ResolverKind::Mdns, ResolverOutcome::MulticastUnavailable);
-        break;
-    case MdnsLookupStatus::InvalidResponse:
-        addEvent(ResolverKind::Mdns, ResolverOutcome::InvalidResponse);
-        break;
-    }
-    return resolution;
 }
 
 QString ScannerWindow::lookupGatewayIp(const QString &interfaceName) const

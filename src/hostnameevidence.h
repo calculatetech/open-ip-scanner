@@ -4,6 +4,8 @@
 #include <QString>
 #include <QStringList>
 
+#include "resolverdiagnostics.h"
+
 enum class HostnameSource : int {
     Unknown = 0,
     Preliminary = 100,
@@ -22,6 +24,11 @@ struct HostnameDisplayRow {
     QString hostname;
     QStringList sourceLabels;
     bool preferred = false;
+};
+
+struct HostnameScanResolution {
+    QList<HostnameEvidence> evidence;
+    QList<ResolverEvent> resolverEvents;
 };
 
 QString normalizedHostnameKey(const QString &hostname);

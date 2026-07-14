@@ -7,11 +7,6 @@
 
 #include <functional>
 
-struct HostnameScanResolution {
-    QList<HostnameEvidence> evidence;
-    QList<ResolverEvent> resolverEvents;
-};
-
 struct ProductionHostScanDependencies {
     using Cancellation = std::shared_ptr<std::atomic_bool>;
 
