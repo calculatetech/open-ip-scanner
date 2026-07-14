@@ -57,6 +57,11 @@ int main(int argc, char **argv)
     QCoreApplication app(argc, argv);
     QNetworkProxy::setApplicationProxy(QNetworkProxy::NoProxy);
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 6, 0)
+    REQUIRE(cancellable::isDnsLookupTimeoutError(QDnsLookup::TimeoutError));
+#endif
+    REQUIRE(!cancellable::isDnsLookupTimeoutError(QDnsLookup::NoError));
+
     qint64 elapsedMs = 0;
     QProcess process;
     process.start("sleep", {"10"});
@@ -120,6 +125,16 @@ int main(int argc, char **argv)
     cancellable::WaitResult lookupResult = cancellable::WaitResult::Failed;
     cancellable::lookupHost("example.invalid", 10000, cancelled, &lookupResult);
     REQUIRE(lookupResult == cancellable::WaitResult::Cancelled);
+
+    const cancellable::DnsPtrLookupResult cancelledPtr =
+        cancellable::lookupPtr("192.0.2.10", 10000, cancelled);
+    REQUIRE(cancelledPtr.waitResult == cancellable::WaitResult::Cancelled);
+    const cancellable::DnsPtrLookupResult expiredPtr =
+        cancellable::lookupPtr("192.0.2.10", 0, {});
+    REQUIRE(expiredPtr.waitResult == cancellable::WaitResult::TimedOut);
+    const cancellable::DnsPtrLookupResult invalidPtr =
+        cancellable::lookupPtr("not-an-ip", 100, {});
+    REQUIRE(invalidPtr.waitResult == cancellable::WaitResult::Failed);
 
     QTcpSocket preCancelledSocket;
     preCancelledSocket.connectToHost(QHostAddress("192.0.2.1"), 65000);

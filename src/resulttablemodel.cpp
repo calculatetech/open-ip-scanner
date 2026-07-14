@@ -262,16 +262,37 @@ bool ResultTableModel::mergeResult(ScanResult *current, const ScanResult &incomi
             changed = true;
         }
     };
-    upgrade(&current->hostname, incoming.hostname);
+    for (const HostnameEvidence &candidate : incoming.hostnameEvidence) {
+        const QList<HostnameEvidence> merged = mergeHostnameEvidence(
+            current->hostnameEvidence, candidate);
+        if (merged.size() != current->hostnameEvidence.size()) {
+            current->hostnameEvidence = merged;
+            changed = true;
+        }
+    }
+    const HostnameEvidence preferred = preferredHostname(current->hostnameEvidence);
+    if (!preferred.hostname.isEmpty() &&
+        (current->hostname != preferred.hostname ||
+         current->hostnameSource != preferred.source)) {
+        current->hostname = preferred.hostname;
+        current->hostnameSource = preferred.source;
+        changed = true;
+    } else {
+        upgrade(&current->hostname, incoming.hostname);
+    }
     upgrade(&current->mac, incoming.mac);
     upgrade(&current->vendor, incoming.vendor);
     if (current->services.isEmpty() && !incoming.services.isEmpty()) {
         current->services = incoming.services;
         changed = true;
     }
-    if (current->detailsText.isEmpty() && !incoming.detailsText.isEmpty()) {
-        current->detailsText = incoming.detailsText;
-        changed = true;
+    for (const ResolverEvent &event : incoming.resolverEvents) {
+        const QList<ResolverEvent> merged = mergeResolverEvents(
+            current->resolverEvents, event);
+        if (merged.size() != current->resolverEvents.size()) {
+            current->resolverEvents = merged;
+            changed = true;
+        }
     }
     return changed;
 }

@@ -15,6 +15,8 @@ enum class MdnsLookupStatus {
     TimedOut,
     Cancelled,
     BackendUnavailable,
+    DaemonUnavailable,
+    MulticastUnavailable,
     InvalidResponse
 };
 

@@ -75,6 +75,7 @@ private slots:
     void showSettingsDialog();
     void showHelpDialog();
     void showAboutDialog();
+    void showResolverDiagnostics();
     void updateWorkerLabel(int value);
     void handleTableDoubleClick(int row, int column);
     void showHeaderContextMenu(const QPoint &pos);
@@ -140,6 +141,11 @@ private:
         int scrollValue = 0;
     };
 
+    struct HostnameResolution {
+        QList<HostnameEvidence> evidence;
+        QList<ResolverEvent> resolverEvents;
+    };
+
     // Detect routable IPv4 networks and build initial scan defaults.
     QList<NetworkTarget> detectDefaultNetworks() const;
     QList<AdapterInfo> buildAdapters() const;
@@ -184,9 +190,10 @@ private:
         const TargetBudget &budget,
         const std::shared_ptr<std::atomic_bool> &cancelRequested) const;
     QString lookupVendor(const QString &mac, const ScanOptions &options) const;
-    HostnameEvidence lookupHostname(
+    HostnameResolution lookupHostname(
         const QString &ip,
         const HostnameEvidence &preliminary,
+        int accuracyLevel,
         const TargetBudget &budget,
         const std::shared_ptr<std::atomic_bool> &cancelRequested,
         ScanMdnsResolver &mdnsResolver) const;
@@ -221,6 +228,8 @@ private:
         int timeoutMs,
         bool smtpMultiline = false) const;
     void updateDetailsPaneForCurrentSelection();
+    QList<ResolverEvent> resolverEventsForDisplayedResults() const;
+    QByteArray resolverSupportBundle() const;
     QString serviceText(const QList<ServiceHit> &services) const;
     QString formatMacForDisplay(const QString &mac) const;
     QString formatMacForDisplay(const QString &mac, int displayFormat) const;

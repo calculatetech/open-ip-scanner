@@ -51,6 +51,7 @@
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QRegularExpressionValidator>
+#include <QSaveFile>
 #include <QScrollArea>
 #include <QSet>
 #include <QSettings>
@@ -63,6 +64,7 @@
 #include <QStandardPaths>
 #include <QStatusBar>
 #include <QStyle>
+#include <QSysInfo>
 #include <QStringListModel>
 #include <QTableView>
 #include <QTcpSocket>
@@ -441,6 +443,11 @@ void ScannerWindow::setupMenuBar()
     });
 
     QMenu *helpMenu = menuBar()->addMenu("Help");
+    QAction *diagnosticsAction = helpMenu->addAction("Hostname Diagnostics...");
+    connect(diagnosticsAction,
+            &QAction::triggered,
+            this,
+            &ScannerWindow::showResolverDiagnostics);
     QAction *usageAction = helpMenu->addAction("Usage Guide");
     connect(usageAction, &QAction::triggered, this, &ScannerWindow::showHelpDialog);
     QAction *aboutAction = helpMenu->addAction("About");
@@ -1275,21 +1282,29 @@ QList<ScanResult> ScannerWindow::scanHosts(const ScanOptions &options,
                     shouldEmit = true;
                 }
                 const HostnameEvidence currentHostname{
-                    it->hostname, it->hostnameQuality};
+                    it->hostname, it->hostnameSource};
+                for (const HostnameEvidence &candidate : result.hostnameEvidence) {
+                    it->hostnameEvidence = mergeHostnameEvidence(
+                        it->hostnameEvidence, candidate);
+                }
                 const HostnameEvidence mergedHostname = preferredHostname(
-                    currentHostname, {result.hostname, result.hostnameQuality});
+                    it->hostnameEvidence);
                 if (mergedHostname.hostname != currentHostname.hostname ||
-                    mergedHostname.quality != currentHostname.quality) {
+                    mergedHostname.source != currentHostname.source) {
                     it->hostname = mergedHostname.hostname;
-                    it->hostnameQuality = mergedHostname.quality;
+                    it->hostnameSource = mergedHostname.source;
                     shouldEmit = true;
+                }
+                for (const ResolverEvent &event : result.resolverEvents) {
+                    const QList<ResolverEvent> mergedEvents = mergeResolverEvents(
+                        it->resolverEvents, event);
+                    if (mergedEvents.size() != it->resolverEvents.size()) {
+                        it->resolverEvents = mergedEvents;
+                        shouldEmit = true;
+                    }
                 }
                 if (it->services.isEmpty() && !result.services.isEmpty()) {
                     it->services = result.services;
-                    shouldEmit = true;
-                }
-                if (it->detailsText.isEmpty() && !result.detailsText.isEmpty()) {
-                    it->detailsText = result.detailsText;
                     shouldEmit = true;
                 }
                 emitResult = *it;
@@ -1409,16 +1424,21 @@ QList<ScanResult> ScannerWindow::scanHosts(const ScanOptions &options,
                             HostnameEvidence preliminary;
                             if (ipString == options.localIp) {
                                 preliminary.hostname = QHostInfo::localHostName().trimmed();
-                                preliminary.quality = HostnameQuality::Preliminary;
+                                preliminary.source = HostnameSource::LocalHost;
                             }
-                            const HostnameEvidence resolved = lookupHostname(
+                            const HostnameResolution resolved = lookupHostname(
                                 ipString,
                                 preliminary,
+                                options.accuracyLevel,
                                 budget,
                                 cancelRequested,
                                 *mdnsResolver);
-                            result.hostname = resolved.hostname;
-                            result.hostnameQuality = resolved.quality;
+                            result.hostnameEvidence = resolved.evidence;
+                            result.resolverEvents = resolved.resolverEvents;
+                            const HostnameEvidence preferred = preferredHostname(
+                                result.hostnameEvidence);
+                            result.hostname = preferred.hostname;
+                            result.hostnameSource = preferred.source;
                             break;
                         }
                         case AliveHostStage::NormalizeIdentity:
@@ -1606,39 +1626,109 @@ QString ScannerWindow::lookupVendor(const QString &mac, const ScanOptions &optio
     return options.builtInOuiVendors.value(prefix, "Unknown");
 }
 
-HostnameEvidence ScannerWindow::lookupHostname(
+ScannerWindow::HostnameResolution ScannerWindow::lookupHostname(
     const QString &ip,
     const HostnameEvidence &preliminary,
+    int accuracyLevel,
     const TargetBudget &budget,
     const std::shared_ptr<std::atomic_bool> &cancelRequested,
     ScanMdnsResolver &mdnsResolver) const
 {
-    HostnameEvidence best = preliminary;
-    const int mdnsWaitMs = budget.clampTimeout(2000);
-    const MdnsLookupResult mdns = mdnsResolver.resolve(ip, mdnsWaitMs);
-    if (mdns.status == MdnsLookupStatus::Resolved) {
-        return preferredHostname(best, {mdns.hostname, HostnameQuality::AvahiMdns});
+    HostnameResolution resolution;
+    resolution.evidence = mergeHostnameEvidence(resolution.evidence, preliminary);
+    const HostnameTimeoutProfile timeouts = hostnameTimeoutProfile(accuracyLevel);
+    const auto addEvent = [&resolution](ResolverKind resolver,
+                                        ResolverOutcome outcome) {
+        resolution.resolverEvents = mergeResolverEvents(
+            resolution.resolverEvents, {resolver, outcome});
+    };
+
+    const cancellable::DnsPtrLookupResult ptr = cancellable::lookupPtr(
+        ip, budget.clampTimeout(timeouts.ptrMs), cancelRequested);
+    if (ptr.waitResult == cancellable::WaitResult::Cancelled) {
+        addEvent(ResolverKind::DnsPtr, ResolverOutcome::Cancelled);
+        return resolution;
+    }
+    if (ptr.waitResult == cancellable::WaitResult::TimedOut ||
+        cancellable::isDnsLookupTimeoutError(ptr.error)) {
+        addEvent(ResolverKind::DnsPtr, ResolverOutcome::TimedOut);
+    } else if (ptr.error == QDnsLookup::NoError && !ptr.hostnames.isEmpty()) {
+        addEvent(ResolverKind::DnsPtr, ResolverOutcome::Resolved);
+        for (const QString &hostname : ptr.hostnames) {
+            resolution.evidence = mergeHostnameEvidence(
+                resolution.evidence, {hostname, HostnameSource::DnsPtr});
+        }
+    } else if (ptr.error == QDnsLookup::NotFoundError ||
+               (ptr.error == QDnsLookup::NoError && ptr.hostnames.isEmpty())) {
+        addEvent(ResolverKind::DnsPtr, ResolverOutcome::NoRecord);
+    } else if (ptr.error == QDnsLookup::InvalidRequestError ||
+               ptr.error == QDnsLookup::InvalidReplyError) {
+        addEvent(ResolverKind::DnsPtr, ResolverOutcome::InvalidResponse);
+    } else {
+        addEvent(ResolverKind::DnsPtr, ResolverOutcome::BackendUnavailable);
     }
 
     if (cancellable::isCancelled(cancelRequested) || budget.expired()) {
-        return best;
+        return resolution;
     }
     cancellable::WaitResult lookupResult = cancellable::WaitResult::Failed;
     const QHostInfo info = cancellable::lookupHost(
-        ip, budget.clampTimeout(1500), cancelRequested, &lookupResult);
-    if (lookupResult != cancellable::WaitResult::Completed) {
-        return best;
+        ip, budget.clampTimeout(timeouts.systemMs), cancelRequested, &lookupResult);
+    if (lookupResult == cancellable::WaitResult::Cancelled) {
+        addEvent(ResolverKind::System, ResolverOutcome::Cancelled);
+        return resolution;
     }
-    if (info.error() != QHostInfo::NoError) {
-        return best;
+    if (lookupResult == cancellable::WaitResult::TimedOut) {
+        addEvent(ResolverKind::System, ResolverOutcome::TimedOut);
+    } else if (info.error() == QHostInfo::NoError &&
+               !normalizedHostnameKey(info.hostName()).isEmpty() &&
+               info.hostName() != ip) {
+        addEvent(ResolverKind::System, ResolverOutcome::Resolved);
+        resolution.evidence = mergeHostnameEvidence(
+            resolution.evidence,
+            {info.hostName(), HostnameSource::SystemResolver});
+    } else if (info.error() == QHostInfo::HostNotFound ||
+               (info.error() == QHostInfo::NoError &&
+                normalizedHostnameKey(info.hostName()).isEmpty())) {
+        addEvent(ResolverKind::System, ResolverOutcome::NoRecord);
+    } else {
+        addEvent(ResolverKind::System, ResolverOutcome::BackendUnavailable);
     }
 
-    const QString host = info.hostName().trimmed();
-    if (host.isEmpty() || host == ip) {
-        return best;
+    if (cancellable::isCancelled(cancelRequested) || budget.expired()) {
+        return resolution;
     }
-
-    return preferredHostname(best, {host, HostnameQuality::SystemResolver});
+    const MdnsLookupResult mdns = mdnsResolver.resolve(
+        ip, budget.clampTimeout(timeouts.mdnsMs));
+    switch (mdns.status) {
+    case MdnsLookupStatus::Resolved:
+        addEvent(ResolverKind::Mdns, ResolverOutcome::Resolved);
+        resolution.evidence = mergeHostnameEvidence(
+            resolution.evidence, {mdns.hostname, HostnameSource::AvahiMdns});
+        break;
+    case MdnsLookupStatus::NoRecord:
+        addEvent(ResolverKind::Mdns, ResolverOutcome::NoRecord);
+        break;
+    case MdnsLookupStatus::TimedOut:
+        addEvent(ResolverKind::Mdns, ResolverOutcome::TimedOut);
+        break;
+    case MdnsLookupStatus::Cancelled:
+        addEvent(ResolverKind::Mdns, ResolverOutcome::Cancelled);
+        break;
+    case MdnsLookupStatus::BackendUnavailable:
+        addEvent(ResolverKind::Mdns, ResolverOutcome::BackendUnavailable);
+        break;
+    case MdnsLookupStatus::DaemonUnavailable:
+        addEvent(ResolverKind::Mdns, ResolverOutcome::DaemonUnavailable);
+        break;
+    case MdnsLookupStatus::MulticastUnavailable:
+        addEvent(ResolverKind::Mdns, ResolverOutcome::MulticastUnavailable);
+        break;
+    case MdnsLookupStatus::InvalidResponse:
+        addEvent(ResolverKind::Mdns, ResolverOutcome::InvalidResponse);
+        break;
+    }
+    return resolution;
 }
 
 QString ScannerWindow::lookupGatewayIp(const QString &interfaceName) const
@@ -2016,17 +2106,57 @@ QByteArray ScannerWindow::readServiceResponse(
 QString ScannerWindow::collectDeviceDetails(const ScanResult &result,
                                             const ScanOptions &options) const
 {
-    QStringList lines;
+    const auto escaped = [](const QString &text) { return text.toHtmlEscaped(); };
+    QString html = "<table cellspacing='2' cellpadding='2'>";
+    html += QString("<tr><td><b>IP:</b></td><td>%1</td><td></td></tr>")
+                .arg(escaped(result.ip));
 
-    lines << QString("IP: %1").arg(result.ip);
-    lines << QString("Hostname: %1").arg(result.hostname);
-    lines << QString("MAC: %1").arg(formatMacForDisplay(result.mac, options.macDisplayFormat));
-    lines << QString("Vendor: %1").arg(result.vendor);
-    lines << QString("Services: %1").arg(result.services.isEmpty() ? "None" : serviceText(result.services));
+    QList<HostnameDisplayRow> hostnameRows = hostnameDisplayRows(
+        result.hostnameEvidence);
+    if (hostnameRows.isEmpty() && !normalizedHostnameKey(result.hostname).isEmpty()) {
+        hostnameRows.append({result.hostname,
+                             {hostnameSourceLabel(result.hostnameSource)},
+                             true});
+    }
+    if (hostnameRows.isEmpty()) {
+        html += "<tr><td><b>Hostname(s):</b></td><td>Unknown</td><td></td></tr>";
+    } else {
+        for (int index = 0; index < hostnameRows.size(); ++index) {
+            const HostnameDisplayRow &row = hostnameRows.at(index);
+            const QString heading = index == 0 ? "<b>Hostname(s):</b>" : QString();
+            const QString sources = row.sourceLabels.isEmpty()
+                                        ? QString()
+                                        : QString("(%1)").arg(
+                                              escaped(row.sourceLabels.join(", ")));
+            html += QString("<tr><td>%1</td><td>%2</td><td>%3</td></tr>")
+                        .arg(heading, escaped(row.hostname), sources);
+        }
+    }
 
-    lines << "Details use only evidence collected by the enabled scan probes; opening this pane "
-             "does not send additional network requests.";
-    return lines.join('\n');
+    html += QString("<tr><td><b>MAC:</b></td><td>%1</td><td></td></tr>")
+                .arg(escaped(formatMacForDisplay(result.mac, options.macDisplayFormat)));
+    html += QString("<tr><td><b>Vendor:</b></td><td>%1</td><td></td></tr>")
+                .arg(escaped(result.vendor));
+    if (result.services.isEmpty()) {
+        html += "<tr><td><b>Services:</b></td><td>None</td><td></td></tr>";
+    } else {
+        for (int index = 0; index < result.services.size(); ++index) {
+            const ServiceHit &service = result.services.at(index);
+            const QString heading = index == 0 ? "<b>Services:</b>" : QString();
+            const QString evidence = service.evidence ==
+                                             ServiceEvidenceLevel::VerifiedProtocol
+                                         ? "Verified"
+                                         : "Open";
+            html += QString("<tr><td>%1</td><td>%2</td><td>(%3)</td></tr>")
+                        .arg(heading,
+                             escaped(serviceEvidenceText(service.label,
+                                                         service.port,
+                                                         service.evidence)),
+                             evidence);
+        }
+    }
+    html += "</table>";
+    return html;
 }
 
 QString ScannerWindow::preferredTerminalProgram() const
@@ -3155,8 +3285,10 @@ void ScannerWindow::showHelpDialog()
         "Settings &rarr; Programs. An unverified connection is shown as "
         "<code>Unknown:&lt;port&gt;</code>; a service name appears after a bounded protocol check "
         "confirms it.</p>"
-        "<p><b>Details:</b> The details pane displays evidence already collected by enabled scan "
-        "probes. Opening it does not send extra network requests.</p>"
+        "<p><b>Details:</b> The details pane lists detected hostnames and services with short "
+        "source labels. Opening it does not send extra network requests.</p>"
+        "<p><b>Hostname diagnostics:</b> Help &rarr; Hostname Diagnostics shows resolver and "
+        "Avahi health counts and can save a redacted JSON support bundle.</p>"
         "<p><b>Filtering:</b> Use Find to filter by IP, hostname, MAC, vendor, services, or OUI prefix.</p>"
         "<p><b>Safety:</b> Scan only networks you own or are authorized to test.</p>");
     layout->addWidget(browser, 1);
@@ -3210,7 +3342,8 @@ ScanOptions ScannerWindow::captureScanOptions(const AdapterInfo &adapter) const
             serviceWaitUnits += serviceProbeWaitUnits(definition.id);
         }
     }
-    options.targetDeadlineMs = targetDeadlineForProfile(budget, serviceWaitUnits);
+    options.targetDeadlineMs = targetDeadlineForProfile(
+        budget, hostnameTimeoutProfile(options.accuracyLevel), serviceWaitUnits);
     options.builtInOuiVendors = builtInOuiVendors_;
     options.customOuiVendors = customOuiVendors_;
     return options;
@@ -3667,12 +3800,74 @@ void ScannerWindow::updateDetailsPaneForCurrentSelection()
         return;
     }
 
-    const QString details = resultModel_->resultAt(current.row()).detailsText;
-    if (details.trimmed().isEmpty()) {
-        detailsPane_->setPlainText("No details available for selected device.");
-        return;
+    ScanOptions options;
+    options.macDisplayFormat = macDisplayFormat_;
+    detailsPane_->setHtml(collectDeviceDetails(
+        resultModel_->resultAt(current.row()), options));
+}
+
+QList<ResolverEvent> ScannerWindow::resolverEventsForDisplayedResults() const
+{
+    QList<ResolverEvent> events;
+    for (int row = 0; row < resultModel_->rowCount(); ++row) {
+        events.append(resultModel_->resultAt(row).resolverEvents);
     }
-    detailsPane_->setPlainText(details);
+    return events;
+}
+
+QByteArray ScannerWindow::resolverSupportBundle() const
+{
+    const QString version = QCoreApplication::applicationVersion().isEmpty()
+                                ? QString(OPEN_IP_SCANNER_VERSION)
+                                : QCoreApplication::applicationVersion();
+    return resolverSupportBundleJson(resolverEventsForDisplayedResults(),
+                                     version,
+                                     QSysInfo::prettyProductName());
+}
+
+void ScannerWindow::showResolverDiagnostics()
+{
+    QDialog dialog(this);
+    dialog.setWindowTitle("Hostname Diagnostics");
+    dialog.resize(520, 360);
+    auto *layout = new QVBoxLayout(&dialog);
+    auto *summary = new QPlainTextEdit(&dialog);
+    summary->setReadOnly(true);
+    summary->setPlainText(resolverDiagnosticsText(
+        resolverEventsForDisplayedResults()));
+    layout->addWidget(summary, 1);
+
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Save |
+                                             QDialogButtonBox::Close,
+                                         &dialog);
+    buttons->button(QDialogButtonBox::Save)->setText("Save Support Bundle...");
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    connect(buttons->button(QDialogButtonBox::Save),
+            &QPushButton::clicked,
+            &dialog,
+            [this, &dialog]() {
+                const QString path = QFileDialog::getSaveFileName(
+                    &dialog,
+                    "Save Support Bundle",
+                    "open-ip-scanner-support.json",
+                    "JSON files (*.json);;All files (*)");
+                if (path.isEmpty()) {
+                    return;
+                }
+                QSaveFile file(path);
+                const QByteArray payload = resolverSupportBundle();
+                if (!file.open(QIODevice::WriteOnly) ||
+                    file.write(payload) != payload.size() ||
+                    !file.commit()) {
+                    QMessageBox::warning(
+                        &dialog,
+                        "Support Bundle",
+                        QString("Could not save support bundle:\n%1")
+                            .arg(file.errorString()));
+                }
+            });
+    layout->addWidget(buttons);
+    dialog.exec();
 }
 
 void ScannerWindow::applyTableColumnSizing()

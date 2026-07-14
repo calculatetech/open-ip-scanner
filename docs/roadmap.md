@@ -2,11 +2,11 @@
 
 This file is the single source of truth for unfinished product, engineering, documentation, and release work. Detailed evidence for why each 1.0 item exists is in [the production-readiness audit](production-readiness-audit.md). New ideas belong here rather than in a second backlog.
 
-The audited baseline is `0.2.0` at commit `91e0a7a`; `0.5.0` is the latest human-verified version. Version 1.0 is not ready. Every unchecked item under “Required for 1.0” is a release gate; the post-1.0 section is explicitly outside the first production release.
+The audited baseline is `0.2.0` at commit `91e0a7a`; `0.5.0` is the latest human-verified version, and `0.5.1` is the active ENRICHMENT-PROVENANCE branch. Version 1.0 is not ready. Every unchecked item under “Required for 1.0” is a release gate; the post-1.0 section is explicitly outside the first production release.
 
 ## Delivered implementation increments
 
-The unchecked milestone boxes below mean their complete acceptance criteria are still open; they do not mean no work has landed. The cumulative implementation through `0.4.5` is human-verified.
+The unchecked milestone boxes below mean their complete acceptance criteria are still open; they do not mean no work has landed. The cumulative implementation through `0.5.0` is human-verified.
 
 - `0.3.0` — **SCAN-CONFIGURATION:** active scans receive an immutable `ScanOptions` snapshot, with concurrent value-isolation and ThreadSanitizer coverage.
 - `0.3.1` — **SCAN-CANCELLATION:** Stop and close use bounded cancellation-aware process, socket, and hostname waits, with asynchronous window shutdown.
@@ -115,6 +115,8 @@ Priority matches the most severe audit finding an item closes. All items in the 
   - Put successful per-device provenance in the details pane. Use one visually aligned `Hostname(s):` list, preferred name first, with short parenthesized labels such as `(Local)`, `(PTR)`, `(System)`, and `(mDNS)`. List every distinct detected name; normalize case and a trailing root dot for deduplication, and combine labels when multiple sources report the same name. Service details use equally concise labels such as `(Verified)` and `(Open)`.
   - Add a diagnostic surface that distinguishes missing client library/tool, inactive daemon, multicast unavailable, no record, malformed response, timeout, and cancellation. Do not silently turn every failure into `Unknown`.
   - Opening or selecting the details pane must not trigger network traffic. Backend availability and failures belong in diagnostics rather than per-row prose.
+  - Current progress on `0.5.1`: scan results retain normalized Local, PTR, System, mDNS, and preliminary observations while deriving one value-only table hostname with the required precedence. An explicit cancellable IPv4 PTR lookup and the existing system and Avahi resolvers use Accuracy-scaled cutoffs inside the target budget. Details renders one aligned `Hostname(s):` list with combined short source labels and compact `(Verified)`/`(Open)` service evidence. Help exposes hostname diagnostics that distinguish Avahi daemon, multicast, backend, record, response, timeout, and cancellation outcomes; its JSON support bundle contains application/platform capability and aggregate counts but no addresses or hostnames. Opening Details performs no lookup.
+  - Validation evidence: deterministic contracts cover precedence and preferred spelling, normalization, duplicate-source grouping, PTR query construction, Accuracy-scaled resolver timeouts and whole-sequence deadlines, cancellation, diagnostic health distinctions, table concision, merged-update details markup, and support-bundle redaction. Normal and strict-warning suites pass 11/11, all ten non-rendering tests pass under ThreadSanitizer, the live Avahi backend check passes, and the generated 0.5.1 package retains Qt Network/DBus dependencies plus the `avahi-daemon` recommendation. Five initial adversarial-review findings and one post-repair health-classification finding were repaired; the final fresh review found no actionable issue. Branch publication and human validation remain.
   - Done when the table remains value-only, selected-device details show the aligned compact hostname and service evidence lists, a support bundle records capability and failure state without sensitive payloads, and deterministic conflicts select the required preferred name without discarding alternate evidence.
 
 #### MDNS-TESTS

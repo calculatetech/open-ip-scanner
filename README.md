@@ -20,7 +20,8 @@ Yes, this project is **100% vibe coded**.
   - Alternate row highlighting
 - Service probing (configurable ports/services)
 - Clickable service actions (launch browser/SSH/etc. via configured programs)
-- Device details pane with additional detected info
+- Device details pane with concise hostname and service evidence sources
+- Redacted hostname diagnostics and support-bundle export
 - OUI vendor lookup from embedded IEEE data + custom user overrides
 - MAC display format options (colon/hyphen/cisco/plain, upper/lower)
 - Search/filter bar with scope selection (all columns, vendor, services, OUI prefix, etc.)

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(OpenIpScanner VERSION 0.5.0 LANGUAGES CXX)
+project(OpenIpScanner VERSION 0.5.1 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -34,6 +34,8 @@ add_executable(open_ip_scanner
     src/scanresult.h
     src/resulttablemodel.h
     src/resulttablemodel.cpp
+    src/resolverdiagnostics.h
+    src/resolverdiagnostics.cpp
     src/serviceevidence.h
     src/serviceevidence.cpp
     src/servicetagdelegate.h
@@ -66,6 +68,20 @@ if(BUILD_TESTING)
     )
     add_test(NAME mdns_resolver_contract COMMAND mdns_resolver_test)
 
+    add_executable(enrichment_provenance_test
+        tests/enrichmentprovenance_test.cpp
+        src/hostnameevidence.h
+        src/hostnameevidence.cpp
+        src/resolverdiagnostics.h
+        src/resolverdiagnostics.cpp
+    )
+    target_include_directories(enrichment_provenance_test PRIVATE src)
+    target_link_libraries(enrichment_provenance_test PRIVATE
+        ${QT_PACKAGE}::Core
+        ${QT_PACKAGE}::Network
+    )
+    add_test(NAME enrichment_provenance_contract COMMAND enrichment_provenance_test)
+
     add_executable(debug_scan_fixture_test
         tests/debugscanfixture_test.cpp
         src/debugscanfixture.h
@@ -92,6 +108,8 @@ if(BUILD_TESTING)
         tests/scancancellation_test.cpp
         src/cancellablewait.h
         src/cancellablewait.cpp
+        src/hostnameevidence.h
+        src/hostnameevidence.cpp
     )
     target_include_directories(scan_cancellation_test PRIVATE src)
     target_link_libraries(scan_cancellation_test PRIVATE ${QT_PACKAGE}::Core ${QT_PACKAGE}::Network)
@@ -149,6 +167,8 @@ if(BUILD_TESTING)
         src/scanresult.h
         src/resulttablemodel.h
         src/resulttablemodel.cpp
+        src/resolverdiagnostics.h
+        src/resolverdiagnostics.cpp
         src/serviceevidence.h
         src/serviceevidence.cpp
         src/servicetagdelegate.h

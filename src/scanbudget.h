@@ -17,10 +17,16 @@ struct ScanBudgetProfile {
     int neighborConfirmationMs = 5500;
 };
 
+struct HostnameTimeoutProfile {
+    int ptrMs = 750;
+    int systemMs = 750;
+    int mdnsMs = 1250;
+};
+
 constexpr int kProcessCleanupReserveMs = 50;
 constexpr int kEstimatePerTargetAllowanceMs = 300;
 constexpr int kPingProcessStartupAllowanceMs = 500;
-constexpr int kNonServiceStageReserveMs = 2000;
+constexpr int kPostHostnameStageReserveMs = 500;
 
 enum class AliveHostStage {
     Services,
@@ -56,16 +62,32 @@ inline ScanBudgetProfile scanBudgetProfile(int accuracyLevel)
     }
 }
 
+inline HostnameTimeoutProfile hostnameTimeoutProfile(int accuracyLevel)
+{
+    switch (std::clamp(accuracyLevel, 0, 3)) {
+    case 0: return {400, 400, 700};
+    case 1: return {750, 750, 1250};
+    case 2: return {1250, 1000, 1750};
+    case 3: return {1500, 1500, 2000};
+    default: return {750, 750, 1250};
+    }
+}
+
 inline bool shouldProbeServicesForDiscovery(bool alive, int enabledServiceCount)
 {
     return !alive && enabledServiceCount > 0;
 }
 
-inline int targetDeadlineForProfile(const ScanBudgetProfile &profile, int serviceWaitUnits)
+constexpr int hostnameTimeoutTotalMs(const HostnameTimeoutProfile &profile)
 {
-    if (serviceWaitUnits <= 0) {
-        return profile.targetDeadlineMs;
-    }
+    return profile.ptrMs + profile.systemMs + profile.mdnsMs;
+}
+
+inline int targetDeadlineForProfile(const ScanBudgetProfile &profile,
+                                    const HostnameTimeoutProfile &hostnameProfile,
+                                    int serviceWaitUnits)
+{
+    serviceWaitUnits = std::max(0, serviceWaitUnits);
     const std::int64_t pingWork =
         static_cast<std::int64_t>(profile.pingAttempts) *
         pingAttemptWaitMs(profile.pingTimeoutSeconds);
@@ -74,7 +96,8 @@ inline int targetDeadlineForProfile(const ScanBudgetProfile &profile, int servic
         profile.serviceTimeoutMs;
     const std::int64_t required = pingWork + serviceWork +
                                   profile.neighborConfirmationMs +
-                                  kNonServiceStageReserveMs;
+                                  hostnameTimeoutTotalMs(hostnameProfile) +
+                                  kPostHostnameStageReserveMs;
     return static_cast<int>(std::min<std::int64_t>(
         std::max<std::int64_t>(profile.targetDeadlineMs, required),
         std::numeric_limits<int>::max()));

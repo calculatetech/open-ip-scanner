@@ -34,24 +34,6 @@
 #include <thread>
 #include <utility>
 
-class ImmediateMdnsBackend final : public MdnsLookupBackend {
-public:
-    void resolve(int interfaceIndex,
-                 const QString &address,
-                 int,
-                 Callback callback) override
-    {
-        callback({MdnsLookupStatus::Resolved,
-                  interfaceIndex,
-                  0,
-                  0,
-                  address,
-                  "fixture.local."});
-    }
-
-    void cancelAll() override {}
-};
-
 struct ScannerWindowTestAccess {
     static QList<QHostAddress> parseTargets(const ScannerWindow &window,
                                             const QString &text,
@@ -134,24 +116,102 @@ struct ScannerWindowTestAccess {
                options.serviceTimeoutMs == 750 && options.neighborConfirmationMs == 5500 &&
                options.macDisplayFormat == 6 &&
                options.enabledServiceIds == QSet<QString>({"http", "smtp587", "rdp"}) &&
-               options.targetDeadlineMs == 22500 &&
+               options.targetDeadlineMs == 23750 &&
                options.builtInOuiVendors.value("AABBCC") == "Built in fixture" &&
                options.customOuiVendors.value("DDEEFF") == "Custom fixture";
     }
 
-    static bool upgradesPreliminaryHostnameWithMdns(ScannerWindow &window)
+    static bool rendersConciseHostnameProvenance(ScannerWindow &window)
     {
-        auto cancellation = std::make_shared<std::atomic_bool>(false);
-        ScanMdnsResolver resolver(
-            7, cancellation, std::make_unique<ImmediateMdnsBackend>());
-        const HostnameEvidence result = window.lookupHostname(
-            "192.0.2.10",
-            {"preliminary-host", HostnameQuality::Preliminary},
-            TargetBudget(3000),
-            cancellation,
-            resolver);
-        return result.hostname == "fixture.local" &&
-               result.quality == HostnameQuality::AvahiMdns;
+        ScanResult result;
+        result.ip = "192.0.2.10";
+        result.interfaceName = "fixture0";
+        result.hostnameEvidence = {
+            {"fixture.local", HostnameSource::AvahiMdns},
+            {"fixture.example", HostnameSource::DnsPtr},
+            {"FIXTURE.LOCAL.", HostnameSource::SystemResolver}};
+        const HostnameEvidence preferred = preferredHostname(result.hostnameEvidence);
+        result.hostname = preferred.hostname;
+        result.hostnameSource = preferred.source;
+        result.mac = "02:00:00:00:00:10";
+        result.vendor = "Fixture vendor";
+        result.services = {{"ssh",
+                            "SSH",
+                            22,
+                            false,
+                            ServiceEvidenceLevel::VerifiedProtocol},
+                           {"smb",
+                            "SMB",
+                            445,
+                            false,
+                            ServiceEvidenceLevel::OpenPort}};
+        ScanOptions options;
+        result.detailsText = window.collectDeviceDetails(result, options);
+        window.resultModel_->clear();
+        window.resultModel_->upsertResult(result);
+        const QString tableHostname = window.resultModel_
+                                          ->data(window.resultModel_->index(
+                                              0, ScannerWindow::ColHostname),
+                                                 Qt::DisplayRole)
+                                          .toString();
+        const QString html = result.detailsText;
+        return tableHostname == "fixture.example" &&
+               !tableHostname.contains("PTR") &&
+               html.count("Hostname(s):") == 1 &&
+               html.contains("fixture.example") && html.contains("(PTR)") &&
+               html.contains("fixture.local") &&
+               html.contains("(System, mDNS)") &&
+               html.contains("SSH:22") && html.contains("(Verified)") &&
+               html.contains("Unknown:445") && html.contains("(Open)") &&
+               html.contains("<table");
+    }
+
+    static bool rendersMergedHostnameEvidence(ScannerWindow &window)
+    {
+        ScanResult mdns;
+        mdns.ip = "192.0.2.20";
+        mdns.interfaceName = "fixture0";
+        mdns.hostname = "fixture.local";
+        mdns.hostnameSource = HostnameSource::AvahiMdns;
+        mdns.hostnameEvidence = {
+            {mdns.hostname, mdns.hostnameSource}};
+        mdns.detailsText = "<p>stale mDNS-only details</p>";
+
+        ScanResult ptr = mdns;
+        ptr.hostname = "fixture.example";
+        ptr.hostnameSource = HostnameSource::DnsPtr;
+        ptr.hostnameEvidence = {
+            {ptr.hostname, ptr.hostnameSource}};
+        ptr.detailsText = "<p>stale PTR-only details</p>";
+
+        window.resultModel_->clear();
+        window.resultModel_->upsertResult(mdns);
+        window.resultModel_->upsertResult(ptr);
+        const ScanResult merged = window.resultModel_->resultAt(0);
+        ScanOptions options;
+        const QString html = window.collectDeviceDetails(merged, options);
+        return merged.hostname == "fixture.example" &&
+               merged.hostnameEvidence.size() == 2 &&
+               html.contains("fixture.example") && html.contains("(PTR)") &&
+               html.contains("fixture.local") && html.contains("(mDNS)");
+    }
+
+    static bool resolverSupportBundleIsRedacted(ScannerWindow &window)
+    {
+        ScanResult result;
+        result.ip = "192.0.2.44";
+        result.interfaceName = "fixture0";
+        result.hostname = "private-device.local";
+        result.resolverEvents = {
+            {ResolverKind::Mdns, ResolverOutcome::Resolved},
+            {ResolverKind::DnsPtr, ResolverOutcome::NoRecord}};
+        window.resultModel_->clear();
+        window.resultModel_->upsertResult(result);
+        const QByteArray bundle = window.resolverSupportBundle();
+        return !bundle.contains("192.0.2.44") &&
+               !bundle.contains("private-device.local") &&
+               bundle.contains("mdns.resolved") &&
+               bundle.contains("ptr.no_record");
     }
 
     static bool resultScalingContract(ScannerWindow &window)
@@ -652,7 +712,9 @@ int main(int argc, char **argv)
     REQUIRE(parserPlan.targetText.size() <= 2048);
     REQUIRE(ScannerWindowTestAccess::preservesInterfaceIdentity(window));
     REQUIRE(ScannerWindowTestAccess::capturesAllScanOptions(window));
-    REQUIRE(ScannerWindowTestAccess::upgradesPreliminaryHostnameWithMdns(window));
+    REQUIRE(ScannerWindowTestAccess::rendersConciseHostnameProvenance(window));
+    REQUIRE(ScannerWindowTestAccess::rendersMergedHostnameEvidence(window));
+    REQUIRE(ScannerWindowTestAccess::resolverSupportBundleIsRedacted(window));
     REQUIRE(ScannerWindowTestAccess::resultScalingContract(window));
     REQUIRE(ScannerWindowTestAccess::debugScanContract(window));
     REQUIRE(ScannerWindowTestAccess::confirmsDelayedNeighbor(window));

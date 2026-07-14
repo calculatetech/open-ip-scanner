@@ -152,10 +152,14 @@ int main(int argc, char **argv)
             "org.freedesktop.DBus.Error.NoReply", "D-Bus deadline reached"));
         const QDBusError backendFailure(QDBusMessage::createError(
             "org.freedesktop.DBus.Error.ServiceUnknown", "Avahi is unavailable"));
+        const QDBusError noNetwork(QDBusMessage::createError(
+            "org.freedesktop.Avahi.NoNetworkError", "No multicast interface"));
         REQUIRE(mdnsStatusForDbusError(avahiNoAnswer) == MdnsLookupStatus::NoRecord);
         REQUIRE(mdnsStatusForDbusError(transportTimeout) == MdnsLookupStatus::TimedOut);
         REQUIRE(mdnsStatusForDbusError(backendFailure) ==
-                MdnsLookupStatus::BackendUnavailable);
+                MdnsLookupStatus::DaemonUnavailable);
+        REQUIRE(mdnsStatusForDbusError(noNetwork) ==
+                MdnsLookupStatus::MulticastUnavailable);
     }
 
     {
@@ -235,14 +239,16 @@ int main(int argc, char **argv)
                 .resolve("not-an-ip", 500)
                 .status == MdnsLookupStatus::InvalidResponse);
 
-    const HostnameEvidence preliminary{"gateway", HostnameQuality::Preliminary};
-    const HostnameEvidence system{"gateway.example", HostnameQuality::SystemResolver};
-    const HostnameEvidence mdns{"gateway.local", HostnameQuality::AvahiMdns};
+    const HostnameEvidence preliminary{"gateway", HostnameSource::Preliminary};
+    const HostnameEvidence system{"gateway.example", HostnameSource::SystemResolver};
+    const HostnameEvidence mdns{"gateway.local", HostnameSource::AvahiMdns};
+    const HostnameEvidence ptr{"gateway.ptr.example", HostnameSource::DnsPtr};
     REQUIRE(preferredHostname(preliminary, system).hostname == "gateway.example");
-    REQUIRE(preferredHostname(system, mdns).hostname == "gateway.local");
-    REQUIRE(preferredHostname(mdns, system).hostname == "gateway.local");
+    REQUIRE(preferredHostname(system, mdns).hostname == "gateway.example");
+    REQUIRE(preferredHostname(mdns, system).hostname == "gateway.example");
+    REQUIRE(preferredHostname(system, ptr).hostname == "gateway.ptr.example");
     REQUIRE(preferredHostname(mdns,
-                              {"other.local", HostnameQuality::AvahiMdns})
+                              {"other.local", HostnameSource::AvahiMdns})
                 .hostname == "gateway.local");
     return EXIT_SUCCESS;
 }

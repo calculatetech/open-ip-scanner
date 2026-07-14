@@ -32,6 +32,7 @@ constexpr int kBackendDeadlineMs = 2000;
 constexpr int kObservationCacheMs = 250;
 
 constexpr auto kAvahiTimeoutError = "org.freedesktop.Avahi.TimeoutError";
+constexpr auto kAvahiNoNetworkError = "org.freedesktop.Avahi.NoNetworkError";
 
 QString normalizedIpv4(const QString &address)
 {
@@ -80,6 +81,13 @@ MdnsLookupStatus mdnsStatusForDbusError(const QDBusError &error)
     if (error.name() == QLatin1String(kAvahiTimeoutError) ||
         error.name().contains("NotFound", Qt::CaseInsensitive)) {
         return MdnsLookupStatus::NoRecord;
+    }
+    if (error.name() == QLatin1String(kAvahiNoNetworkError)) {
+        return MdnsLookupStatus::MulticastUnavailable;
+    }
+    if (error.type() == QDBusError::ServiceUnknown ||
+        error.name() == "org.freedesktop.DBus.Error.NameHasNoOwner") {
+        return MdnsLookupStatus::DaemonUnavailable;
     }
     return MdnsLookupStatus::BackendUnavailable;
 }

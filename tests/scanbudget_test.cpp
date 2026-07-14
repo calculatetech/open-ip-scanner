@@ -20,6 +20,10 @@ int main()
     const ScanBudgetProfile balanced = scanBudgetProfile(1);
     const ScanBudgetProfile high = scanBudgetProfile(2);
     const ScanBudgetProfile maximum = scanBudgetProfile(3);
+    const HostnameTimeoutProfile fastNames = hostnameTimeoutProfile(0);
+    const HostnameTimeoutProfile balancedNames = hostnameTimeoutProfile(1);
+    const HostnameTimeoutProfile highNames = hostnameTimeoutProfile(2);
+    const HostnameTimeoutProfile maximumNames = hostnameTimeoutProfile(3);
 
     require(fast.targetDeadlineMs == 5000 && fast.pingAttempts == 1 &&
             fast.pingTimeoutSeconds == 1 && fast.serviceAttempts == 1 &&
@@ -35,6 +39,14 @@ int main()
             maximum.serviceTimeoutMs == 2000 && maximum.neighborConfirmationMs == 8000);
     require(scanBudgetProfile(-1).targetDeadlineMs == fast.targetDeadlineMs);
     require(scanBudgetProfile(99).targetDeadlineMs == maximum.targetDeadlineMs);
+    require(fastNames.ptrMs == 400 && fastNames.systemMs == 400 &&
+            fastNames.mdnsMs == 700);
+    require(balancedNames.ptrMs == 750 && balancedNames.systemMs == 750 &&
+            balancedNames.mdnsMs == 1250);
+    require(highNames.ptrMs == 1250 && highNames.systemMs == 1000 &&
+            highNames.mdnsMs == 1750);
+    require(maximumNames.ptrMs == 1500 && maximumNames.systemMs == 1500 &&
+            maximumNames.mdnsMs == 2000);
 
     require(estimatedScanUpperBoundMs(4096, 4, maximum.targetDeadlineMs) == 51507200);
     require(estimatedScanUpperBoundMs(5, 4, balanced.targetDeadlineMs) == 22600);
@@ -63,15 +75,20 @@ int main()
     require(!shouldProbeServicesForDiscovery(false, 0));
     require(!shouldProbeServicesForDiscovery(true, 1));
 
-    require(targetDeadlineForProfile(fast, 0) == 5000);
-    require(targetDeadlineForProfile(fast, 4) == 5000);
-    require(targetDeadlineForProfile(fast, 10) == 7000);
-    require(targetDeadlineForProfile(balanced, 4) == 16500);
-    require(targetDeadlineForProfile(balanced, 10) == 25500);
-    require(targetDeadlineForProfile(high, 4) == 31000);
-    require(targetDeadlineForProfile(high, 10) == 53500);
-    require(targetDeadlineForProfile(maximum, 4) == 56000);
-    require(targetDeadlineForProfile(maximum, 10) == 104000);
+    require(hostnameTimeoutTotalMs(fastNames) == 1500);
+    require(hostnameTimeoutTotalMs(balancedNames) == 2750);
+    require(hostnameTimeoutTotalMs(highNames) == 4000);
+    require(hostnameTimeoutTotalMs(maximumNames) == 5000);
+    require(targetDeadlineForProfile(fast, fastNames, 0) == 5000);
+    require(targetDeadlineForProfile(balanced, balancedNames, 0) == 11750);
+    require(targetDeadlineForProfile(fast, fastNames, 4) == 5000);
+    require(targetDeadlineForProfile(fast, fastNames, 10) == 7000);
+    require(targetDeadlineForProfile(balanced, balancedNames, 4) == 17750);
+    require(targetDeadlineForProfile(balanced, balancedNames, 10) == 26750);
+    require(targetDeadlineForProfile(high, highNames, 4) == 33500);
+    require(targetDeadlineForProfile(high, highNames, 10) == 56000);
+    require(targetDeadlineForProfile(maximum, maximumNames, 4) == 59500);
+    require(targetDeadlineForProfile(maximum, maximumNames, 10) == 107500);
 
     TargetBudget::TimePoint now{};
     TargetBudget budget(100, [&]() { return now; });

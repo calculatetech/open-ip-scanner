@@ -1,4 +1,5 @@
 #include "cancellablewait.h"
+#include "hostnameevidence.h"
 
 #include <QAbstractSocket>
 #include <QElapsedTimer>
@@ -61,6 +62,16 @@ private:
 } // namespace
 
 namespace cancellable {
+
+bool isDnsLookupTimeoutError(QDnsLookup::Error error)
+{
+#if QT_VERSION >= QT_VERSION_CHECK(6, 6, 0)
+    return error == QDnsLookup::TimeoutError;
+#else
+    Q_UNUSED(error);
+    return false;
+#endif
+}
 
 bool isCancelled(const Flag &flag)
 {
@@ -215,6 +226,74 @@ QHostInfo lookupHost(const QString &address, int timeoutMs, const Flag &flag, Wa
         *result = outcome;
     }
     return answer;
+}
+
+DnsPtrLookupResult lookupPtr(const QString &address,
+                             int timeoutMs,
+                             const Flag &flag)
+{
+    DnsPtrLookupResult result;
+    const QString queryName = ipv4PtrQueryName(address);
+    if (queryName.isEmpty()) {
+        result.error = QDnsLookup::InvalidRequestError;
+        return result;
+    }
+    if (isCancelled(flag)) {
+        result.waitResult = WaitResult::Cancelled;
+        result.error = QDnsLookup::OperationCancelledError;
+        return result;
+    }
+    if (timeoutMs <= 0) {
+        result.waitResult = WaitResult::TimedOut;
+        result.error = QDnsLookup::ResolverError;
+        return result;
+    }
+
+    QEventLoop loop;
+    QDnsLookup lookup(QDnsLookup::PTR, queryName);
+    bool completed = false;
+    QObject::connect(&lookup, &QDnsLookup::finished, &loop, [&]() {
+        completed = true;
+        loop.quit();
+    });
+    QTimer poll;
+    poll.setInterval(kPollIntervalMs);
+    QObject::connect(&poll, &QTimer::timeout, &loop, [&]() {
+        if (isCancelled(flag)) {
+            lookup.abort();
+            loop.quit();
+        }
+    });
+    QTimer deadline;
+    deadline.setSingleShot(true);
+    deadline.setInterval(timeoutMs);
+    QObject::connect(&deadline, &QTimer::timeout, &loop, [&]() {
+        lookup.abort();
+        loop.quit();
+    });
+    poll.start();
+    deadline.start();
+    lookup.lookup();
+    loop.exec();
+
+    if (isCancelled(flag)) {
+        result.waitResult = WaitResult::Cancelled;
+        result.error = QDnsLookup::OperationCancelledError;
+        return result;
+    }
+    if (!completed) {
+        result.waitResult = WaitResult::TimedOut;
+        result.error = QDnsLookup::ResolverError;
+        return result;
+    }
+    result.waitResult = WaitResult::Completed;
+    result.error = lookup.error();
+    for (const QDnsDomainNameRecord &record : lookup.pointerRecords()) {
+        if (!record.value().trimmed().isEmpty()) {
+            result.hostnames.append(record.value());
+        }
+    }
+    return result;
 }
 
 } // namespace cancellable

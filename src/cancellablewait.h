@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QDnsLookup>
 #include <QHostInfo>
 #include <QProcess>
 #include <QString>
@@ -22,7 +23,14 @@ enum class WaitResult {
     Failed
 };
 
+struct DnsPtrLookupResult {
+    WaitResult waitResult = WaitResult::Failed;
+    QDnsLookup::Error error = QDnsLookup::ResolverError;
+    QStringList hostnames;
+};
+
 bool isCancelled(const Flag &flag);
+bool isDnsLookupTimeoutError(QDnsLookup::Error error);
 
 class ProcessControl {
 public:
@@ -49,5 +57,8 @@ QHostInfo lookupHost(const QString &address,
                      int timeoutMs,
                      const Flag &flag,
                      WaitResult *result = nullptr);
+DnsPtrLookupResult lookupPtr(const QString &address,
+                             int timeoutMs,
+                             const Flag &flag);
 
 } // namespace cancellable

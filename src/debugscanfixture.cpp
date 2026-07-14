@@ -80,6 +80,11 @@ ScanResult debugScanFixtureResult(int index)
     result.hostname = boundedIndex % 7 == 0
                           ? QString("Unknown")
                           : QString("fixture-%1.test").arg(boundedIndex + 1, 3, 10, QChar('0'));
+    if (result.hostname != "Unknown") {
+        result.hostnameSource = HostnameSource::Preliminary;
+        result.hostnameEvidence.append(
+            {result.hostname, HostnameSource::Preliminary});
+    }
 
     if (boundedIndex % 2 == 0) {
         const FixtureVendor &vendor = kKnownVendors.at(
@@ -110,7 +115,9 @@ ScanResult debugScanFixtureResult(int index)
                                 extra.isWeb,
                                 ServiceEvidenceLevel::VerifiedProtocol});
     }
-    result.detailsText = QString("Debug fixture device %1\nEvidence: synthetic\nNetwork traffic: none")
+    result.detailsText = QString(
+        "<p>Debug fixture device %1</p>"
+        "<p>Evidence: synthetic<br>Network traffic: none</p>")
                              .arg(boundedIndex + 1);
     return result;
 }

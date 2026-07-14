@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.5.1] - 2026-07-14
+
+### Changed
+
+- Prefer the local OS hostname, explicit DNS PTR, and system-resolver evidence over mDNS while retaining every distinct detected name.
+- Keep result rows value-only and show aligned, compact hostname and service evidence in the selected device's Details pane.
+
+### Added
+
+- Added Accuracy-scaled, cancellable IPv4 PTR lookup and explicit Local, PTR, System, and mDNS source tracking.
+- Added hostname diagnostics with Avahi health/failure counts and a redacted JSON support bundle.
+
 ## [0.5.0] - 2026-07-14
 
 ### Added
