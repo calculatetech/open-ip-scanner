@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(OpenIpScanner VERSION 0.4.2 LANGUAGES CXX)
+project(OpenIpScanner VERSION 0.4.3 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -25,6 +25,8 @@ add_executable(open_ip_scanner
     src/neighborentry.cpp
     src/scanbudget.h
     src/scanoptions.h
+    src/serviceevidence.h
+    src/serviceevidence.cpp
     src/settingslayout.h
     src/targetdefaults.h
     src/targetdefaults.cpp
@@ -79,6 +81,15 @@ if(BUILD_TESTING)
     target_link_libraries(neighbor_entry_test PRIVATE ${QT_PACKAGE}::Network)
     add_test(NAME neighbor_entry_validation COMMAND neighbor_entry_test)
 
+    add_executable(service_evidence_test
+        tests/serviceevidence_test.cpp
+        src/serviceevidence.h
+        src/serviceevidence.cpp
+    )
+    target_include_directories(service_evidence_test PRIVATE src)
+    target_link_libraries(service_evidence_test PRIVATE ${QT_PACKAGE}::Core)
+    add_test(NAME service_evidence_classification COMMAND service_evidence_test)
+
     add_executable(settings_dialog_test
         tests/settingsdialog_test.cpp
         src/cancellablewait.h
@@ -87,6 +98,8 @@ if(BUILD_TESTING)
         src/neighborentry.cpp
         src/scanbudget.h
         src/scanoptions.h
+        src/serviceevidence.h
+        src/serviceevidence.cpp
         src/settingslayout.h
         src/targetdefaults.h
         src/targetdefaults.cpp

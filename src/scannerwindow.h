@@ -19,6 +19,7 @@
 #include "scanoptions.h"
 #include "scanbudget.h"
 #include "neighborentry.h"
+#include "serviceevidence.h"
 #include "targetdefaults.h"
 
 class QComboBox;
@@ -33,6 +34,7 @@ class QToolBar;
 class QSplitter;
 class QStringListModel;
 class QTableWidget;
+class QTcpSocket;
 class QTextEdit;
 class QAction;
 class QCloseEvent;
@@ -48,6 +50,7 @@ struct ServiceHit {
     int port = 0;
     // True when this service should be opened in a web browser.
     bool isWeb = false;
+    ServiceEvidenceLevel evidence = ServiceEvidenceLevel::OpenPort;
 };
 
 struct ScanResult {
@@ -192,26 +195,28 @@ private:
                                     const TargetBudget &budget,
                                     const std::shared_ptr<std::atomic_bool> &cancelRequested,
                                     const ScanOptions &options) const;
-    QString collectDeviceDetails(const ScanResult &result,
-                                 const QString &localBindIp,
-                                 const TargetBudget &budget,
-                                 const std::shared_ptr<std::atomic_bool> &cancelRequested,
-                                 const ScanOptions &options) const;
-    QString fetchTcpBanner(const QString &ip, int port, int timeoutMs,
+    QString collectDeviceDetails(const ScanResult &result, const ScanOptions &options) const;
+    bool probePlainService(const ServiceDefinition &definition,
+                           const QString &ip,
                            const QString &localBindIp,
                            const TargetBudget &budget,
                            const std::shared_ptr<std::atomic_bool> &cancelRequested,
-                           const QByteArray &prologue = {}) const;
-    QString extractHttpServerHeader(const QString &rawResponse) const;
-    QString inferOsFromSignals(const QStringList &signalList) const;
+                           const ScanOptions &options,
+                           ServiceEvidenceLevel *evidence) const;
+    bool probeTlsService(const ServiceDefinition &definition,
+                         const QString &ip,
+                         const QString &localBindIp,
+                         const TargetBudget &budget,
+                         const std::shared_ptr<std::atomic_bool> &cancelRequested,
+                         const ScanOptions &options,
+                         ServiceEvidenceLevel *evidence) const;
+    QByteArray readServiceResponse(
+        QTcpSocket &socket,
+        const TargetBudget &budget,
+        const std::shared_ptr<std::atomic_bool> &cancelRequested,
+        int timeoutMs,
+        bool smtpMultiline = false) const;
     void updateDetailsPaneForCurrentSelection();
-    bool isPortOpen(const QString &ip,
-                    int port,
-                    const QString &localBindIp,
-                    int timeoutMs,
-                    int attempts,
-                    const TargetBudget &budget,
-                    const std::shared_ptr<std::atomic_bool> &cancelRequested) const;
     QString serviceText(const QList<ServiceHit> &services) const;
     QString formatMacForDisplay(const QString &mac) const;
     QString formatMacForDisplay(const QString &mac, int displayFormat) const;
