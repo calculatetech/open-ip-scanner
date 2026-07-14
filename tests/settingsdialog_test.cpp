@@ -1,16 +1,22 @@
 #include "settingslayout.h"
 #include "scannerwindow.h"
+#include "resulttablemodel.h"
 
 #include <QApplication>
 #include <QDialog>
 #include <QDialogButtonBox>
+#include <QElapsedTimer>
+#include <QFile>
 #include <QLabel>
+#include <QLineEdit>
 #include <QListWidget>
 #include <QMetaObject>
 #include <QPoint>
+#include <QPushButton>
 #include <QSlider>
 #include <QStandardPaths>
-#include <QTableWidget>
+#include <QTableView>
+#include <QTemporaryDir>
 #include <QTimer>
 
 #include <arpa/inet.h>
@@ -56,15 +62,16 @@ struct ScannerWindowTestAccess {
         window.addOrUpdateResultRow(vpn);
         const QString ethernetKey = neighborIdentityKey(ethernet.interfaceName, ethernet.ip);
         const QString vpnKey = neighborIdentityKey(vpn.interfaceName, vpn.ip);
-        return window.table_->rowCount() == 2 &&
+        const ScanResult storedEthernet = window.resultModel_->resultForIdentity(ethernetKey);
+        const ScanResult storedVpn = window.resultModel_->resultForIdentity(vpnKey);
+        return window.resultModel_->rowCount() == 2 &&
                window.findRowByIdentity(ethernetKey) >= 0 &&
                window.findRowByIdentity(vpnKey) >= 0 &&
-               window.servicesByIdentity_.value(ethernetKey).size() == 1 &&
-               window.servicesByIdentity_.value(vpnKey).size() == 1 &&
-               window.servicesByIdentity_.value(ethernetKey).first().id == "ssh" &&
-               window.servicesByIdentity_.value(vpnKey).first().id == "https" &&
-               window.detailsByIdentity_.value(ethernetKey) == "Ethernet details" &&
-               window.detailsByIdentity_.value(vpnKey) == "VPN details";
+               storedEthernet.services.size() == 1 && storedVpn.services.size() == 1 &&
+               storedEthernet.services.first().id == "ssh" &&
+               storedVpn.services.first().id == "https" &&
+               storedEthernet.detailsText == "Ethernet details" &&
+               storedVpn.detailsText == "VPN details";
     }
 
     static bool capturesAllScanOptions(ScannerWindow &window)
@@ -103,11 +110,223 @@ struct ScannerWindowTestAccess {
                options.localIp == "192.0.2.10" &&
                options.localMac == "02:00:00:00:00:10" && options.pingAttempts == 2 &&
                options.pingTimeoutSeconds == 1 && options.serviceAttempts == 2 &&
-               options.serviceTimeoutMs == 750 && options.macDisplayFormat == 6 &&
+               options.serviceTimeoutMs == 750 && options.neighborConfirmationMs == 5500 &&
+               options.macDisplayFormat == 6 &&
                options.enabledServiceIds == QSet<QString>({"http", "smtp587", "rdp"}) &&
-               options.targetDeadlineMs == 17000 &&
+               options.targetDeadlineMs == 22500 &&
                options.builtInOuiVendors.value("AABBCC") == "Built in fixture" &&
                options.customOuiVendors.value("DDEEFF") == "Custom fixture";
+    }
+
+    static bool resultScalingContract(ScannerWindow &window)
+    {
+        window.resultModel_->clear();
+        window.pendingDisplayResults_.clear();
+        int modelResetCount = 0;
+        const QMetaObject::Connection resetConnection = QObject::connect(
+            window.resultModel_, &QAbstractItemModel::modelReset, &window,
+            [&modelResetCount]() { ++modelResetCount; });
+
+        window.resize(1000, 600);
+        window.show();
+        QApplication::processEvents();
+
+        qint64 maximumHeartbeatGapMs = 0;
+        qint64 previousHeartbeatMs = 0;
+        QElapsedTimer elapsed;
+        elapsed.start();
+        QTimer heartbeat;
+        heartbeat.setInterval(10);
+        QObject::connect(&heartbeat, &QTimer::timeout, &window, [&]() {
+            const qint64 now = elapsed.elapsed();
+            if (previousHeartbeatMs > 0) {
+                maximumHeartbeatGapMs = std::max(maximumHeartbeatGapMs,
+                                                 now - previousHeartbeatMs);
+            }
+            previousHeartbeatMs = now;
+        });
+        heartbeat.start();
+
+        for (int arrival = 0; arrival < 4096; ++arrival) {
+            const int i = (arrival * 4051) % 4096;
+            ScanResult result;
+            result.ip = QString("10.20.%1.%2").arg(i / 256).arg(i % 256);
+            result.interfaceName = "fixture0";
+            result.hostname = QString("host-%1").arg(i, 4, 10, QChar('0'));
+            result.mac = QString("02:00:%1:%2:%3:%4")
+                             .arg((i >> 24) & 0xff, 2, 16, QChar('0'))
+                             .arg((i >> 16) & 0xff, 2, 16, QChar('0'))
+                             .arg((i >> 8) & 0xff, 2, 16, QChar('0'))
+                             .arg(i & 0xff, 2, 16, QChar('0'));
+            result.vendor = (i % 2 == 0) ? "Even vendor" : "Odd vendor";
+            result.services.append({i % 2 == 0 ? "ssh" : "rdp",
+                                    i % 2 == 0 ? "SSH" : "RDP",
+                                    i % 2 == 0 ? 22 : 3389,
+                                    false,
+                                    i % 2 == 0 ? ServiceEvidenceLevel::VerifiedProtocol
+                                               : ServiceEvidenceLevel::OpenPort});
+            result.detailsText = QString("Details %1").arg(i);
+            window.queueResultForDisplay(result);
+        }
+        while (!window.pendingDisplayResults_.isEmpty() ||
+               window.resultFlushTimer_->isActive()) {
+            QApplication::processEvents(QEventLoop::AllEvents, 20);
+        }
+        bool ordered = window.resultModel_->rowCount() == 4096;
+        qulonglong previousIp = 0;
+        for (int row = 0; row < window.resultModel_->rowCount(); ++row) {
+            const qulonglong current = QHostAddress(
+                window.resultModel_->resultAt(row).ip).toIPv4Address();
+            if (row > 0 && current <= previousIp) {
+                ordered = false;
+                break;
+            }
+            previousIp = current;
+        }
+
+        window.searchInput_->setText("host-20");
+        window.applyTableFilters();
+        int visibleRows = 0;
+        QSet<QString> filteredIdentitiesBeforeSort;
+        for (int row = 0; row < window.resultModel_->rowCount(); ++row) {
+            if (!window.table_->isRowHidden(row)) {
+                ++visibleRows;
+                filteredIdentitiesBeforeSort.insert(window.resultModel_->identityAt(row));
+            }
+        }
+
+        window.table_->sortByColumn(ScannerWindow::ColServices, Qt::AscendingOrder);
+        QApplication::processEvents();
+        bool servicesOrdered = true;
+        QSet<QString> filteredIdentitiesAfterSort;
+        QString previousService;
+        for (int row = 0; row < window.resultModel_->rowCount(); ++row) {
+            const QString current = window.cellText(row, ScannerWindow::ColServices);
+            if (row > 0 && QString::compare(previousService, current,
+                                             Qt::CaseInsensitive) > 0) {
+                servicesOrdered = false;
+                break;
+            }
+            previousService = current;
+            if (!window.table_->isRowHidden(row)) {
+                filteredIdentitiesAfterSort.insert(window.resultModel_->identityAt(row));
+            }
+        }
+
+        window.searchInput_->clear();
+        window.applyTableFilters();
+        window.table_->sortByColumn(ScannerWindow::ColIp, Qt::AscendingOrder);
+        window.table_->scrollTo(window.resultModel_->index(2000, 0),
+                                QAbstractItemView::PositionAtTop);
+        window.table_->setCurrentIndex(window.resultModel_->index(2200, 0));
+        QApplication::processEvents();
+        const ScannerWindow::ViewportAnchor before = window.captureViewportAnchor();
+        const QString selectedBefore = window.rowIdentityKey(
+            window.table_->currentIndex().row());
+
+        ScanResult preceding;
+        preceding.ip = "1.1.1.1";
+        preceding.interfaceName = "fixture0";
+        preceding.hostname = "preceding";
+        window.addOrUpdateResultRow(preceding);
+        QApplication::processEvents();
+        const ScannerWindow::ViewportAnchor after = window.captureViewportAnchor();
+        const QString selectedAfter = window.rowIdentityKey(
+            window.table_->currentIndex().row());
+
+        QList<ScanResult> finalSnapshot;
+        QStringList orderBeforeCompletion;
+        finalSnapshot.reserve(window.resultModel_->rowCount());
+        orderBeforeCompletion.reserve(window.resultModel_->rowCount());
+        for (int row = 0; row < window.resultModel_->rowCount(); ++row) {
+            finalSnapshot.append(window.resultModel_->resultAt(row));
+            orderBeforeCompletion.append(window.resultModel_->identityAt(row));
+        }
+        ScanResult completionOnly;
+        completionOnly.ip = "1.0.0.1";
+        completionOnly.interfaceName = "fixture0";
+        completionOnly.hostname = "completion-only";
+        finalSnapshot.append(completionOnly);
+        const ScannerWindow::ViewportAnchor completionAnchorBefore =
+            window.captureViewportAnchor();
+        const QString completionSelectionBefore = window.rowIdentityKey(
+            window.table_->currentIndex().row());
+        window.beginScanCompletionPresentation(finalSnapshot, false);
+        const bool scanActionDisabledDuringCompletion = !window.scanButton_->isEnabled();
+        while (window.scanCompletionPending_ || window.resultFlushTimer_->isActive()) {
+            QApplication::processEvents(QEventLoop::AllEvents, 20);
+        }
+        const ScannerWindow::ViewportAnchor completionAnchorAfter =
+            window.captureViewportAnchor();
+        const QString completionSelectionAfter = window.rowIdentityKey(
+            window.table_->currentIndex().row());
+        QStringList orderAfterCompletion;
+        orderAfterCompletion.reserve(window.resultModel_->rowCount());
+        for (int row = 0; row < window.resultModel_->rowCount(); ++row) {
+            orderAfterCompletion.append(window.resultModel_->identityAt(row));
+        }
+        orderAfterCompletion.removeAll(neighborIdentityKey(
+            completionOnly.interfaceName, completionOnly.ip));
+
+        bool hasIndexWidget = false;
+        for (int row = 0; row < std::min(20, window.resultModel_->rowCount()); ++row) {
+            hasIndexWidget = hasIndexWidget ||
+                             window.table_->indexWidget(
+                                 window.resultModel_->index(row, ScannerWindow::ColServices)) !=
+                                 nullptr;
+        }
+        QApplication::processEvents();
+        heartbeat.stop();
+        window.hide();
+        QObject::disconnect(resetConnection);
+        return ordered && servicesOrdered && visibleRows > 0 && visibleRows < 4096 &&
+               filteredIdentitiesBeforeSort == filteredIdentitiesAfterSort &&
+               elapsed.elapsed() < 5000 && maximumHeartbeatGapMs < 250 &&
+               modelResetCount == 0 && before.identity == after.identity &&
+               before.pixelOffset == after.pixelOffset &&
+               selectedBefore == selectedAfter && !hasIndexWidget &&
+               completionAnchorBefore.identity == completionAnchorAfter.identity &&
+               completionAnchorBefore.pixelOffset == completionAnchorAfter.pixelOffset &&
+               completionSelectionBefore == completionSelectionAfter &&
+               scanActionDisabledDuringCompletion &&
+               orderBeforeCompletion == orderAfterCompletion &&
+               window.resultModel_->rowCount() == 4098;
+    }
+
+    static bool confirmsDelayedNeighbor(ScannerWindow &window)
+    {
+        QTemporaryDir tools;
+        if (!tools.isValid()) {
+            return false;
+        }
+        QFile fakeIp(tools.filePath("ip"));
+        if (!fakeIp.open(QIODevice::WriteOnly | QIODevice::Text)) {
+            return false;
+        }
+        fakeIp.write(
+            "#!/bin/sh\n"
+            "printf '%s\\n' '[{\"dst\":\"192.0.2.55\",\"dev\":\"fixture0\","
+            "\"lladdr\":\"02:00:00:00:00:55\",\"state\":[\"REACHABLE\"]}]'\n");
+        fakeIp.close();
+        if (!fakeIp.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner |
+                                   QFileDevice::ExeOwner)) {
+            return false;
+        }
+
+        const QByteArray previousPath = qgetenv("PATH");
+        qputenv("PATH", tools.path().toUtf8() + ':' + previousPath);
+        NeighborObservation initial;
+        initial.ip = "192.0.2.55";
+        initial.interfaceName = "fixture0";
+        initial.mac = "02:00:00:00:00:55";
+        initial.state = NeighborState::Delay;
+        ScanOptions options;
+        options.neighborConfirmationMs = 1000;
+        const TargetBudget budget(2000);
+        const NeighborObservation confirmed = window.confirmNeighborLiveness(
+            initial, initial.ip, initial.interfaceName, options, budget, {});
+        qputenv("PATH", previousPath);
+        return confirmed.establishesLiveness() && confirmed.mac == initial.mac;
     }
 
     static std::pair<bool, ServiceEvidenceLevel> probePlainService(
@@ -318,6 +537,8 @@ int main(int argc, char **argv)
     REQUIRE(parserPlan.targetText.size() <= 2048);
     REQUIRE(ScannerWindowTestAccess::preservesInterfaceIdentity(window));
     REQUIRE(ScannerWindowTestAccess::capturesAllScanOptions(window));
+    REQUIRE(ScannerWindowTestAccess::resultScalingContract(window));
+    REQUIRE(ScannerWindowTestAccess::confirmsDelayedNeighbor(window));
 
     const auto verifiedSsh = probeMockEndpoint(window, "ssh", "SSH-2.0-fixture\r\n");
     REQUIRE(verifiedSsh.first);

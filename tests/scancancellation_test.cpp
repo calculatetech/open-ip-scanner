@@ -125,5 +125,11 @@ int main(int argc, char **argv)
     preCancelledSocket.connectToHost(QHostAddress("192.0.2.1"), 65000);
     REQUIRE(cancellable::waitForConnected(preCancelledSocket, 10000, cancelled) ==
             cancellable::WaitResult::Cancelled);
+    REQUIRE(cancelAfter(
+                [&](const cancellable::Flag &flag) {
+                    return cancellable::waitForDelay(10000, flag);
+                },
+                &elapsedMs) == cancellable::WaitResult::Cancelled);
+    REQUIRE(elapsedMs < 500);
     return EXIT_SUCCESS;
 }

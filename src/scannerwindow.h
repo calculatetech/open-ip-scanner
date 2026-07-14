@@ -19,6 +19,7 @@
 #include "scanoptions.h"
 #include "scanbudget.h"
 #include "neighborentry.h"
+#include "scanresult.h"
 #include "serviceevidence.h"
 #include "targetdefaults.h"
 
@@ -33,38 +34,16 @@ class QPushButton;
 class QToolBar;
 class QSplitter;
 class QStringListModel;
-class QTableWidget;
+class QTableView;
 class QTcpSocket;
 class QTextEdit;
+class QTimer;
 class QAction;
 class QCloseEvent;
 class QWidget;
 struct ScannerWindowTestAccess;
-
-struct ServiceHit {
-    // Stable service identifier (e.g. "ssh", "https").
-    QString id;
-    // User-facing label rendered in table/buttons.
-    QString label;
-    // TCP port probed for this service.
-    int port = 0;
-    // True when this service should be opened in a web browser.
-    bool isWeb = false;
-    ServiceEvidenceLevel evidence = ServiceEvidenceLevel::OpenPort;
-};
-
-struct ScanResult {
-    // Core identity fields for a discovered host.
-    QString ip;
-    QString interfaceName;
-    QString mac;
-    QString vendor;
-    QString hostname;
-    // Services found to be reachable on this host.
-    QList<ServiceHit> services;
-    // Multiline detail text shown in the optional details pane.
-    QString detailsText;
-};
+class ResultTableModel;
+class ServiceTagDelegate;
 
 class ScannerWindow : public QMainWindow {
     Q_OBJECT
@@ -81,6 +60,11 @@ private slots:
     void finishScan();
     void updateProgress(int current, int total);
     void addOrUpdateResultRow(const ScanResult &result);
+    void queueResultForDisplay(const ScanResult &result);
+    void flushPendingResults();
+    void beginScanCompletionPresentation(const QList<ScanResult> &finalResults,
+                                         bool wasCanceled);
+    void completeScanPresentation();
     void showTableContextMenu(const QPoint &pos);
     void copySelectedCell();
     void refreshAdapters();
@@ -149,6 +133,12 @@ private:
         bool isWeb = false;
     };
 
+    struct ViewportAnchor {
+        QString identity;
+        int pixelOffset = 0;
+        int scrollValue = 0;
+    };
+
     // Detect routable IPv4 networks and build initial scan defaults.
     QList<NetworkTarget> detectDefaultNetworks() const;
     QList<AdapterInfo> buildAdapters() const;
@@ -179,6 +169,13 @@ private:
                                        const QString &interfaceName,
                                        const TargetBudget &budget,
                                        const std::shared_ptr<std::atomic_bool> &cancelRequested) const;
+    NeighborObservation confirmNeighborLiveness(
+        const NeighborObservation &initial,
+        const QString &ip,
+        const QString &interfaceName,
+        const ScanOptions &options,
+        const TargetBudget &budget,
+        const std::shared_ptr<std::atomic_bool> &cancelRequested) const;
     QString lookupVendor(const QString &mac, const ScanOptions &options) const;
     QString lookupHostname(const QString &ip,
                            const TargetBudget &budget,
@@ -249,6 +246,8 @@ private:
     QString preferredTerminalProgram() const;
     QString rowIdentityKey(int row) const;
     int findRowByIdentity(const QString &identityKey) const;
+    ViewportAnchor captureViewportAnchor() const;
+    void restoreViewportAnchor(const ViewportAnchor &anchor);
     void validateTargetLimitFeedback(const QString &text);
 
     // Utility conversion helpers.
@@ -272,7 +271,9 @@ private:
     QHBoxLayout *toolbarLayout_ = nullptr;
     QLabel *targetsLabel_ = nullptr;
     QLabel *adapterLabel_ = nullptr;
-    QTableWidget *table_ = nullptr;
+    QTableView *table_ = nullptr;
+    ResultTableModel *resultModel_ = nullptr;
+    ServiceTagDelegate *serviceTagDelegate_ = nullptr;
     QWidget *searchBar_ = nullptr;
     QComboBox *searchScopeCombo_ = nullptr;
     QLineEdit *searchInput_ = nullptr;
@@ -304,9 +305,11 @@ private:
     QHash<QString, QString> customOuiVendors_;
 
     std::shared_ptr<std::atomic_bool> cancelRequested_;
-    QHash<QString, QList<ServiceHit>> servicesByIdentity_;
-    QHash<QString, QString> detailsByIdentity_;
+    QList<ScanResult> pendingDisplayResults_;
+    QTimer *resultFlushTimer_ = nullptr;
     QFutureWatcher<QList<ScanResult>> scanWatcher_;
+    bool scanCompletionPending_ = false;
+    bool completedScanWasCanceled_ = false;
     bool scanInProgress_ = false;
     bool closePending_ = false;
 

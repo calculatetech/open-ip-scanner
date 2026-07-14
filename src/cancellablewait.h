@@ -44,6 +44,7 @@ WaitResult waitForProcess(QProcess &process,
 WaitResult waitForConnected(QTcpSocket &socket, int timeoutMs, const Flag &flag);
 WaitResult waitForBytesWritten(QTcpSocket &socket, int timeoutMs, const Flag &flag);
 WaitResult waitForReadyRead(QTcpSocket &socket, int timeoutMs, const Flag &flag);
+WaitResult waitForDelay(int timeoutMs, const Flag &flag);
 QHostInfo lookupHost(const QString &address,
                      int timeoutMs,
                      const Flag &flag,

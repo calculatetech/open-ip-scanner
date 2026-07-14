@@ -20,6 +20,7 @@ struct ScanOptions {
     int pingTimeoutSeconds = 1;
     int serviceAttempts = 2;
     int serviceTimeoutMs = 750;
+    int neighborConfirmationMs = 5500;
     int targetDeadlineMs = 11000;
     int macDisplayFormat = 0;
 

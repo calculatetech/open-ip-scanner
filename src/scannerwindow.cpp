@@ -1,5 +1,7 @@
 #include "scannerwindow.h"
 #include "cancellablewait.h"
+#include "resulttablemodel.h"
+#include "servicetagdelegate.h"
 #include "settingslayout.h"
 
 #include <QAction>
@@ -60,7 +62,7 @@
 #include <QStatusBar>
 #include <QStyle>
 #include <QStringListModel>
-#include <QTableWidget>
+#include <QTableView>
 #include <QTcpSocket>
 #include <QSslError>
 #include <QSslSocket>
@@ -75,6 +77,7 @@
 #include <QToolButton>
 #include <QUrl>
 #include <QVBoxLayout>
+#include <QScrollBar>
 #include <QtConcurrent>
 
 #include <algorithm>
@@ -85,7 +88,6 @@ namespace {
 constexpr int kMaxHostsToScan = 4096;
 constexpr int kMaxParallelProbes = 16;
 constexpr int kSettingsSchemaVersion = 1;
-constexpr int kIdentityRole = Qt::UserRole + 1;
 // Default toolbar layout used on first launch and settings reset.
 const QStringList kToolbarDefaultOrder = {
     "targets_label", "target_input", "scan", "sep", "auto", "find", "terminal", "sep", "adapter_label", "adapter_combo", "refresh"
@@ -94,64 +96,6 @@ const QSet<QString> kToolbarAllowedIds = {
     "targets_label", "target_input", "scan", "sep", "spacer", "auto", "find", "terminal", "adapter_label", "adapter_combo", "refresh"
 };
 const QSet<QString> kToolbarButtonIds = {"scan", "auto", "find", "terminal", "refresh"};
-
-class SortKeyTableWidgetItem : public QTableWidgetItem {
-public:
-    using QTableWidgetItem::QTableWidgetItem;
-
-    bool operator<(const QTableWidgetItem &other) const override
-    {
-        const QVariant lhs = data(Qt::UserRole);
-        const QVariant rhs = other.data(Qt::UserRole);
-        if (lhs.isValid() && rhs.isValid()) {
-            bool lhsOk = false;
-            bool rhsOk = false;
-            const qulonglong lhsNum = lhs.toULongLong(&lhsOk);
-            const qulonglong rhsNum = rhs.toULongLong(&rhsOk);
-            if (lhsOk && rhsOk) {
-                return lhsNum < rhsNum;
-            }
-            return QString::localeAwareCompare(lhs.toString(), rhs.toString()) < 0;
-        }
-        return QTableWidgetItem::operator<(other);
-    }
-};
-
-QColor mutedServiceColor(const QString &serviceId)
-{
-    // Keep service tags distinct without creating a noisy color palette.
-    if (serviceId == "http") return QColor("#476D78");
-    if (serviceId == "https") return QColor("#3E6760");
-    if (serviceId == "ssh") return QColor("#5A5872");
-    if (serviceId == "rdp") return QColor("#6C5C4B");
-    if (serviceId == "ftp") return QColor("#586A55");
-    if (serviceId == "telnet") return QColor("#6D5454");
-    if (serviceId == "smb") return QColor("#5E5D48");
-    if (serviceId == "smtp25") return QColor("#5C5A47");
-    if (serviceId == "smtps465") return QColor("#4F6354");
-    if (serviceId == "smtp587") return QColor("#5A4F63");
-    return QColor("#4E5A63");
-}
-
-QString serviceButtonStyle(const QColor &base)
-{
-    // Shared visual style for in-cell service action buttons.
-    const QColor border = base.lighter(118);
-    const QColor hover = base.lighter(112);
-    const QColor press = base.darker(108);
-    return QString(
-        "QPushButton {"
-        "  color: #F2F4F7;"
-        "  background-color: %1;"
-        "  border: 1px solid %2;"
-        "  border-radius: 4px;"
-        "  padding: 1px 8px;"
-        "  font-size: 11px;"
-        "}"
-        "QPushButton:hover { background-color: %3; }"
-        "QPushButton:pressed { background-color: %4; }")
-        .arg(base.name(), border.name(), hover.name(), press.name());
-}
 
 bool isLinkLocalIpv4(quint32 value)
 {
@@ -256,9 +200,14 @@ ScannerWindow::ScannerWindow(QWidget *parent)
     scanButton_->setToolTip("Start scan");
     scanButton_->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Preferred);
 
-    table_ = new QTableWidget(central);
-    table_->setColumnCount(ColCount);
-    table_->setHorizontalHeaderLabels({"IP Address", "Hostname", "MAC Address", "Vendor", "Services"});
+    resultModel_ = new ResultTableModel(this);
+    resultModel_->setMacFormatter([this](const QString &mac) {
+        return formatMacForDisplay(mac);
+    });
+    table_ = new QTableView(central);
+    table_->setModel(resultModel_);
+    serviceTagDelegate_ = new ServiceTagDelegate(table_);
+    table_->setItemDelegateForColumn(ColServices, serviceTagDelegate_);
     table_->setAlternatingRowColors(true);
     table_->setSelectionBehavior(QAbstractItemView::SelectItems);
     table_->setSelectionMode(QAbstractItemView::SingleSelection);
@@ -267,6 +216,7 @@ ScannerWindow::ScannerWindow(QWidget *parent)
     table_->setSortingEnabled(true);
     table_->horizontalHeader()->setSortIndicatorShown(true);
     table_->sortByColumn(ColIp, Qt::AscendingOrder);
+    table_->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
     table_->setFrameShape(QFrame::StyledPanel);
     table_->setFrameShadow(QFrame::Plain);
     table_->setLineWidth(1);
@@ -280,20 +230,20 @@ ScannerWindow::ScannerWindow(QWidget *parent)
     table_->horizontalHeader()->setContextMenuPolicy(Qt::CustomContextMenu);
 
     table_->setStyleSheet(
-        "QTableWidget {"
+        "QTableView {"
         "  border: 1px solid palette(midlight);"
         "  border-radius: 3px;"
         "  gridline-color: transparent;"
         "}"
-        "QTableWidget::item {"
+        "QTableView::item {"
         "  border: 0px;"
         "}"
-        "QTableWidget::item:selected {"
+        "QTableView::item:selected {"
         "  background-color: #1769d1;"
         "  color: #ffffff;"
         "  border: 0px;"
         "}"
-        "QTableWidget::item:selected:!active {"
+        "QTableView::item:selected:!active {"
         "  background-color: #2f4f7a;"
         "  color: #ffffff;"
         "  border: 0px;"
@@ -372,6 +322,10 @@ ScannerWindow::ScannerWindow(QWidget *parent)
     statusBar()->addWidget(statusTextLabel_, 1);
     statusBar()->addPermanentWidget(statusProgressBar_);
 
+    resultFlushTimer_ = new QTimer(this);
+    resultFlushTimer_->setSingleShot(true);
+    resultFlushTimer_->setInterval(16);
+
     applyDefaultSettings();
     loadOuiDatabase();
     // Internal overrides for local environments and virtual adapters.
@@ -418,10 +372,23 @@ ScannerWindow::ScannerWindow(QWidget *parent)
     connect(&scanWatcher_, &QFutureWatcher<QList<ScanResult>>::finished, this, &ScannerWindow::finishScan);
     connect(table_, &QWidget::customContextMenuRequested, this, &ScannerWindow::showTableContextMenu);
     connect(table_->horizontalHeader(), &QWidget::customContextMenuRequested, this, &ScannerWindow::showHeaderContextMenu);
-    connect(table_, &QTableWidget::cellDoubleClicked, this, &ScannerWindow::handleTableDoubleClick);
-    connect(table_, &QTableWidget::currentCellChanged, this, [this](int, int, int, int) {
+    connect(table_, &QTableView::doubleClicked, this, [this](const QModelIndex &index) {
+        handleTableDoubleClick(index.row(), index.column());
+    });
+    connect(table_->selectionModel(), &QItemSelectionModel::currentChanged, this,
+            [this](const QModelIndex &, const QModelIndex &) {
         updateDetailsPaneForCurrentSelection();
     });
+    connect(serviceTagDelegate_, &ServiceTagDelegate::serviceActivated, this,
+            [this](const QModelIndex &index, int serviceIndex) {
+        const ScanResult result = resultModel_->resultAt(index.row());
+        if (serviceIndex >= 0 && serviceIndex < result.services.size()) {
+            openService(result.ip, result.services.at(serviceIndex));
+        }
+    });
+    connect(resultModel_, &QAbstractItemModel::layoutChanged, this,
+            [this]() { applyTableFilters(); });
+    connect(resultFlushTimer_, &QTimer::timeout, this, &ScannerWindow::flushPendingResults);
 
     auto *copyShortcut = new QShortcut(QKeySequence::Copy, table_);
     connect(copyShortcut, &QShortcut::activated, this, &ScannerWindow::copySelectedCell);
@@ -854,6 +821,9 @@ void ScannerWindow::applyDefaultTargets()
 
 void ScannerWindow::startScan()
 {
+    if (scanCompletionPending_) {
+        return;
+    }
     if (scanWatcher_.isRunning()) {
         if (cancelRequested_) {
             cancelRequested_->store(true);
@@ -935,9 +905,10 @@ void ScannerWindow::startScan()
         return;
     }
 
-    servicesByIdentity_.clear();
-    detailsByIdentity_.clear();
-    table_->setRowCount(0);
+    pendingDisplayResults_.clear();
+    resultFlushTimer_->stop();
+    scanCompletionPending_ = false;
+    resultModel_->clear();
 
     scanInProgress_ = true;
     scanButton_->setToolTip("Stop scan");
@@ -975,10 +946,11 @@ void ScannerWindow::startScan()
                 return;
             }
             QMetaObject::invokeMethod(this, [this, result, scanCancellation]() {
-                if (cancellable::isCancelled(scanCancellation)) {
+                if (cancellable::isCancelled(scanCancellation) ||
+                    scanCompletionPending_ || !scanInProgress_) {
                     return;
                 }
-                addOrUpdateResultRow(result);
+                queueResultForDisplay(result);
             }, Qt::QueuedConnection);
         };
 
@@ -1283,6 +1255,12 @@ QList<ScanResult> ScannerWindow::scanHosts(const ScanOptions &options,
                     if (!alive) {
                         neighbor = lookupNeighbor(
                             ipString, options.interfaceName, budget, cancelRequested);
+                        neighbor = confirmNeighborLiveness(neighbor,
+                                                          ipString,
+                                                          options.interfaceName,
+                                                          options,
+                                                          budget,
+                                                          cancelRequested);
                         if (neighbor.suppliesMacMetadata()) {
                             discoveredMac = neighbor.mac;
                         }
@@ -1464,6 +1442,43 @@ NeighborObservation ScannerWindow::lookupNeighbor(
     Q_UNUSED(cancelRequested)
 #endif
     return {};
+}
+
+NeighborObservation ScannerWindow::confirmNeighborLiveness(
+    const NeighborObservation &initial,
+    const QString &ip,
+    const QString &interfaceName,
+    const ScanOptions &options,
+    const TargetBudget &budget,
+    const std::shared_ptr<std::atomic_bool> &cancelRequested) const
+{
+    NeighborObservation latest = initial;
+    if (!latest.suppliesMacMetadata() || latest.establishesLiveness() ||
+        options.neighborConfirmationMs <= 0 || budget.expired()) {
+        return latest;
+    }
+
+    QElapsedTimer confirmation;
+    confirmation.start();
+    while (confirmation.elapsed() < options.neighborConfirmationMs && !budget.expired()) {
+        const int confirmationRemaining = options.neighborConfirmationMs -
+                                          static_cast<int>(confirmation.elapsed());
+        const int waitMs = std::min({250, confirmationRemaining, budget.remainingMs()});
+        if (waitMs <= 0 ||
+            cancellable::waitForDelay(waitMs, cancelRequested) !=
+                cancellable::WaitResult::Completed) {
+            break;
+        }
+        const NeighborObservation candidate =
+            lookupNeighbor(ip, interfaceName, budget, cancelRequested);
+        if (candidate.suppliesMacMetadata()) {
+            latest = candidate;
+        }
+        if (candidate.establishesLiveness()) {
+            return candidate;
+        }
+    }
+    return latest;
 }
 
 QString ScannerWindow::lookupVendor(const QString &mac, const ScanOptions &options) const
@@ -1722,19 +1737,7 @@ QString ScannerWindow::formatMacForDisplay(const QString &mac, int displayFormat
 
 void ScannerWindow::refreshDisplayedMacAddresses()
 {
-    const QFont mono = QFontDatabase::systemFont(QFontDatabase::FixedFont);
-    for (int row = 0; row < table_->rowCount(); ++row) {
-        QTableWidgetItem *macItem = table_->item(row, ColMac);
-        if (macItem == nullptr) {
-            continue;
-        }
-        macItem->setFont(mono);
-        const QString formatted = formatMacForDisplay(macItem->text());
-        macItem->setText(formatted);
-        bool ok = false;
-        const qulonglong sortKey = normalizeMacHex12(formatted).toULongLong(&ok, 16);
-        macItem->setData(Qt::UserRole, ok ? QVariant(sortKey) : QVariant());
-    }
+    resultModel_->notifyMacFormatChanged();
     applyTableColumnSizing();
 }
 
@@ -2101,46 +2104,30 @@ void ScannerWindow::finishScan()
         QTimer::singleShot(0, this, &QWidget::close);
         return;
     }
-    const bool sortingEnabled = table_->isSortingEnabled();
-    const int sortSectionBefore = table_->horizontalHeader()->sortIndicatorSection();
-    const Qt::SortOrder sortOrderBefore = table_->horizontalHeader()->sortIndicatorOrder();
-    const QString selectedIdentityBefore = rowIdentityKey(table_->currentRow());
-    const int selectedColBefore = std::max(0, table_->currentColumn());
-    table_->setUpdatesEnabled(false);
-    if (sortingEnabled) {
-        table_->setSortingEnabled(false);
-    }
+    beginScanCompletionPresentation(finalResults, wasCanceled);
+}
 
-    // Rebuild from final authoritative results to avoid UI race/drift from incremental updates.
-    table_->setRowCount(0);
-    servicesByIdentity_.clear();
-    detailsByIdentity_.clear();
-    for (const ScanResult &result : finalResults) {
-        addOrUpdateResultRow(result);
+void ScannerWindow::beginScanCompletionPresentation(
+    const QList<ScanResult> &finalResults,
+    bool wasCanceled)
+{
+    pendingDisplayResults_.clear();
+    resultFlushTimer_->stop();
+    pendingDisplayResults_ = finalResults;
+    completedScanWasCanceled_ = wasCanceled;
+    scanCompletionPending_ = true;
+    scanButton_->setEnabled(false);
+    scanButton_->setToolTip("Finalizing results");
+    if (pendingDisplayResults_.isEmpty()) {
+        completeScanPresentation();
+    } else {
+        resultFlushTimer_->start(0);
     }
+}
 
-    if (sortingEnabled) {
-        int section = sortSectionBefore;
-        Qt::SortOrder order = sortOrderBefore;
-        if (section < 0) {
-            section = ColIp;
-            order = Qt::AscendingOrder;
-        }
-        table_->setSortingEnabled(true);
-        table_->horizontalHeader()->setSortIndicator(section, order);
-        table_->sortItems(section, order);
-    }
-    if (!selectedIdentityBefore.isEmpty()) {
-        const int selectedRow = findRowByIdentity(selectedIdentityBefore);
-        if (selectedRow >= 0) {
-            table_->setCurrentCell(selectedRow, selectedColBefore);
-        }
-    }
-    table_->setUpdatesEnabled(true);
-    applyTableFilters();
-    applyTableColumnSizing();
-    updateDetailsPaneForCurrentSelection();
-
+void ScannerWindow::completeScanPresentation()
+{
+    scanCompletionPending_ = false;
     scanInProgress_ = false;
     scanButton_->setToolTip("Start scan");
     applyToolbarDisplayMode();
@@ -2152,14 +2139,14 @@ void ScannerWindow::finishScan()
 
     statusProgressBar_->setVisible(false);
 
-    if (table_->rowCount() == 0) {
-        showStatusMessage(wasCanceled
+    if (resultModel_->rowCount() == 0) {
+        showStatusMessage(completedScanWasCanceled_
                               ? "Scan stopped. No responding hosts detected."
                               : "Scan complete. No responding hosts detected.");
     } else {
-        showStatusMessage(wasCanceled
-                              ? QString("Scan stopped. %1 host(s) detected.").arg(table_->rowCount())
-                              : QString("Scan complete. %1 host(s) detected.").arg(table_->rowCount()));
+        showStatusMessage(completedScanWasCanceled_
+                              ? QString("Scan stopped. %1 host(s) detected.").arg(resultModel_->rowCount())
+                              : QString("Scan complete. %1 host(s) detected.").arg(resultModel_->rowCount()));
     }
 
     cancelRequested_.reset();
@@ -2176,166 +2163,44 @@ void ScannerWindow::addOrUpdateResultRow(const ScanResult &result)
     if (result.ip.isEmpty()) {
         return;
     }
+    const ViewportAnchor anchor = captureViewportAnchor();
+    resultModel_->upsertResult(result);
+    applyTableFilters();
+    restoreViewportAnchor(anchor);
+    updateDetailsPaneForCurrentSelection();
+}
 
-    const QFont mono = QFontDatabase::systemFont(QFontDatabase::FixedFont);
-    const QString hostnameText = result.hostname.isEmpty() ? QString("Unknown") : result.hostname;
-    const QString macText = formatMacForDisplay(result.mac);
-    const QString vendorText = result.vendor.isEmpty() ? QString("Unknown") : result.vendor;
-    const QString identityKey = neighborIdentityKey(result.interfaceName, result.ip);
-    const qulonglong ipSortKey = static_cast<qulonglong>(ipv4ToInt(QHostAddress(result.ip)));
-    qulonglong macSortKey = 0;
-    bool hasMacSortKey = false;
-    const QString macHex = normalizeMacHex12(result.mac);
-    if (!macHex.isEmpty()) {
-        macSortKey = macHex.toULongLong(&hasMacSortKey, 16);
+void ScannerWindow::queueResultForDisplay(const ScanResult &result)
+{
+    if (result.ip.isEmpty()) {
+        return;
     }
-    if (!result.services.isEmpty() || !servicesByIdentity_.contains(identityKey)) {
-        servicesByIdentity_[identityKey] = result.services;
+    pendingDisplayResults_.append(result);
+    if (!resultFlushTimer_->isActive()) {
+        resultFlushTimer_->start();
     }
-    if (!result.detailsText.isEmpty() || !detailsByIdentity_.contains(identityKey)) {
-        detailsByIdentity_[identityKey] = result.detailsText;
-    }
+}
 
-    // Temporarily disable sorting while mutating rows to keep row lookup stable.
-    const bool sortingEnabled = table_->isSortingEnabled();
-    int sortColumn = table_->horizontalHeader()->sortIndicatorSection();
-    Qt::SortOrder sortOrder = table_->horizontalHeader()->sortIndicatorOrder();
-    if (sortColumn < 0) {
-        sortColumn = ColIp;
-        sortOrder = Qt::AscendingOrder;
+void ScannerWindow::flushPendingResults()
+{
+    constexpr int kMaximumRowsPerUiTurn = 64;
+    if (pendingDisplayResults_.isEmpty()) {
+        return;
     }
-    if (sortingEnabled) {
-        table_->setSortingEnabled(false);
-    }
-    const int selectedRow = table_->currentRow();
-    const int selectedColumn = std::max(0, table_->currentColumn());
-    const QString selectedIdentity = rowIdentityKey(selectedRow);
-
-    const int existingRow = findRowByIdentity(identityKey);
-    if (existingRow >= 0) {
-        const int row = existingRow;
-
-        QTableWidgetItem *hostItem = table_->item(row, ColHostname);
-        QTableWidgetItem *macItem = table_->item(row, ColMac);
-        QTableWidgetItem *vendorItem = table_->item(row, ColVendor);
-        QTableWidgetItem *svcItem = table_->item(row, ColServices);
-        QTableWidgetItem *ipItem = table_->item(row, ColIp);
-
-        if (ipItem == nullptr) {
-            ipItem = new SortKeyTableWidgetItem(result.ip);
-            ipItem->setFont(mono);
-            table_->setItem(row, ColIp, ipItem);
-        }
-        if (hostItem == nullptr) {
-            hostItem = new QTableWidgetItem;
-            table_->setItem(row, ColHostname, hostItem);
-        }
-        if (macItem == nullptr) {
-            macItem = new SortKeyTableWidgetItem;
-            macItem->setFont(mono);
-            table_->setItem(row, ColMac, macItem);
-        }
-        if (vendorItem == nullptr) {
-            vendorItem = new QTableWidgetItem;
-            table_->setItem(row, ColVendor, vendorItem);
-        }
-        if (svcItem == nullptr) {
-            svcItem = new QTableWidgetItem;
-            table_->setItem(row, ColServices, svcItem);
-        }
-
-        ipItem->setText(result.ip);
-        ipItem->setData(Qt::UserRole, ipSortKey);
-        ipItem->setData(kIdentityRole, identityKey);
-        if ((hostItem->text().isEmpty() || hostItem->text() == "Unknown") && hostnameText != "Unknown") {
-            hostItem->setText(hostnameText);
-        }
-        if ((macItem->text().isEmpty() || macItem->text() == "Unknown") && macText != "Unknown") {
-            macItem->setText(macText);
-        }
-        macItem->setData(Qt::UserRole, hasMacSortKey ? QVariant(macSortKey) : QVariant());
-        if ((vendorItem->text().isEmpty() || vendorItem->text() == "Unknown") && vendorText != "Unknown") {
-            vendorItem->setText(vendorText);
-        }
-        svcItem->setText({});
-        if (QWidget *oldWidget = table_->cellWidget(row, ColServices)) {
-            table_->removeCellWidget(row, ColServices);
-            oldWidget->deleteLater();
-        }
-        const QList<ServiceHit> displayServices = servicesByIdentity_.value(identityKey);
-        if (!displayServices.isEmpty()) {
-            auto *svcContainer = new QWidget(table_);
-            auto *svcLayout = new QHBoxLayout(svcContainer);
-            svcLayout->setContentsMargins(2, 0, 2, 0);
-            svcLayout->setSpacing(4);
-            for (const ServiceHit &service : displayServices) {
-                auto *button = new QPushButton(
-                    serviceEvidenceText(service.label, service.port, service.evidence),
-                    svcContainer);
-                button->setCursor(Qt::PointingHandCursor);
-                button->setFocusPolicy(Qt::NoFocus);
-                button->setStyleSheet(serviceButtonStyle(mutedServiceColor(service.id)));
-                connect(button, &QPushButton::clicked, this, [this, ip = result.ip, service]() {
-                    openService(ip, service);
-                });
-                svcLayout->addWidget(button);
-            }
-            svcLayout->addStretch(1);
-            table_->setCellWidget(row, ColServices, svcContainer);
-        }
-    } else {
-        const int row = table_->rowCount();
-        table_->insertRow(row);
-        auto *ipItem = new SortKeyTableWidgetItem(result.ip);
-        ipItem->setFont(mono);
-        ipItem->setData(Qt::UserRole, ipSortKey);
-        ipItem->setData(kIdentityRole, identityKey);
-        table_->setItem(row, ColIp, ipItem);
-        table_->setItem(row, ColHostname, new QTableWidgetItem(hostnameText));
-        auto *macItem = new SortKeyTableWidgetItem(macText);
-        macItem->setFont(mono);
-        macItem->setData(Qt::UserRole, hasMacSortKey ? QVariant(macSortKey) : QVariant());
-        table_->setItem(row, ColMac, macItem);
-        table_->setItem(row, ColVendor, new QTableWidgetItem(vendorText));
-        table_->setItem(row, ColServices, new QTableWidgetItem(QString()));
-        const QList<ServiceHit> displayServices = servicesByIdentity_.value(identityKey);
-        if (!displayServices.isEmpty()) {
-            auto *svcContainer = new QWidget(table_);
-            auto *svcLayout = new QHBoxLayout(svcContainer);
-            svcLayout->setContentsMargins(2, 0, 2, 0);
-            svcLayout->setSpacing(4);
-            for (const ServiceHit &service : displayServices) {
-                auto *button = new QPushButton(
-                    serviceEvidenceText(service.label, service.port, service.evidence),
-                    svcContainer);
-                button->setCursor(Qt::PointingHandCursor);
-                button->setFocusPolicy(Qt::NoFocus);
-                button->setStyleSheet(serviceButtonStyle(mutedServiceColor(service.id)));
-                connect(button, &QPushButton::clicked, this, [this, ip = result.ip, service]() {
-                    openService(ip, service);
-                });
-                svcLayout->addWidget(button);
-            }
-            svcLayout->addStretch(1);
-            table_->setCellWidget(row, ColServices, svcContainer);
-        }
-    }
-
-    if (sortingEnabled) {
-        // Restore the user's active sort after row insert/update.
-        table_->setSortingEnabled(true);
-        table_->horizontalHeader()->setSortIndicator(sortColumn, sortOrder);
-        table_->sortItems(sortColumn, sortOrder);
-    }
-    if (!selectedIdentity.isEmpty()) {
-        const int newRow = findRowByIdentity(selectedIdentity);
-        if (newRow >= 0) {
-            table_->setCurrentCell(newRow, selectedColumn);
-        }
+    const ViewportAnchor anchor = captureViewportAnchor();
+    const int count = std::min(kMaximumRowsPerUiTurn,
+                               static_cast<int>(pendingDisplayResults_.size()));
+    for (int i = 0; i < count; ++i) {
+        resultModel_->upsertResult(pendingDisplayResults_.takeLast());
     }
     applyTableFilters();
-    applyTableColumnSizing();
+    restoreViewportAnchor(anchor);
     updateDetailsPaneForCurrentSelection();
+    if (!pendingDisplayResults_.isEmpty()) {
+        resultFlushTimer_->start(0);
+    } else if (scanCompletionPending_) {
+        completeScanPresentation();
+    }
 }
 
 void ScannerWindow::handleTableDoubleClick(int row, int column)
@@ -2344,8 +2209,9 @@ void ScannerWindow::handleTableDoubleClick(int row, int column)
         return;
     }
 
-    const QString ip = cellText(row, ColIp);
-    const QList<ServiceHit> services = servicesByIdentity_.value(rowIdentityKey(row));
+    const ScanResult result = resultModel_->resultAt(row);
+    const QString ip = result.ip;
+    const QList<ServiceHit> services = result.services;
     if (services.isEmpty()) {
         return;
     }
@@ -2375,10 +2241,11 @@ void ScannerWindow::showTableContextMenu(const QPoint &pos)
         return;
     }
 
-    table_->setCurrentCell(index.row(), index.column());
+    table_->setCurrentIndex(index);
 
-    const QString ip = cellText(index.row(), ColIp);
-    const QList<ServiceHit> services = servicesByIdentity_.value(rowIdentityKey(index.row()));
+    const ScanResult result = resultModel_->resultAt(index.row());
+    const QString ip = result.ip;
+    const QList<ServiceHit> services = result.services;
 
     QMenu menu(this);
     QAction *copyCellAction = menu.addAction("Copy Cell");
@@ -2456,8 +2323,8 @@ void ScannerWindow::showHeaderContextMenu(const QPoint &pos)
 
     QMenu menu(this);
     for (int col = 0; col < ColCount; ++col) {
-        QTableWidgetItem *headerItem = table_->horizontalHeaderItem(col);
-        const QString title = (headerItem != nullptr) ? headerItem->text() : QString("Column %1").arg(col + 1);
+        const QString title = resultModel_->headerData(
+            col, Qt::Horizontal, Qt::DisplayRole).toString();
         QAction *action = menu.addAction(title);
         action->setCheckable(true);
         action->setChecked(!table_->isColumnHidden(col));
@@ -2508,17 +2375,17 @@ void ScannerWindow::toggleSearchBar()
 
 void ScannerWindow::copySelectedCell()
 {
-    const QTableWidgetItem *item = table_->currentItem();
-    if (item == nullptr) {
+    const QModelIndex current = table_->currentIndex();
+    if (!current.isValid()) {
         return;
     }
 
-    copyCellText(item->row(), item->column());
+    copyCellText(current.row(), current.column());
 }
 
 void ScannerWindow::applyTableFilters()
 {
-    for (int row = 0; row < table_->rowCount(); ++row) {
+    for (int row = 0; row < resultModel_->rowCount(); ++row) {
         table_->setRowHidden(row, !rowMatchesFilters(row));
     }
 }
@@ -2582,23 +2449,16 @@ void ScannerWindow::copyCellText(int row, int column) const
 
 QString ScannerWindow::cellText(int row, int column) const
 {
-    if (column == ColServices) {
-        const QTableWidgetItem *ipItem = table_->item(row, ColIp);
-        if (ipItem != nullptr) {
-            return serviceText(servicesByIdentity_.value(rowIdentityKey(row)));
-        }
-    }
-
-    const QTableWidgetItem *item = table_->item(row, column);
-    if (item == nullptr) {
+    const QModelIndex index = resultModel_->index(row, column);
+    if (!index.isValid()) {
         return {};
     }
-    return item->text();
+    return index.data(Qt::DisplayRole).toString();
 }
 
 void ScannerWindow::exportCsv()
 {
-    if (table_->rowCount() == 0) {
+    if (resultModel_->rowCount() == 0) {
         QMessageBox::warning(this, "Export CSV", "Nothing to export. Run a scan first.");
         return;
     }
@@ -2619,12 +2479,12 @@ void ScannerWindow::exportCsv()
 
     QStringList headers;
     for (int col : columns) {
-        QTableWidgetItem *headerItem = table_->horizontalHeaderItem(col);
-        headers.append(csvEscape(headerItem == nullptr ? QString("Column%1").arg(col) : headerItem->text()));
+        headers.append(csvEscape(resultModel_->headerData(
+            col, Qt::Horizontal, Qt::DisplayRole).toString()));
     }
     out << headers.join(',') << '\n';
 
-    for (int row = 0; row < table_->rowCount(); ++row) {
+    for (int row = 0; row < resultModel_->rowCount(); ++row) {
         QStringList fields;
         for (int col : columns) {
             fields.append(csvEscape(cellText(row, col)));
@@ -2637,7 +2497,7 @@ void ScannerWindow::exportCsv()
 
 void ScannerWindow::printTable()
 {
-    if (table_->rowCount() == 0) {
+    if (resultModel_->rowCount() == 0) {
         QMessageBox::warning(this, "Print", "Nothing to print. Run a scan first.");
         return;
     }
@@ -2652,12 +2512,12 @@ void ScannerWindow::printTable()
     QString html = "<html><body><h3>Open IP Scanner Results</h3><table border='1' cellspacing='0' cellpadding='4'><tr>";
     const QList<int> columns = visibleColumnsInDisplayOrder();
     for (int col : columns) {
-        QTableWidgetItem *header = table_->horizontalHeaderItem(col);
-        html += QString("<th>%1</th>").arg((header ? header->text() : QString("Column%1").arg(col)).toHtmlEscaped());
+        html += QString("<th>%1</th>").arg(resultModel_->headerData(
+            col, Qt::Horizontal, Qt::DisplayRole).toString().toHtmlEscaped());
     }
     html += "</tr>";
 
-    for (int row = 0; row < table_->rowCount(); ++row) {
+    for (int row = 0; row < resultModel_->rowCount(); ++row) {
         html += "<tr>";
         for (int col : columns) {
             html += QString("<td>%1</td>").arg(cellText(row, col).toHtmlEscaped());
@@ -3220,8 +3080,9 @@ void ScannerWindow::showHelpDialog()
         "<p><b>Performance:</b> Worker count controls parallel host probing. "
         "Higher values scan faster but increase network load.</p>"
         "<p><b>Accuracy:</b> Fast performs one short probe pass for a quick lay of the land. "
-        "Balanced through Maximum progressively repeat ping and port probes and wait longer "
-        "for intermittent, sleeping, or slower devices.</p>"
+        "Balanced through Maximum progressively repeat ping and port probes and allow cached "
+        "neighbor evidence time to become actively confirmed for intermittent, sleeping, or "
+        "slower devices.</p>"
         "<p><b>Services:</b> Enable/disable per-port probing and configure launch commands in "
         "Settings &rarr; Programs. An unverified connection is shown as "
         "<code>Unknown:&lt;port&gt;</code>; a service name appears after a bounded protocol check "
@@ -3272,6 +3133,7 @@ ScanOptions ScannerWindow::captureScanOptions(const AdapterInfo &adapter) const
     options.pingTimeoutSeconds = budget.pingTimeoutSeconds;
     options.serviceAttempts = budget.serviceAttempts;
     options.serviceTimeoutMs = budget.serviceTimeoutMs;
+    options.neighborConfirmationMs = budget.neighborConfirmationMs;
     options.macDisplayFormat = macDisplayFormat_;
     options.enabledServiceIds = enabledServiceIds_;
     int serviceWaitUnits = 0;
@@ -3667,21 +3529,49 @@ void ScannerWindow::applyToolbarDisplayMode()
 
 QString ScannerWindow::rowIdentityKey(int row) const
 {
-    if (row < 0) {
-        return {};
-    }
-    const QTableWidgetItem *item = table_->item(row, ColIp);
-    return item == nullptr ? QString() : item->data(kIdentityRole).toString();
+    return resultModel_->identityAt(row);
 }
 
 int ScannerWindow::findRowByIdentity(const QString &identityKey) const
 {
-    for (int row = 0; row < table_->rowCount(); ++row) {
-        if (rowIdentityKey(row) == identityKey) {
-            return row;
+    return resultModel_->rowForIdentity(identityKey);
+}
+
+ScannerWindow::ViewportAnchor ScannerWindow::captureViewportAnchor() const
+{
+    ViewportAnchor anchor;
+    anchor.scrollValue = table_->verticalScrollBar()->value();
+    QModelIndex top = table_->indexAt(QPoint(1, 1));
+    if (!top.isValid()) {
+        for (int row = 0; row < resultModel_->rowCount(); ++row) {
+            if (!table_->isRowHidden(row)) {
+                top = resultModel_->index(row, 0);
+                break;
+            }
         }
     }
-    return -1;
+    if (top.isValid()) {
+        anchor.identity = rowIdentityKey(top.row());
+        anchor.pixelOffset = table_->visualRect(top).top();
+    }
+    return anchor;
+}
+
+void ScannerWindow::restoreViewportAnchor(const ViewportAnchor &anchor)
+{
+    if (anchor.identity.isEmpty()) {
+        table_->verticalScrollBar()->setValue(anchor.scrollValue);
+        return;
+    }
+    const int row = findRowByIdentity(anchor.identity);
+    if (row < 0 || table_->isRowHidden(row)) {
+        table_->verticalScrollBar()->setValue(anchor.scrollValue);
+        return;
+    }
+    const QModelIndex index = resultModel_->index(row, 0);
+    table_->scrollTo(index, QAbstractItemView::PositionAtTop);
+    table_->verticalScrollBar()->setValue(
+        table_->verticalScrollBar()->value() - anchor.pixelOffset);
 }
 
 void ScannerWindow::setDetailsPaneVisible(bool visible)
@@ -3703,13 +3593,13 @@ void ScannerWindow::updateDetailsPaneForCurrentSelection()
         return;
     }
 
-    const QTableWidgetItem *item = table_->currentItem();
-    if (item == nullptr) {
+    const QModelIndex current = table_->currentIndex();
+    if (!current.isValid()) {
         detailsPane_->setPlainText("Select a device to view details.");
         return;
     }
 
-    const QString details = detailsByIdentity_.value(rowIdentityKey(item->row()));
+    const QString details = resultModel_->resultAt(current.row()).detailsText;
     if (details.trimmed().isEmpty()) {
         detailsPane_->setPlainText("No details available for selected device.");
         return;
@@ -3727,10 +3617,6 @@ void ScannerWindow::applyTableColumnSizing()
 
     table_->setColumnWidth(ColIp, std::max(table_->columnWidth(ColIp), ipWidth));
     table_->setColumnWidth(ColMac, std::max(table_->columnWidth(ColMac), macWidth));
-    table_->resizeColumnToContents(ColIp);
-    table_->resizeColumnToContents(ColMac);
-    table_->resizeColumnToContents(ColVendor);
-
     const int minHost = 220;
     if (table_->columnWidth(ColHostname) < minHost) {
         table_->setColumnWidth(ColHostname, minHost);
