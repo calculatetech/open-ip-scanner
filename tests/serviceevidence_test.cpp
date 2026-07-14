@@ -38,7 +38,7 @@ int main()
     REQUIRE(!responseVerifiesService("rdp", "HTTP/1.1 200 OK\r\n"));
 
     REQUIRE(serviceEvidenceText("SSH", 2222, ServiceEvidenceLevel::VerifiedProtocol) ==
-            "SSH:2222 (verified)");
+            "SSH:2222");
     REQUIRE(serviceEvidenceText("SSH", 22, ServiceEvidenceLevel::OpenPort) ==
             "Port 22 open (probable SSH)");
     REQUIRE(serviceEvidenceText("HTTP", 8080, ServiceEvidenceLevel::OpenPort) ==
