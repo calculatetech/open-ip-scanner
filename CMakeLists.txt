@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.28)
-project(OpenIpScanner VERSION 0.5.16 LANGUAGES CXX)
+project(OpenIpScanner VERSION 0.5.17 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -71,6 +71,8 @@ target_link_libraries(ois_linux
     PRIVATE Qt6::DBus)
 
 add_library(ois_ui STATIC
+    src/devicepresentation.h
+    src/devicepresentation.cpp
     src/resulttablemodel.h
     src/resulttablemodel.cpp
     src/servicetagdelegate.h
@@ -142,6 +144,10 @@ if(BUILD_TESTING)
     target_link_libraries(production_host_backend_test PRIVATE ois_scan)
     add_test(NAME production_host_backend_contract
         COMMAND production_host_backend_test)
+
+    add_executable(device_presentation_test tests/devicepresentation_test.cpp)
+    target_link_libraries(device_presentation_test PRIVATE ois_ui)
+    add_test(NAME device_presentation_contract COMMAND device_presentation_test)
 
     add_executable(scan_cancellation_test tests/scancancellation_test.cpp)
     target_link_libraries(scan_cancellation_test PRIVATE ois_linux)

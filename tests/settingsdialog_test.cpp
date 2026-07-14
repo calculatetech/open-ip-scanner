@@ -470,7 +470,7 @@ struct ScannerWindowTestAccess {
 
         window.accuracyLevel_ = 1;
         window.maxParallelProbes_ = 7;
-        window.macDisplayFormat_ = ScannerWindow::MacPlainLower;
+        window.macDisplayFormat_ = MacPlainLower;
         window.enabledServiceIds_ = {"http", "smtp587", "rdp"};
         window.builtInOuiVendors_ = {{"AABBCC", "Built in fixture"}};
         window.customOuiVendors_ = {{"DDEEFF", "Custom fixture"}};
@@ -548,7 +548,7 @@ struct ScannerWindowTestAccess {
                             false,
                             ServiceEvidenceLevel::OpenPort}};
         ScanOptions options;
-        result.detailsText = window.collectDeviceDetails(result, options);
+        result.detailsText = deviceDetailsHtml(result, options.macDisplayFormat);
         window.resultModel_->clear();
         window.resultModel_->upsertResult(result);
         const QString tableHostname = window.resultModel_
@@ -592,7 +592,7 @@ struct ScannerWindowTestAccess {
         window.resultModel_->upsertResult(ptr);
         const ScanResult merged = window.resultModel_->resultAt(0);
         ScanOptions options;
-        const QString html = window.collectDeviceDetails(merged, options);
+        const QString html = deviceDetailsHtml(merged, options.macDisplayFormat);
         return merged.hostname == "fixture.example" &&
                merged.hostnameEvidence.size() == 2 &&
                html.contains("fixture.example") && html.contains("(PTR)") &&

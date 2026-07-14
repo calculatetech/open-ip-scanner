@@ -16,6 +16,7 @@
 #include <memory>
 
 #include "scanoptions.h"
+#include "devicepresentation.h"
 #include "scanengine.h"
 #include "productionhostscanbackend.h"
 #include "scanbudget.h"
@@ -95,16 +96,6 @@ private:
         ColCount = 5
     };
 
-    enum MacDisplayFormat {
-        MacColonUpper = 0,
-        MacColonLower = 1,
-        MacHyphenUpper = 2,
-        MacHyphenLower = 3,
-        MacCiscoDot = 4,
-        MacPlainUpper = 5,
-        MacPlainLower = 6
-    };
-
     struct NetworkTarget {
         // Network base and prefix selected for scanning.
         QHostAddress baseAddress;
@@ -160,11 +151,9 @@ private:
         const std::function<void(const ScanResult &)> &onResult) const;
 
     // Host discovery helpers.
-    QString lookupVendor(const QString &mac, const ScanOptions &options) const;
     QString lookupGatewayIp(const QString &interfaceName) const;
 
     // Service detection and details enrichment.
-    QString collectDeviceDetails(const ScanResult &result, const ScanOptions &options) const;
     void updateDetailsPaneForCurrentSelection();
     QList<ResolverEvent> resolverEventsForDisplayedResults() const;
     QByteArray resolverSupportBundle() const;
@@ -185,7 +174,6 @@ private:
     void showStatusMessage(const QString &text);
     void applyTableColumnSizing();
     static QString normalizeOuiPrefix(const QString &prefix);
-    static QString normalizeMacHex12(const QString &mac);
     static QHash<QString, QStringList> parseAdapterDnsDomains(
         const QByteArray &json);
     QString accuracyLabel() const;

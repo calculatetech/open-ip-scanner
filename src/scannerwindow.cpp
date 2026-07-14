@@ -2,6 +2,7 @@
 #include "cancellablewait.h"
 #include "csvexporter.h"
 #include "debugscanfixture.h"
+#include "devicepresentation.h"
 #include "hostnameresolver.h"
 #include "mdnsresolver.h"
 #include "linuxneighborprobe.h"
@@ -1197,9 +1198,11 @@ QList<ScanResult> ScannerWindow::scanHosts(const ScanOptions &options,
                                               budget,
                                               cancellation);
     };
-    dependencies.vendor = [this](const QString &mac,
-                                 const ScanOptions &scanOptions) {
-        return lookupVendor(mac, scanOptions);
+    dependencies.vendor = [](const QString &mac,
+                             const ScanOptions &scanOptions) {
+        return OuiDatabase::lookup(mac,
+                                   scanOptions.customOuiVendors,
+                                   scanOptions.builtInOuiVendors);
     };
     dependencies.hostname = [hostnameResolver](
                                 const QString &ip,
@@ -1215,9 +1218,9 @@ QList<ScanResult> ScannerWindow::scanHosts(const ScanOptions &options,
                                          budget,
                                          cancellation);
     };
-    dependencies.details = [this](const ScanResult &result,
-                                  const ScanOptions &scanOptions) {
-        return collectDeviceDetails(result, scanOptions);
+    dependencies.details = [](const ScanResult &result,
+                              const ScanOptions &scanOptions) {
+        return deviceDetailsHtml(result, scanOptions.macDisplayFormat);
     };
     ProductionHostScanBackend backend(options, gatewayIp, std::move(dependencies));
     return ScanEngine::run(hosts,
@@ -1226,12 +1229,6 @@ QList<ScanResult> ScannerWindow::scanHosts(const ScanOptions &options,
                            backend,
                            onProgress,
                            onResult);
-}
-
-QString ScannerWindow::lookupVendor(const QString &mac, const ScanOptions &options) const
-{
-    return OuiDatabase::lookup(
-        mac, options.customOuiVendors, options.builtInOuiVendors);
 }
 
 QString ScannerWindow::lookupGatewayIp(const QString &interfaceName) const
@@ -1272,23 +1269,6 @@ QString ScannerWindow::serviceText(const QList<ServiceHit> &services) const
     return parts.join(", ");
 }
 
-QString ScannerWindow::normalizeMacHex12(const QString &mac)
-{
-    QString hex = mac.toUpper();
-    hex.remove(':');
-    hex.remove('-');
-    hex.remove('.');
-    if (hex.size() != 12) {
-        return {};
-    }
-    for (const QChar ch : hex) {
-        if (!((ch >= '0' && ch <= '9') || (ch >= 'A' && ch <= 'F'))) {
-            return {};
-        }
-    }
-    return hex;
-}
-
 QString ScannerWindow::formatMacForDisplay(const QString &mac) const
 {
     return formatMacForDisplay(mac, macDisplayFormat_);
@@ -1296,105 +1276,13 @@ QString ScannerWindow::formatMacForDisplay(const QString &mac) const
 
 QString ScannerWindow::formatMacForDisplay(const QString &mac, int displayFormat) const
 {
-    if (mac.isEmpty() || mac == "Unknown") {
-        return "Unknown";
-    }
-    const QString hex = normalizeMacHex12(mac);
-    if (hex.isEmpty()) {
-        return mac;
-    }
-
-    auto pairJoin = [](const QString &input, const QString &sep) {
-        QStringList parts;
-        for (int i = 0; i < 12; i += 2) {
-            parts.append(input.mid(i, 2));
-        }
-        return parts.join(sep);
-    };
-
-    switch (displayFormat) {
-    case MacColonLower:
-        return pairJoin(hex.toLower(), ":");
-    case MacHyphenUpper:
-        return pairJoin(hex, "-");
-    case MacHyphenLower:
-        return pairJoin(hex.toLower(), "-");
-    case MacCiscoDot:
-        return QString("%1.%2.%3").arg(hex.mid(0, 4), hex.mid(4, 4), hex.mid(8, 4)).toLower();
-    case MacPlainUpper:
-        return hex;
-    case MacPlainLower:
-        return hex.toLower();
-    case MacColonUpper:
-    default:
-        return pairJoin(hex, ":");
-    }
+    return formatMacAddress(mac, displayFormat);
 }
 
 void ScannerWindow::refreshDisplayedMacAddresses()
 {
     resultModel_->notifyMacFormatChanged();
     applyTableColumnSizing();
-}
-
-QString ScannerWindow::collectDeviceDetails(const ScanResult &result,
-                                            const ScanOptions &options) const
-{
-    const auto escaped = [](const QString &text) { return text.toHtmlEscaped(); };
-    QString html = "<table cellspacing='2' cellpadding='2'>";
-    html += QString("<tr><td><b>IP:</b></td><td>%1</td><td></td></tr>")
-                .arg(escaped(result.ip));
-
-    QList<HostnameDisplayRow> hostnameRows = hostnameDisplayRows(
-        result.hostnameEvidence);
-    if (hostnameRows.isEmpty() && !normalizedHostnameKey(result.hostname).isEmpty()) {
-        hostnameRows.append({result.hostname,
-                             {hostnameSourceLabel(result.hostnameSource)},
-                             true});
-    }
-    if (hostnameRows.isEmpty()) {
-        html += "<tr><td><b>Hostname(s):</b></td><td>Unknown</td><td></td></tr>";
-    } else {
-        for (int index = 0; index < hostnameRows.size(); ++index) {
-            const HostnameDisplayRow &row = hostnameRows.at(index);
-            const QString heading = index == 0 ? "<b>Hostname(s):</b>" : QString();
-            const QString sources = row.sourceLabels.isEmpty()
-                                        ? QString()
-                                        : QString("(%1)").arg(
-                                              escaped(row.sourceLabels.join(", ")));
-            const QString hostnameWithSources = sources.isEmpty()
-                                                    ? escaped(row.hostname)
-                                                    : QString("%1 %2").arg(
-                                                          escaped(row.hostname), sources);
-            html += QString("<tr><td>%1</td><td>%2</td><td></td></tr>")
-                        .arg(heading, hostnameWithSources);
-        }
-    }
-
-    html += QString("<tr><td><b>MAC:</b></td><td>%1</td><td></td></tr>")
-                .arg(escaped(formatMacForDisplay(result.mac, options.macDisplayFormat)));
-    html += QString("<tr><td><b>Vendor:</b></td><td>%1</td><td></td></tr>")
-                .arg(escaped(result.vendor));
-    if (result.services.isEmpty()) {
-        html += "<tr><td><b>Services:</b></td><td>None</td><td></td></tr>";
-    } else {
-        for (int index = 0; index < result.services.size(); ++index) {
-            const ServiceHit &service = result.services.at(index);
-            const QString heading = index == 0 ? "<b>Services:</b>" : QString();
-            const QString evidence = service.evidence ==
-                                             ServiceEvidenceLevel::VerifiedProtocol
-                                         ? "Verified"
-                                         : "Open";
-            html += QString("<tr><td>%1</td><td>%2</td><td>(%3)</td></tr>")
-                        .arg(heading,
-                             escaped(serviceEvidenceText(service.label,
-                                                         service.port,
-                                                         service.evidence)),
-                             evidence);
-        }
-    }
-    html += "</table>";
-    return html;
 }
 
 QString ScannerWindow::preferredTerminalProgram() const
@@ -3385,10 +3273,8 @@ void ScannerWindow::updateDetailsPaneForCurrentSelection()
         return;
     }
 
-    ScanOptions options;
-    options.macDisplayFormat = macDisplayFormat_;
-    detailsPane_->setHtml(collectDeviceDetails(
-        resultModel_->resultAt(current.row()), options));
+    detailsPane_->setHtml(deviceDetailsHtml(
+        resultModel_->resultAt(current.row()), macDisplayFormat_));
 }
 
 QList<ResolverEvent> ScannerWindow::resolverEventsForDisplayedResults() const

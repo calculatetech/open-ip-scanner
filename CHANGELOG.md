@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.5.17] - 2026-07-14
+
+### Changed
+
+- Moved MAC normalization/formatting and device-details HTML generation out of
+  `ScannerWindow` into window-free UI-layer presentation functions.
+- Wired production OUI lookup and details generation directly from immutable
+  scan options, removing window captures from per-host enrichment callbacks.
+
+### Added
+
+- Added a pure device-presentation contract covering every MAC format, invalid
+  input, HTML escaping, hostname provenance, and concise service evidence.
+
 ## [0.5.16] - 2026-07-14
 
 ### Changed
