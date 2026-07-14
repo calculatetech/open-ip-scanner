@@ -4,6 +4,17 @@ This file is the single source of truth for unfinished product, engineering, doc
 
 The audited baseline is `0.2.0` at commit `91e0a7a`; the current development increment is `0.4.0`. Version 1.0 is not ready. Every unchecked item under “Required for 1.0” is a release gate; the post-1.0 section is explicitly outside the first production release.
 
+## Delivered implementation increments
+
+The unchecked milestone boxes below mean their complete acceptance criteria are still open; they do not mean no work has landed. The cumulative implementation through `0.4.0` was human-verified and merged to `main` at commit `47d9207`.
+
+- `0.3.0` — **SCAN-CONFIGURATION:** active scans receive an immutable `ScanOptions` snapshot, with concurrent value-isolation and ThreadSanitizer coverage.
+- `0.3.1` — **SCAN-CANCELLATION:** Stop and close use bounded cancellation-aware process, socket, and hostname waits, with asynchronous window shutdown.
+- `0.3.2` through `0.3.4` — **SCAN-BUDGETS:** removed the duplicate serial pass, added per-target safety ceilings, prioritized service evidence, restored active-port reporting, clarified large-scan estimates, and made Accuracy scale retry depth and timeouts.
+- `0.4.0` — **ACCESSIBILITY:** added the canonical UI layout specification and a stable, internally scrolling 600-by-440 Settings dialog with aligned Performance controls.
+
+Next correctness increment: `0.4.1` returns to the highest-priority open blocker, **SCAN-CONFIGURATION**, to add the deterministic production `ScannerWindow` fixture described in that milestone’s remaining-work line. Category interleaving no longer forces a new minor version; later increments continue `0.4.x` unless a human explicitly starts another minor series.
+
 ## Priority definitions
 
 - **Blocker:** The current behavior has a confirmed undefined-behavior path, cannot be regression-gated at all, or produces a policy/license-invalid primary artifact. Do this first.

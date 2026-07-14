@@ -5,10 +5,10 @@ These rules extend the workspace-level agent instructions and apply to the entir
 ## Versioning milestone work
 
 - Every implementation increment associated with a roadmap milestone must increment the project version in `CMakeLists.txt` and add a matching `CHANGELOG.md` entry.
-- Roadmap categories are the subsection headings under `Required for 1.0` in `docs/roadmap.md`. Until `Post-1.0` is subdivided, treat `Post-1.0` itself as one category.
-- The first implemented work in a new roadmap category increments the second version digit and resets the third digit to zero. The scan-configuration work establishes version `0.3.0` for the `Correctness and worker lifecycle` category.
-- Category version series are contiguous. Additional implemented work that remains in the current roadmap category increments the third version digit: for example, the next increment in `Correctness and worker lifecycle` is `0.3.1`.
-- Switching to a different roadmap category increments the current second digit and resets the third digit to zero. Returning to an earlier category after a switch is another category transition and starts a new minor series from the then-current version; never reuse or lower a prior version.
+- Versions form one monotonic development sequence; roadmap categories may be interleaved without creating a new minor series.
+- The first implementation in a deliberately selected new development series increments the second digit and resets the third digit. The human-verified Settings layout establishes `0.4.0` as the current series baseline.
+- Every subsequent implementation increment increases the third digit unless the user explicitly authorizes starting another minor series. Returning to correctness work after `0.4.0` therefore produces `0.4.1`, not `0.5.0` and never a reused `0.3.x` version.
+- Documentation-only corrections to policy, plans, or roadmap progress do not increment the application version unless they change shipped application behavior.
 - Do not change the major version to `1.0.0` until every required 1.0 milestone satisfies its acceptance conditions and the roadmap records it as completed.
 
 ## Branches, verification, and publication
