@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.4.1] - 2026-07-13
+
+### Changed
+- Automatically bound `/1` through `/19` adapter defaults to the local `/24` while preserving full usable `/20` through `/30`, both `/31` endpoints, and `/32` hosts.
+- Keep Auto Select targets on the preferred adapter so every generated probe uses one valid source and route; selecting another adapter regenerates its defaults.
+- Deduplicate overlapping defaults, enforce both the 4,096-host and 2,048-character input limits, and report addresses or adapters that were omitted.
+
+### Added
+- Added deterministic default-planning coverage for `/8`, `/16`, `/19`, `/20`, `/24`, `/30`, `/31`, `/32`, overlapping networks, cumulative limits, fragmented hosts, and production-parser acceptance.
+
 ## [0.4.0] - 2026-07-13
 
 ### Changed

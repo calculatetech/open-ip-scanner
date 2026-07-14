@@ -18,6 +18,7 @@
 
 #include "scanoptions.h"
 #include "scanbudget.h"
+#include "targetdefaults.h"
 
 class QComboBox;
 class QCompleter;
@@ -35,6 +36,7 @@ class QTextEdit;
 class QAction;
 class QCloseEvent;
 class QWidget;
+struct ScannerWindowTestAccess;
 
 struct ServiceHit {
     // Stable service identifier (e.g. "ssh", "https").
@@ -89,6 +91,8 @@ private slots:
     void toggleSearchBar();
 
 private:
+    friend struct ScannerWindowTestAccess;
+
     // Table column order and logical ids used across sorting/filtering/export.
     enum ColumnIndex {
         ColIp = 0,
@@ -143,8 +147,9 @@ private:
     // Detect routable IPv4 networks and build initial scan defaults.
     QList<NetworkTarget> detectDefaultNetworks() const;
     QList<AdapterInfo> buildAdapters() const;
-    QString buildDefaultTargetText(const QList<NetworkTarget> &targets) const;
-    QString buildDefaultTargetTextForAdapter(const QString &interfaceName) const;
+    DefaultTargetPlan buildDefaultTargetPlanForNetworks(
+        const QList<NetworkTarget> &targets) const;
+    DefaultTargetPlan buildDefaultTargetPlanForAdapter(const QString &interfaceName) const;
     int resolveAdapterIndexForTargets(const QList<QHostAddress> &hosts) const;
     int preferredAdapterIndex() const;
 
@@ -270,6 +275,8 @@ private:
     QProgressBar *statusProgressBar_ = nullptr;
 
     QList<NetworkTarget> networkTargets_;
+    QString defaultTargetNotice_;
+    QString appliedDefaultTargetNotice_;
     QList<AdapterInfo> adapters_;
     QString defaultTargetText_;
     bool userCustomizedTargets_ = false;

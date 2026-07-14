@@ -15,6 +15,15 @@
 #include <cstdio>
 #include <cstdlib>
 
+struct ScannerWindowTestAccess {
+    static QList<QHostAddress> parseTargets(const ScannerWindow &window,
+                                            const QString &text,
+                                            QString *error)
+    {
+        return window.parseTargetsInput(text, error);
+    }
+};
+
 namespace {
 
 bool requireAt(bool condition, int line)
@@ -35,6 +44,18 @@ int main(int argc, char **argv)
     QApplication app(argc, argv);
     ScannerWindow window;
     bool ok = true;
+
+    const DefaultTargetPlan parserPlan =
+        buildDefaultTargetPlan({{QHostAddress("10.2.3.4").toIPv4Address(),
+                                 20,
+                                 "eth0",
+                                 "Ethernet"}});
+    QString parserError;
+    const QList<QHostAddress> parsedTargets =
+        ScannerWindowTestAccess::parseTargets(window, parserPlan.targetText, &parserError);
+    REQUIRE(parserError.isEmpty());
+    REQUIRE(parsedTargets.size() == parserPlan.uniqueHostCount);
+    REQUIRE(parserPlan.targetText.size() <= 2048);
 
     QTimer::singleShot(0, &window, [&window]() {
         QMetaObject::invokeMethod(&window, "showSettingsDialog", Qt::DirectConnection);
