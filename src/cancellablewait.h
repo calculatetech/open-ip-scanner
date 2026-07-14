@@ -5,6 +5,7 @@
 #include <QString>
 
 #include <atomic>
+#include <functional>
 #include <memory>
 
 class QTcpSocket;
@@ -12,6 +13,7 @@ class QTcpSocket;
 namespace cancellable {
 
 using Flag = std::shared_ptr<std::atomic_bool>;
+using RemainingTime = std::function<int()>;
 
 enum class WaitResult {
     Completed,
@@ -31,8 +33,14 @@ public:
     virtual QProcess::ProcessError error() const = 0;
 };
 
-WaitResult waitForProcess(ProcessControl &process, int timeoutMs, const Flag &flag);
-WaitResult waitForProcess(QProcess &process, int timeoutMs, const Flag &flag);
+WaitResult waitForProcess(ProcessControl &process,
+                          int timeoutMs,
+                          const Flag &flag,
+                          const RemainingTime &cleanupRemaining = {});
+WaitResult waitForProcess(QProcess &process,
+                          int timeoutMs,
+                          const Flag &flag,
+                          const RemainingTime &cleanupRemaining = {});
 WaitResult waitForConnected(QTcpSocket &socket, int timeoutMs, const Flag &flag);
 WaitResult waitForBytesWritten(QTcpSocket &socket, int timeoutMs, const Flag &flag);
 WaitResult waitForReadyRead(QTcpSocket &socket, int timeoutMs, const Flag &flag);

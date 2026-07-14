@@ -2,7 +2,7 @@
 
 This file is the single source of truth for unfinished product, engineering, documentation, and release work. Detailed evidence for why each 1.0 item exists is in [the production-readiness audit](production-readiness-audit.md). New ideas belong here rather than in a second backlog.
 
-The audited baseline is `0.2.0` at commit `91e0a7a`; the current development increment is `0.3.1`. Version 1.0 is not ready. Every unchecked item under “Required for 1.0” is a release gate; the post-1.0 section is explicitly outside the first production release.
+The audited baseline is `0.2.0` at commit `91e0a7a`; the current development increment is `0.3.2`. Version 1.0 is not ready. Every unchecked item under “Required for 1.0” is a release gate; the post-1.0 section is explicitly outside the first production release.
 
 ## Priority definitions
 
@@ -33,7 +33,8 @@ Priority matches the most severe audit finding an item closes. All items in the 
 - [ ] **SCAN-BUDGETS — Replace the duplicate accuracy pass with a budgeted scan engine.** `High`
   - Remove the serial retry of every missed host. Represent discovery methods as bounded attempts in one scheduler, avoid probing the same port twice, and cap total work per target and per scan mode.
   - Surface an estimated upper bound before starting a large scan and make the worker count meaningful across all discovery stages.
-  - Done when virtual-clock tests prove each host/mode attempt budget, a fully unresponsive 4,096-target scan never starts an unbounded second pass, and Stop interrupts the current budget rather than waiting for all retries.
+  - Current progress: every target runs once in the configured worker pool with a one-, two-, four-, or eight-second monotonic deadline; the serial reconciliation pass is removed; TCP discovery evidence is reused; the UI shows and confirms long upper-bound estimates. Unit tests cover profiles, deadline expiry, and worker-wave estimates.
+  - Remaining for completion: add a virtual-clock scheduler fixture that executes fully unresponsive 4,096-target scans, counts every attempt/port, and proves Stop interrupts the active budget without real network timing.
 
 <a id="target-defaults"></a>
 - [ ] **TARGET-DEFAULTS — Make target and adapter defaults valid by construction.** `High`

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(OpenIpScanner VERSION 0.3.1 LANGUAGES CXX)
+project(OpenIpScanner VERSION 0.3.2 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -21,6 +21,7 @@ add_executable(open_ip_scanner
     src/main.cpp
     src/cancellablewait.h
     src/cancellablewait.cpp
+    src/scanbudget.h
     src/scanoptions.h
     src/scannerwindow.h
     src/scannerwindow.cpp
@@ -46,6 +47,10 @@ if(BUILD_TESTING)
     target_include_directories(scan_cancellation_test PRIVATE src)
     target_link_libraries(scan_cancellation_test PRIVATE ${QT_PACKAGE}::Core ${QT_PACKAGE}::Network)
     add_test(NAME scan_cancellation_deadlines COMMAND scan_cancellation_test)
+
+    add_executable(scan_budget_test tests/scanbudget_test.cpp)
+    target_include_directories(scan_budget_test PRIVATE src)
+    add_test(NAME scan_budget_profiles COMMAND scan_budget_test)
 endif()
 
 set_target_properties(open_ip_scanner PROPERTIES

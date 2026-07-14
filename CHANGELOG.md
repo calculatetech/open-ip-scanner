@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.3.2] - 2026-07-13
+
+### Changed
+- Replaced open-ended accuracy retries with fixed one-, two-, four-, and eight-second per-target budgets.
+- Removed the serial high-accuracy reconciliation pass so all targets use the configured worker pool once.
+- Reused TCP discovery results during enrichment instead of probing the same enabled ports twice.
+- Added a visible scan upper-bound estimate and confirmation before estimates longer than ten minutes.
+
+### Added
+- Added deterministic tests for accuracy profiles, target deadline expiry, worker-wave estimates, and edge inputs.
+
 ## [0.3.1] - 2026-07-13
 
 ### Changed
