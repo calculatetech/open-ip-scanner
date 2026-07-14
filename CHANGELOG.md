@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.5.14] - 2026-07-14
+
+### Changed
+
+- Moved Linux ping command selection, interface scoping, attempts, process
+  deadlines, and cancellation out of `ScannerWindow` into `LinuxPingProbe`.
+- Wired the production host backend to one shared stateless ping probe without
+  changing accuracy-derived attempt or timeout policy.
+
+### Added
+
+- Added a production-path ping contract for exact arguments, retry success,
+  attempt exhaustion, deadline expiry, cancellation, and immediate cutoffs.
+
 ## [0.5.13] - 2026-07-14
 
 ### Changed

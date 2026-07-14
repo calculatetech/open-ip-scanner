@@ -171,10 +171,6 @@ private:
         const std::function<void(const ScanResult &)> &onResult) const;
 
     // Host discovery helpers.
-    bool pingHost(const QHostAddress &address,
-                  const ScanOptions &options,
-                  const TargetBudget &budget,
-                  const std::shared_ptr<std::atomic_bool> &cancelRequested) const;
     QString lookupVendor(const QString &mac, const ScanOptions &options) const;
     HostnameScanResolution lookupHostname(
         const QString &ip,

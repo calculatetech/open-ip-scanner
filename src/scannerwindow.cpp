@@ -4,6 +4,7 @@
 #include "debugscanfixture.h"
 #include "mdnsresolver.h"
 #include "linuxneighborprobe.h"
+#include "linuxpingprobe.h"
 #include "ouidatabase.h"
 #include "resulttablemodel.h"
 #include "servicetagdelegate.h"
@@ -1149,12 +1150,18 @@ QList<ScanResult> ScannerWindow::scanHosts(const ScanOptions &options,
     auto mdnsResolver = std::make_shared<ScanMdnsResolver>(
         interfaceIndex, cancelRequested, createAvahiDbusBackend());
     auto neighborProbe = std::make_shared<LinuxNeighborProbe>();
+    auto pingProbe = std::make_shared<LinuxPingProbe>();
     ProductionHostScanDependencies dependencies;
-    dependencies.ping = [this](const QHostAddress &host,
-                               const ScanOptions &scanOptions,
-                               const TargetBudget &budget,
-                               const auto &cancellation) {
-        return pingHost(host, scanOptions, budget, cancellation);
+    dependencies.ping = [pingProbe](const QHostAddress &host,
+                                    const ScanOptions &scanOptions,
+                                    const TargetBudget &budget,
+                                    const auto &cancellation) {
+        return pingProbe->ping(host,
+                               scanOptions.interfaceName,
+                               scanOptions.pingAttempts,
+                               scanOptions.pingTimeoutSeconds,
+                               budget,
+                               cancellation);
     };
     dependencies.services = [this](const QString &ip,
                                    const QString &localIp,
@@ -1213,58 +1220,6 @@ QList<ScanResult> ScannerWindow::scanHosts(const ScanOptions &options,
                            backend,
                            onProgress,
                            onResult);
-}
-
-bool ScannerWindow::pingHost(const QHostAddress &address,
-                             const ScanOptions &options,
-                             const TargetBudget &budget,
-                             const std::shared_ptr<std::atomic_bool> &cancelRequested) const
-{
-#ifdef Q_OS_LINUX
-    const QString pingProgram = !QStandardPaths::findExecutable("ping").isEmpty()
-                                    ? QStandardPaths::findExecutable("ping")
-                                    : QString("ping");
-    const auto runPing = [&](const QStringList &baseArgs) {
-        for (int attempt = 0; attempt < options.pingAttempts; ++attempt) {
-            if (cancellable::isCancelled(cancelRequested) || budget.expired()) {
-                return false;
-            }
-            QProcess ping;
-            const int timeoutSeconds = options.pingTimeoutSeconds;
-            QStringList args = {"-n", "-c", "1", "-W", QString::number(timeoutSeconds)};
-            args.append(baseArgs);
-            args << address.toString();
-            ping.start(pingProgram, args);
-
-            const int waitMs = budget.clampTimeout(
-                pingAttemptWaitMs(timeoutSeconds), kProcessCleanupReserveMs);
-            if (cancellable::waitForProcess(
-                    ping,
-                    waitMs,
-                    cancelRequested,
-                    [&budget]() { return budget.remainingMs(); }) !=
-                cancellable::WaitResult::Completed) {
-                continue;
-            }
-
-            if (ping.exitStatus() == QProcess::NormalExit && ping.exitCode() == 0) {
-                return true;
-            }
-        }
-        return false;
-    };
-
-    if (!options.interfaceName.isEmpty()) {
-        return runPing({"-I", options.interfaceName});
-    }
-    return runPing({});
-#else
-    Q_UNUSED(address)
-    Q_UNUSED(options)
-    Q_UNUSED(budget)
-    Q_UNUSED(cancelRequested)
-    return false;
-#endif
 }
 
 QString ScannerWindow::lookupVendor(const QString &mac, const ScanOptions &options) const
