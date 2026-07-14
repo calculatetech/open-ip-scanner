@@ -2,7 +2,7 @@
 
 This file is the single source of truth for unfinished product, engineering, documentation, and release work. Detailed evidence for why each 1.0 item exists is in [the production-readiness audit](production-readiness-audit.md). New ideas belong here rather than in a second backlog.
 
-The audited baseline is `0.2.0` at commit `91e0a7a`; `0.5.1` is the latest human-verified version, and `0.5.2` is the active MDNS-TESTS branch. Version 1.0 is not ready. Every unchecked item under “Required for 1.0” is a release gate; the post-1.0 section is explicitly outside the first production release.
+The audited baseline is `0.2.0` at commit `91e0a7a`; `0.5.2` is the latest human-verified version. Version 1.0 is not ready. Every unchecked item under “Required for 1.0” is a release gate; the post-1.0 section is explicitly outside the first production release.
 
 ## Delivered implementation increments
 
@@ -18,6 +18,8 @@ The unchecked milestone boxes below mean their complete acceptance criteria are 
 - `0.4.4` — **RESULT-SCALING:** replaced per-cell widgets with a keyed live result model, preserved deterministic ordering and viewport stability, and added accuracy-scaled active confirmation for slow cached neighbors.
 - `0.4.5` — **DEBUG-SCAN-FIXTURE:** added the hidden adapter-free `test` target with 768 deterministic, Accuracy-paced devices for repeatable table stability and performance checks.
 - `0.5.0` — **MDNS-RESOLVER:** replaced per-host helper processes with one cancellable, interface-scoped Avahi D-Bus reverse resolver per scan and added explicit hostname evidence quality.
+- `0.5.1` — **ENRICHMENT-PROVENANCE:** retained source-aware Local, PTR, System, and mDNS names while keeping the result table concise and moving compact provenance into Details and diagnostics.
+- `0.5.2` — **MDNS-TESTS:** added the deterministic compatibility matrix, isolated controlled Avahi responder, and bounded hosted CI for both mDNS tests.
 
 **RESULT-SCALING** is human-verified on version `0.4.4`. DUPLICATE-IP-CONFLICTS remains Post-1.0.
 
@@ -243,6 +245,20 @@ Priority matches the most severe audit finding an item closes. All items in the 
   - Give icon-only controls explicit accessible names and keyboard paths, avoid hard-coded selection/service colors that defeat system contrast, test screen-reader labels and high scaling, and add scrolling/responsive sizing to dense settings pages.
   - Current progress: the canonical [UI layout specification](ui-layout-spec.md) limits Settings to 600 by 440, standardizes spacing and aligned Performance controls, reserves stable geometry for dynamic descriptions, and requires internal page scrolling. An automated geometry contract protects the dimensions and row fit.
   - Done when offscreen and real-session startup are warning-free, automated accessibility inspection finds names/roles for interactive controls, and light, dark, high-contrast, 200% scale, and keyboard-only smoke tests pass.
+
+#### SEARCH-ENRICHMENT
+
+- [ ] **Include enrichment evidence in result searches.** `Medium`
+  - Search the complete normalized result evidence rather than only the currently displayed cell text. Match IP address, MAC address, vendor, preferred and alternate hostnames including full DNS suffixes, service names, and service ports.
+  - Update filtering as enrichment arrives without reordering results, resetting the model, changing selection, or disturbing the anchored viewport. Source labels and backend failure prose remain details/diagnostic presentation rather than searchable device identity.
+  - Done when deterministic model tests find a row by every supported evidence field—including an alternate FQDN hidden from the table—remove and restore matches as evidence changes, and preserve active ordering, selection, and viewport behavior.
+
+#### SERVICE-PILL-THEMING
+
+- [ ] **Restore distinct, palette-aware service pill colors.** `Medium`
+  - Give verified service families visually distinct pill colors while keeping `Unknown:<port>` neutral. Derive foreground, background, border, selection, and disabled colors from the active Qt palette so light, dark, and high-contrast themes remain legible.
+  - Keep pill text, spacing, corner radius, and geometry stable across services, theme changes, selection, and live result updates. Do not reintroduce persistent cell widgets or encode verification solely through color.
+  - Done when automated delegate tests prove stable geometry and sufficient text/background contrast in representative light, dark, high-contrast, selected, and disabled palettes, and the 768-device fixture retains responsive scrolling and correct concise labels.
 
 #### RELEASE-DOCS
 
