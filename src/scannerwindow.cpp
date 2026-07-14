@@ -865,7 +865,11 @@ void ScannerWindow::startScan()
         QMessageBox::question(
             this,
             "Large Scan Estimate",
-            QString("This scan has an estimated upper bound of %1. Continue?").arg(estimateText),
+            QString("Based on %1 targets, %2 workers, and the selected per-target timeout, "
+                    "this scan could take up to about %3 in the worst case. Continue?")
+                .arg(hosts.size())
+                .arg(scanOptions.maxParallelProbes)
+                .arg(estimateText),
             QMessageBox::Yes | QMessageBox::No,
             QMessageBox::No) != QMessageBox::Yes) {
         showStatusMessage("Scan canceled before launch.");
@@ -884,9 +888,9 @@ void ScannerWindow::startScan()
     adapterCombo_->setEnabled(false);
     targetInput_->setEnabled(false);
 
-    showStatusMessage(QString("Scanning %1 host(s) via %2 (upper bound %3)...")
+    showStatusMessage(QString("Scanning %1 host(s) via %2...")
                           .arg(hosts.size())
-                          .arg(adapter.interfaceLabel, estimateText));
+                          .arg(adapter.interfaceLabel));
     statusProgressBar_->setRange(0, hosts.size());
     statusProgressBar_->setValue(0);
     statusProgressBar_->setVisible(true);
@@ -1224,32 +1228,51 @@ QList<ScanResult> ScannerWindow::scanHosts(const ScanOptions &options,
                 if (alive) {
                     ScanResult result;
                     result.ip = ipString;
-                    result.mac = discoveredMac.isEmpty()
-                                     ? lookupMacAddress(
-                                           ipString, options.interfaceName, budget, cancelRequested)
-                                     : discoveredMac;
-                    result.vendor = lookupVendor(result.mac, options);
-                    result.hostname = ipString == options.localIp
-                                          ? QHostInfo::localHostName().trimmed()
-                                          : lookupHostname(ipString, budget, cancelRequested);
-                    if (result.mac.isEmpty()) {
-                        result.mac = "Unknown";
+                    for (const AliveHostStage stage : kAliveHostStageOrder) {
+                        switch (stage) {
+                        case AliveHostStage::Services:
+                            result.services = discoveredServices.isEmpty()
+                                                  ? probeServices(ipString,
+                                                                  options.localIp,
+                                                                  budget,
+                                                                  cancelRequested,
+                                                                  options)
+                                                  : discoveredServices;
+                            break;
+                        case AliveHostStage::MacAddress:
+                            result.mac = discoveredMac.isEmpty()
+                                             ? lookupMacAddress(ipString,
+                                                                options.interfaceName,
+                                                                budget,
+                                                                cancelRequested)
+                                             : discoveredMac;
+                            break;
+                        case AliveHostStage::Vendor:
+                            result.vendor = lookupVendor(result.mac, options);
+                            break;
+                        case AliveHostStage::Hostname:
+                            result.hostname = ipString == options.localIp
+                                                  ? QHostInfo::localHostName().trimmed()
+                                                  : lookupHostname(
+                                                        ipString, budget, cancelRequested);
+                            break;
+                        case AliveHostStage::NormalizeIdentity:
+                            if (result.mac.isEmpty()) {
+                                result.mac = "Unknown";
+                            }
+                            if (result.vendor.isEmpty()) {
+                                result.vendor = "Unknown";
+                            }
+                            if (result.hostname.isEmpty()) {
+                                result.hostname = "Unknown";
+                            }
+                            break;
+                        case AliveHostStage::Details:
+                            result.detailsText = collectDeviceDetails(
+                                result, options.localIp, budget, cancelRequested, options);
+                            break;
+                        }
                     }
-                    if (result.vendor.isEmpty()) {
-                        result.vendor = "Unknown";
-                    }
-                    if (result.hostname.isEmpty()) {
-                        result.hostname = "Unknown";
-                    }
-                    result.services = discoveredServices.isEmpty()
-                                          ? probeServices(ipString,
-                                                          options.localIp,
-                                                          budget,
-                                                          cancelRequested,
-                                                          options)
-                                          : discoveredServices;
-                    result.detailsText = collectDeviceDetails(
-                        result, options.localIp, budget, cancelRequested, options);
                     publishResult(result);
                 }
 
@@ -1298,7 +1321,7 @@ bool ScannerWindow::pingHost(const QHostAddress &address,
             ping.start(pingProgram, args);
 
             const int waitMs = budget.clampTimeout(
-                (timeoutSeconds * 1000) + 2500, kProcessCleanupReserveMs);
+                pingAttemptWaitMs(timeoutSeconds), kProcessCleanupReserveMs);
             if (cancellable::waitForProcess(
                     ping,
                     waitMs,

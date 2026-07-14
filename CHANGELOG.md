@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.3.3] - 2026-07-13
+
+### Fixed
+- Prioritized enabled-port probing before optional MAC, hostname, and detail enrichment can exhaust a target's scan deadline.
+- Added a durable scan-stage ordering check so optional enrichment cannot silently move ahead of service evidence again.
+
+### Changed
+- Removed the worst-case duration estimate from the normal scan status and explained it in plain language only when a large scan requires confirmation.
+- Raised accuracy-profile safety ceilings and service timeouts so slower LAN switches, cameras, and embedded devices are not routinely clipped by the Balanced profile.
+
 ## [0.3.2] - 2026-07-13
 
 ### Changed

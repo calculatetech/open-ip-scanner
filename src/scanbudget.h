@@ -1,30 +1,55 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstdint>
 #include <functional>
 #include <utility>
 
 struct ScanBudgetProfile {
-    int targetDeadlineMs = 2000;
+    int targetDeadlineMs = 8000;
     int pingAttempts = 1;
     int pingTimeoutSeconds = 1;
     int serviceAttempts = 1;
-    int serviceTimeoutMs = 280;
+    int serviceTimeoutMs = 1000;
 };
 
 constexpr int kProcessCleanupReserveMs = 50;
 constexpr int kEstimatePerTargetAllowanceMs = 300;
+constexpr int kPingProcessStartupAllowanceMs = 500;
+
+enum class AliveHostStage {
+    Services,
+    MacAddress,
+    Vendor,
+    Hostname,
+    NormalizeIdentity,
+    Details
+};
+
+inline constexpr std::array<AliveHostStage, 6> kAliveHostStageOrder = {
+    AliveHostStage::Services,
+    AliveHostStage::MacAddress,
+    AliveHostStage::Vendor,
+    AliveHostStage::Hostname,
+    AliveHostStage::NormalizeIdentity,
+    AliveHostStage::Details
+};
+
+constexpr int pingAttemptWaitMs(int timeoutSeconds)
+{
+    return timeoutSeconds > 0 ? timeoutSeconds * 1000 + kPingProcessStartupAllowanceMs : 0;
+}
 
 inline ScanBudgetProfile scanBudgetProfile(int accuracyLevel)
 {
     switch (std::clamp(accuracyLevel, 0, 3)) {
-    case 0: return {1000, 1, 1, 1, 180};
-    case 1: return {2000, 1, 1, 1, 280};
-    case 2: return {4000, 2, 1, 1, 300};
-    case 3: return {8000, 2, 2, 2, 600};
-    default: return {2000, 1, 1, 1, 280};
+    case 0: return {3000, 1, 1, 1, 350};
+    case 1: return {8000, 1, 1, 1, 1000};
+    case 2: return {15000, 2, 1, 1, 1500};
+    case 3: return {30000, 2, 2, 2, 2000};
+    default: return {8000, 1, 1, 1, 1000};
     }
 }
 
