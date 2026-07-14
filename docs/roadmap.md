@@ -2,7 +2,7 @@
 
 This file is the single source of truth for unfinished product, engineering, documentation, and release work. Detailed evidence for why each 1.0 item exists is in [the production-readiness audit](production-readiness-audit.md). New ideas belong here rather than in a second backlog.
 
-The audited baseline is `0.2.0` at commit `91e0a7a`; `0.5.2` is the latest human-verified version, `0.5.3` is reviewed and merged, and `0.5.4` is the active SETTINGS-MIGRATIONS branch. Version 1.0 is not ready. Every unchecked item under “Required for 1.0” is a release gate; the post-1.0 section is explicitly outside the first production release.
+The audited baseline is `0.2.0` at commit `91e0a7a`; `0.5.2` is the latest human-verified version, `0.5.3` and `0.5.4` are reviewed and merged, and `0.5.5` is the active CSV-EXPORT branch. Version 1.0 is not ready. Every unchecked item under “Required for 1.0” is a release gate; the post-1.0 section is explicitly outside the first production release.
 
 ## Delivered implementation increments
 
@@ -21,6 +21,7 @@ The unchecked milestone boxes below mean their complete acceptance criteria are 
 - `0.5.1` — **ENRICHMENT-PROVENANCE:** retained source-aware Local, PTR, System, and mDNS names while keeping the result table concise and moving compact provenance into Details and diagnostics.
 - `0.5.2` — **MDNS-TESTS:** added the deterministic compatibility matrix, isolated controlled Avahi responder, and bounded hosted CI for both mDNS tests.
 - `0.5.3` — **TARGET-FORMAT-PREFERENCE:** added exact persisted CIDR/range generation while preserving target sets, adapter selection, and limits.
+- `0.5.4` — **SETTINGS-MIGRATIONS:** made schema upgrades lossless, preserved empty service sets and toolbar inheritance, validated OUI input atomically, and debounced remembered-target writes.
 
 **RESULT-SCALING** is human-verified on version `0.4.4`. DUPLICATE-IP-CONFLICTS remains Post-1.0.
 
@@ -153,9 +154,11 @@ Priority matches the most severe audit finding an item closes. All items in the 
 
 #### CSV-EXPORT
 
-- [ ] **Make CSV export safe and failure-aware.** `High`
+- [x] **Make CSV export safe and failure-aware.** `High`
   - Define whether export includes all, visible, or filtered rows and label that choice in the dialog. Preserve display order intentionally.
   - Prevent spreadsheet-formula execution for fields beginning with formula sigils, write through an atomic save, choose UTF-8 explicitly for every supported Qt version, and check stream, flush, close, and disk-full errors before reporting success.
+  - Current progress on `0.5.5`: Export CSV first offers clearly counted Filtered rows or All rows, defaults to the filtered set, identifies that visible columns are exported, and preserves current row and visual column order. A core exporter quotes every cell, doubles quotes, retains commas/line breaks/Unicode, prefixes every required leading formula sigil, selects UTF-8 explicitly on Qt 5 and 6, and writes through `QSaveFile`. Success is reported only after stream, flush, and atomic commit checks; errors retain concrete sink detail.
+  - Completion evidence: deterministic contracts cover filtered/all scope, hidden and visually reordered columns, row order, cancellation, commas, quotes, line breaks, Unicode, all formula sigils, open failure, disk-full/flush failure, commit failure, existing destination preservation, and successful atomic replacement. Normal and strict-warning suites pass 12/12, all eleven non-rendering tests pass under ThreadSanitizer, and package metadata reports version 0.5.5. The initial live-scan snapshot consistency finding was repaired, focused normal and strict tests passed again, and final fresh adversarial review found no actionable issue.
   - Done when tests cover commas, quotes, line breaks, Unicode, formula payloads, filtered rows, hidden columns, canceled saves, and injected write failures.
 
 #### SCAN-PRIVACY

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(OpenIpScanner VERSION 0.5.4 LANGUAGES CXX)
+project(OpenIpScanner VERSION 0.5.5 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -21,6 +21,8 @@ add_executable(open_ip_scanner
     src/main.cpp
     src/cancellablewait.h
     src/cancellablewait.cpp
+    src/csvexporter.h
+    src/csvexporter.cpp
     src/debugscanfixture.h
     src/debugscanfixture.cpp
     src/hostnameevidence.h
@@ -54,6 +56,15 @@ option(OIS_MDNS_CONTROLLED_FIXTURE
        OFF)
 
 if(BUILD_TESTING)
+    add_executable(csv_exporter_test
+        tests/csvexporter_test.cpp
+        src/csvexporter.h
+        src/csvexporter.cpp
+    )
+    target_include_directories(csv_exporter_test PRIVATE src)
+    target_link_libraries(csv_exporter_test PRIVATE ${QT_PACKAGE}::Core)
+    add_test(NAME csv_exporter_contract COMMAND csv_exporter_test)
+
     add_executable(mdns_resolver_test
         tests/mdnsresolver_test.cpp
         src/cancellablewait.h
@@ -180,6 +191,8 @@ if(BUILD_TESTING)
         tests/settingsdialog_test.cpp
         src/cancellablewait.h
         src/cancellablewait.cpp
+        src/csvexporter.h
+        src/csvexporter.cpp
         src/debugscanfixture.h
         src/debugscanfixture.cpp
         src/hostnameevidence.h

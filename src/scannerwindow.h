@@ -281,7 +281,6 @@ private:
     static QHostAddress intToIpv4(quint32 value);
     static QString hexGatewayToIp(const QString &hexGateway);
     static bool parseIpv4(const QString &text, quint32 *out);
-    static QString csvEscape(const QString &text);
     static QIcon createPlayIcon();
     static QIcon createStopIcon();
 

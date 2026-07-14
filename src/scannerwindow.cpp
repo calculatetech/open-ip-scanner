@@ -1,5 +1,6 @@
 #include "scannerwindow.h"
 #include "cancellablewait.h"
+#include "csvexporter.h"
 #include "debugscanfixture.h"
 #include "mdnsresolver.h"
 #include "resulttablemodel.h"
@@ -54,6 +55,7 @@
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QRegularExpressionValidator>
+#include <QRadioButton>
 #include <QSaveFile>
 #include <QScrollArea>
 #include <QSet>
@@ -2741,35 +2743,67 @@ void ScannerWindow::exportCsv()
         return;
     }
 
-    const QString path = QFileDialog::getSaveFileName(this, "Export CSV", "scan-results.csv", "CSV Files (*.csv)");
+    QStringList headers;
+    QVector<QStringList> rows;
+    QVector<bool> rowVisible;
+    for (int col = 0; col < ColCount; ++col) {
+        headers.append(resultModel_->headerData(
+            col, Qt::Horizontal, Qt::DisplayRole).toString());
+    }
+    for (int row = 0; row < resultModel_->rowCount(); ++row) {
+        QStringList fields;
+        for (int col = 0; col < ColCount; ++col) {
+            fields.append(cellText(row, col));
+        }
+        rows.append(fields);
+        rowVisible.append(!table_->isRowHidden(row));
+    }
+    const QList<int> columnList = visibleColumnsInDisplayOrder();
+    const QVector<int> columns(columnList.begin(), columnList.end());
+    const int filteredCount = static_cast<int>(
+        std::count(rowVisible.cbegin(), rowVisible.cend(), true));
+
+    QDialog scopeDialog(this);
+    scopeDialog.setWindowTitle("Export CSV");
+    auto *scopeLayout = new QVBoxLayout(&scopeDialog);
+    scopeLayout->addWidget(new QLabel(
+        "Rows to export (current table order):", &scopeDialog));
+    auto *filteredRows = new QRadioButton(
+        QString("Filtered rows (%1)").arg(filteredCount), &scopeDialog);
+    auto *allRows = new QRadioButton(
+        QString("All rows (%1)").arg(rows.size()), &scopeDialog);
+    filteredRows->setChecked(true);
+    scopeLayout->addWidget(filteredRows);
+    scopeLayout->addWidget(allRows);
+    auto *columnNotice = new QLabel(
+        "Columns: visible columns in current display order", &scopeDialog);
+    columnNotice->setWordWrap(true);
+    scopeLayout->addWidget(columnNotice);
+    auto *scopeButtons = new QDialogButtonBox(
+        QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &scopeDialog);
+    connect(scopeButtons, &QDialogButtonBox::accepted,
+            &scopeDialog, &QDialog::accept);
+    connect(scopeButtons, &QDialogButtonBox::rejected,
+            &scopeDialog, &QDialog::reject);
+    scopeLayout->addWidget(scopeButtons);
+    if (scopeDialog.exec() != QDialog::Accepted) {
+        return;
+    }
+
+    const QString path = QFileDialog::getSaveFileName(
+        this, "Export CSV", "scan-results.csv", "CSV Files (*.csv)");
     if (path.isEmpty()) {
         return;
     }
 
-    QFile file(path);
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
-        QMessageBox::warning(this, "Export CSV", "Could not write CSV file.");
+    const CsvExportData data = CsvExporter::selectTable(
+        headers, rows, rowVisible, columns, filteredRows->isChecked());
+
+    const CsvExportOutcome outcome = CsvExporter::exportFile(path, data);
+    if (outcome.status != CsvExportStatus::Success) {
+        QMessageBox::warning(this, "Export CSV", outcome.error);
         return;
     }
-
-    QTextStream out(&file);
-    const QList<int> columns = visibleColumnsInDisplayOrder();
-
-    QStringList headers;
-    for (int col : columns) {
-        headers.append(csvEscape(resultModel_->headerData(
-            col, Qt::Horizontal, Qt::DisplayRole).toString()));
-    }
-    out << headers.join(',') << '\n';
-
-    for (int row = 0; row < resultModel_->rowCount(); ++row) {
-        QStringList fields;
-        for (int col : columns) {
-            fields.append(csvEscape(cellText(row, col)));
-        }
-        out << fields.join(',') << '\n';
-    }
-
     showStatusMessage(QString("Exported CSV to %1").arg(path));
 }
 
@@ -4124,13 +4158,6 @@ bool ScannerWindow::parseIpv4(const QString &text, quint32 *out)
         *out = address.toIPv4Address();
     }
     return true;
-}
-
-QString ScannerWindow::csvEscape(const QString &text)
-{
-    QString escaped = text;
-    escaped.replace('"', "\"\"");
-    return QString("\"%1\"").arg(escaped);
 }
 
 QString ScannerWindow::normalizeOuiPrefix(const QString &prefix)

@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.5.5] - 2026-07-14
+
+### Changed
+
+- Export CSV now explicitly offers filtered or all rows, preserves current row
+  and visible-column order, and defaults to the filtered result set.
+- CSV values use explicit UTF-8, quote embedded data, and neutralize leading
+  spreadsheet formula sigils.
+- Exports atomically replace the destination only after stream, flush, and
+  commit checks succeed; concrete failures are shown without damaging an
+  existing file.
+
 ## [0.5.4] - 2026-07-14
 
 ### Changed
