@@ -26,9 +26,14 @@ struct HostnameDisplayRow {
 
 QString normalizedHostnameKey(const QString &hostname);
 QString hostnameSourceLabel(HostnameSource source);
+QString qualifyHostname(const QString &hostname, const QString &dnsSuffix);
+QString preferredPtrHostname(const QStringList &hostnames,
+                             const QStringList &adapterDnsSuffixes);
 QList<HostnameEvidence> mergeHostnameEvidence(
     const QList<HostnameEvidence> &current,
     const HostnameEvidence &candidate);
+QList<HostnameEvidence> canonicalHostnameEvidence(
+    const QList<HostnameEvidence> &evidence);
 HostnameEvidence preferredHostname(const QList<HostnameEvidence> &evidence);
 HostnameEvidence preferredHostname(const HostnameEvidence &current,
                                    const HostnameEvidence &candidate);

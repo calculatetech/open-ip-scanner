@@ -98,6 +98,7 @@ struct ScannerWindowTestAccess {
         adapter.interfaceLabel = "Fixture adapter";
         adapter.localIp = "192.0.2.10";
         adapter.localMac = "02:00:00:00:00:10";
+        adapter.dnsSuffixes = {"example.test"};
         const ScanOptions options = window.captureScanOptions(adapter);
 
         window.accuracyLevel_ = originalAccuracy;
@@ -112,6 +113,7 @@ struct ScannerWindowTestAccess {
                options.interfaceLabel == "Fixture adapter" &&
                options.localIp == "192.0.2.10" &&
                options.localMac == "02:00:00:00:00:10" && options.pingAttempts == 2 &&
+               options.dnsSuffixes == QStringList({"example.test"}) &&
                options.pingTimeoutSeconds == 1 && options.serviceAttempts == 2 &&
                options.serviceTimeoutMs == 750 && options.neighborConfirmationMs == 5500 &&
                options.macDisplayFormat == 6 &&
@@ -119,6 +121,24 @@ struct ScannerWindowTestAccess {
                options.targetDeadlineMs == 23750 &&
                options.builtInOuiVendors.value("AABBCC") == "Built in fixture" &&
                options.customOuiVendors.value("DDEEFF") == "Custom fixture";
+    }
+
+    static bool parsesAdapterDnsDomains()
+    {
+        const QByteArray fixture = R"json([
+            {"ifname":"eth0","searchDomains":[
+                {"name":"example.test","routeOnly":false,"ifindex":2},
+                {"name":"~internal.test","routeOnly":true,"ifindex":2}]},
+            {"ifname":"wlan0","searchDomains":[
+                {"name":"local.","routeOnly":false,"ifindex":3}]},
+            {"ifname":"empty0","searchDomains":null}
+        ])json";
+        const QHash<QString, QStringList> parsed =
+            ScannerWindow::parseAdapterDnsDomains(fixture);
+        return parsed.size() == 2 &&
+               parsed.value("eth0") == QStringList({"example.test"}) &&
+               parsed.value("wlan0") == QStringList({"local"}) &&
+               ScannerWindow::parseAdapterDnsDomains("not json").isEmpty();
     }
 
     static bool rendersConciseHostnameProvenance(ScannerWindow &window)
@@ -158,9 +178,10 @@ struct ScannerWindowTestAccess {
         return tableHostname == "fixture.example" &&
                !tableHostname.contains("PTR") &&
                html.count("Hostname(s):") == 1 &&
-               html.contains("fixture.example") && html.contains("(PTR)") &&
+               html.contains("fixture.example (PTR)") &&
                html.contains("fixture.local") &&
-               html.contains("(System, mDNS)") &&
+               html.contains("fixture.local (System, mDNS)") &&
+               !html.contains("</td><td>(PTR)") &&
                html.contains("SSH:22") && html.contains("(Verified)") &&
                html.contains("Unknown:445") && html.contains("(Open)") &&
                html.contains("<table");
@@ -712,6 +733,7 @@ int main(int argc, char **argv)
     REQUIRE(parserPlan.targetText.size() <= 2048);
     REQUIRE(ScannerWindowTestAccess::preservesInterfaceIdentity(window));
     REQUIRE(ScannerWindowTestAccess::capturesAllScanOptions(window));
+    REQUIRE(ScannerWindowTestAccess::parsesAdapterDnsDomains());
     REQUIRE(ScannerWindowTestAccess::rendersConciseHostnameProvenance(window));
     REQUIRE(ScannerWindowTestAccess::rendersMergedHostnameEvidence(window));
     REQUIRE(ScannerWindowTestAccess::resolverSupportBundleIsRedacted(window));

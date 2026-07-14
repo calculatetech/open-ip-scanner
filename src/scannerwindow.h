@@ -121,6 +121,7 @@ private:
         QString interfaceLabel;
         QString localIp;
         QString localMac;
+        QStringList dnsSuffixes;
         bool isPhysical = false;
         bool isRoutable = false;
         bool hasDefaultRoute = false;
@@ -193,6 +194,7 @@ private:
     HostnameResolution lookupHostname(
         const QString &ip,
         const HostnameEvidence &preliminary,
+        const QStringList &adapterDnsSuffixes,
         int accuracyLevel,
         const TargetBudget &budget,
         const std::shared_ptr<std::atomic_bool> &cancelRequested,
@@ -248,6 +250,8 @@ private:
     void applyTableColumnSizing();
     static QString normalizeOuiPrefix(const QString &prefix);
     static QString normalizeMacHex12(const QString &mac);
+    static QHash<QString, QStringList> parseAdapterDnsDomains(
+        const QByteArray &json);
     QString accuracyLabel() const;
     ScanOptions captureScanOptions(const AdapterInfo &adapter) const;
     void applyDefaultSettings();

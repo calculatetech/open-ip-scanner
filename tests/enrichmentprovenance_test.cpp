@@ -62,6 +62,75 @@ int main()
     REQUIRE(sameNameRows.first().hostname == "lower.LOCAL.");
     REQUIRE(sameNameRows.first().preferred);
 
+    QList<HostnameEvidence> inheritedSuffix;
+    inheritedSuffix = mergeHostnameEvidence(
+        inheritedSuffix, {"workstation", HostnameSource::LocalHost});
+    inheritedSuffix = mergeHostnameEvidence(
+        inheritedSuffix, {"workstation", HostnameSource::SystemResolver});
+    inheritedSuffix = mergeHostnameEvidence(
+        inheritedSuffix, {"workstation.local", HostnameSource::DnsPtr});
+    inheritedSuffix = mergeHostnameEvidence(
+        inheritedSuffix, {"workstation.local", HostnameSource::AvahiMdns});
+    REQUIRE(inheritedSuffix.size() == 4);
+    REQUIRE(canonicalHostnameEvidence(inheritedSuffix).size() == 4);
+    const QList<HostnameDisplayRow> inheritedRows = hostnameDisplayRows(
+        inheritedSuffix);
+    REQUIRE(inheritedRows.size() == 1);
+    REQUIRE(inheritedRows.first().hostname == "workstation.local");
+    REQUIRE(inheritedRows.first().sourceLabels ==
+            QStringList({"Local", "PTR", "System", "mDNS"}));
+
+    QList<HostnameEvidence> dnsSuffixWins;
+    dnsSuffixWins = mergeHostnameEvidence(
+        dnsSuffixWins, {"camera", HostnameSource::LocalHost});
+    dnsSuffixWins = mergeHostnameEvidence(
+        dnsSuffixWins, {"camera.local", HostnameSource::AvahiMdns});
+    dnsSuffixWins = mergeHostnameEvidence(
+        dnsSuffixWins, {"camera.example.test", HostnameSource::DnsPtr});
+    const QList<HostnameDisplayRow> dnsSuffixRows = hostnameDisplayRows(
+        dnsSuffixWins);
+    REQUIRE(dnsSuffixRows.size() == 2);
+    REQUIRE(dnsSuffixRows.first().hostname == "camera.example.test");
+
+    REQUIRE(preferredPtrHostname(
+                {"workstation.local.", "workstation"},
+                {"example.test"}) == "workstation.example.test");
+    REQUIRE(preferredPtrHostname(
+                {"workstation.local.", "workstation.example.test."},
+                {"example.test"}) == "workstation.example.test");
+    REQUIRE(preferredPtrHostname(
+                {"workstation.lab.example.test.", "workstation"},
+                {"example.test"}) == "workstation.lab.example.test");
+    REQUIRE(preferredPtrHostname(
+                {"example.test.", "example"},
+                {"example.test"}) == "example.test");
+    REQUIRE(preferredPtrHostname(
+                {"workstation.example.test.", "workstation.local."},
+                {"local"}) == "workstation.local");
+    REQUIRE(preferredPtrHostname(
+                {"workstation", "workstation.local."}, {}) ==
+            "workstation.local");
+
+    QList<HostnameEvidence> unscopedShortPtr;
+    unscopedShortPtr = mergeHostnameEvidence(
+        unscopedShortPtr, {"printer", HostnameSource::DnsPtr});
+    unscopedShortPtr = mergeHostnameEvidence(
+        unscopedShortPtr, {"printer.local", HostnameSource::AvahiMdns});
+    const QList<HostnameDisplayRow> unscopedRows = hostnameDisplayRows(
+        unscopedShortPtr);
+    REQUIRE(unscopedRows.size() == 2);
+    REQUIRE(unscopedRows.first().hostname == "printer");
+    REQUIRE(unscopedRows.first().sourceLabels == QStringList({"PTR"}));
+
+    const QList<HostnameDisplayRow> mdnsOnlySuffixRows = hostnameDisplayRows({
+        {"scanner", HostnameSource::LocalHost},
+        {"scanner", HostnameSource::SystemResolver},
+        {"scanner.local", HostnameSource::AvahiMdns}});
+    REQUIRE(mdnsOnlySuffixRows.size() == 2);
+    REQUIRE(mdnsOnlySuffixRows.first().hostname == "scanner");
+    REQUIRE(mdnsOnlySuffixRows.first().sourceLabels ==
+            QStringList({"Local", "System"}));
+
     const QList<ResolverEvent> events = {
         {ResolverKind::Mdns, ResolverOutcome::Resolved},
         {ResolverKind::Mdns, ResolverOutcome::NoRecord},

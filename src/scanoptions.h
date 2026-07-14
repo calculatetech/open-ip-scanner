@@ -3,6 +3,7 @@
 #include <QHash>
 #include <QSet>
 #include <QString>
+#include <QStringList>
 
 // Value-owned policy and data captured on the UI thread before a scan starts.
 // Scan workers receive this object as const data and never consult mutable
@@ -15,6 +16,7 @@ struct ScanOptions {
     QString interfaceLabel;
     QString localIp;
     QString localMac;
+    QStringList dnsSuffixes;
 
     int pingAttempts = 2;
     int pingTimeoutSeconds = 1;

@@ -30,6 +30,9 @@
 #include <QGridLayout>
 #include <QHeaderView>
 #include <QHostInfo>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QHBoxLayout>
 #include <QKeySequence>
 #include <QLabel>
@@ -565,6 +568,19 @@ QList<ScannerWindow::NetworkTarget> ScannerWindow::detectDefaultNetworks() const
 QList<ScannerWindow::AdapterInfo> ScannerWindow::buildAdapters() const
 {
     QList<AdapterInfo> adapters;
+    QHash<QString, QStringList> dnsDomains;
+#ifdef Q_OS_LINUX
+    QProcess domainQuery;
+    domainQuery.start("resolvectl", {"--json=short", "domain"});
+    if (domainQuery.waitForStarted(100) && domainQuery.waitForFinished(500) &&
+        domainQuery.exitStatus() == QProcess::NormalExit &&
+        domainQuery.exitCode() == 0) {
+        dnsDomains = parseAdapterDnsDomains(domainQuery.readAllStandardOutput());
+    } else if (domainQuery.state() != QProcess::NotRunning) {
+        domainQuery.kill();
+        domainQuery.waitForFinished(100);
+    }
+#endif
     const auto interfaces = QNetworkInterface::allInterfaces();
     for (const QNetworkInterface &iface : interfaces) {
         const auto flags = iface.flags();
@@ -599,6 +615,7 @@ QList<ScannerWindow::AdapterInfo> ScannerWindow::buildAdapters() const
         adapter.interfaceLabel = iface.humanReadableName();
         adapter.localIp = bestIp;
         adapter.localMac = iface.hardwareAddress().toUpper();
+        adapter.dnsSuffixes = dnsDomains.value(adapter.interfaceName);
         adapter.isPhysical = !isLikelyVirtualInterface(iface);
         adapter.isRoutable = hasRoutable;
         adapter.hasDefaultRoute = hasDefaultRoute(adapter.interfaceName);
@@ -625,6 +642,46 @@ QList<ScannerWindow::AdapterInfo> ScannerWindow::buildAdapters() const
     });
 
     return adapters;
+}
+
+QHash<QString, QStringList> ScannerWindow::parseAdapterDnsDomains(
+    const QByteArray &json)
+{
+    QHash<QString, QStringList> domains;
+    QJsonParseError error;
+    const QJsonDocument document = QJsonDocument::fromJson(json, &error);
+    if (error.error != QJsonParseError::NoError || !document.isArray()) {
+        return domains;
+    }
+    for (const QJsonValue &value : document.array()) {
+        const QJsonObject link = value.toObject();
+        const QString interfaceName = link.value("ifname").toString().trimmed();
+        if (interfaceName.isEmpty()) {
+            continue;
+        }
+        QStringList suffixes;
+        for (const QJsonValue &domainValue : link.value("searchDomains").toArray()) {
+            const QJsonObject domain = domainValue.toObject();
+            if (domain.value("routeOnly").toBool()) {
+                continue;
+            }
+            QString suffix = domain.value("name").toString().trimmed();
+            while (suffix.startsWith('.')) {
+                suffix.remove(0, 1);
+            }
+            while (suffix.endsWith('.')) {
+                suffix.chop(1);
+            }
+            if (!normalizedHostnameKey(suffix).isEmpty() &&
+                !suffixes.contains(suffix, Qt::CaseInsensitive)) {
+                suffixes.append(suffix);
+            }
+        }
+        if (!suffixes.isEmpty()) {
+            domains.insert(interfaceName, suffixes);
+        }
+    }
+    return domains;
 }
 
 DefaultTargetPlan ScannerWindow::buildDefaultTargetPlanForNetworks(
@@ -1423,12 +1480,15 @@ QList<ScanResult> ScannerWindow::scanHosts(const ScanOptions &options,
                         case AliveHostStage::Hostname: {
                             HostnameEvidence preliminary;
                             if (ipString == options.localIp) {
-                                preliminary.hostname = QHostInfo::localHostName().trimmed();
+                                preliminary.hostname = qualifyHostname(
+                                    QHostInfo::localHostName(),
+                                    options.dnsSuffixes.value(0));
                                 preliminary.source = HostnameSource::LocalHost;
                             }
                             const HostnameResolution resolved = lookupHostname(
                                 ipString,
                                 preliminary,
+                                options.dnsSuffixes,
                                 options.accuracyLevel,
                                 budget,
                                 cancelRequested,
@@ -1629,6 +1689,7 @@ QString ScannerWindow::lookupVendor(const QString &mac, const ScanOptions &optio
 ScannerWindow::HostnameResolution ScannerWindow::lookupHostname(
     const QString &ip,
     const HostnameEvidence &preliminary,
+    const QStringList &adapterDnsSuffixes,
     int accuracyLevel,
     const TargetBudget &budget,
     const std::shared_ptr<std::atomic_bool> &cancelRequested,
@@ -1654,7 +1715,9 @@ ScannerWindow::HostnameResolution ScannerWindow::lookupHostname(
         addEvent(ResolverKind::DnsPtr, ResolverOutcome::TimedOut);
     } else if (ptr.error == QDnsLookup::NoError && !ptr.hostnames.isEmpty()) {
         addEvent(ResolverKind::DnsPtr, ResolverOutcome::Resolved);
-        for (const QString &hostname : ptr.hostnames) {
+        const QString hostname = preferredPtrHostname(
+            ptr.hostnames, adapterDnsSuffixes);
+        if (!hostname.isEmpty()) {
             resolution.evidence = mergeHostnameEvidence(
                 resolution.evidence, {hostname, HostnameSource::DnsPtr});
         }
@@ -1686,7 +1749,8 @@ ScannerWindow::HostnameResolution ScannerWindow::lookupHostname(
         addEvent(ResolverKind::System, ResolverOutcome::Resolved);
         resolution.evidence = mergeHostnameEvidence(
             resolution.evidence,
-            {info.hostName(), HostnameSource::SystemResolver});
+            {qualifyHostname(info.hostName(), adapterDnsSuffixes.value(0)),
+             HostnameSource::SystemResolver});
     } else if (info.error() == QHostInfo::HostNotFound ||
                (info.error() == QHostInfo::NoError &&
                 normalizedHostnameKey(info.hostName()).isEmpty())) {
@@ -2128,8 +2192,12 @@ QString ScannerWindow::collectDeviceDetails(const ScanResult &result,
                                         ? QString()
                                         : QString("(%1)").arg(
                                               escaped(row.sourceLabels.join(", ")));
-            html += QString("<tr><td>%1</td><td>%2</td><td>%3</td></tr>")
-                        .arg(heading, escaped(row.hostname), sources);
+            const QString hostnameWithSources = sources.isEmpty()
+                                                    ? escaped(row.hostname)
+                                                    : QString("%1 %2").arg(
+                                                          escaped(row.hostname), sources);
+            html += QString("<tr><td>%1</td><td>%2</td><td></td></tr>")
+                        .arg(heading, hostnameWithSources);
         }
     }
 
@@ -3329,6 +3397,7 @@ ScanOptions ScannerWindow::captureScanOptions(const AdapterInfo &adapter) const
     options.interfaceLabel = adapter.interfaceLabel;
     options.localIp = adapter.localIp;
     options.localMac = adapter.localMac;
+    options.dnsSuffixes = adapter.dnsSuffixes;
     options.pingAttempts = budget.pingAttempts;
     options.pingTimeoutSeconds = budget.pingTimeoutSeconds;
     options.serviceAttempts = budget.serviceAttempts;

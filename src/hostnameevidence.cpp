@@ -13,6 +13,22 @@ bool isUsable(const HostnameEvidence &evidence)
     return !normalizedHostnameKey(evidence.hostname).isEmpty();
 }
 
+QString shortHostnameKey(const QString &hostname)
+{
+    return normalizedHostnameKey(hostname).section('.', 0, 0);
+}
+
+bool isQualifiedHostname(const QString &hostname)
+{
+    return normalizedHostnameKey(hostname).contains('.');
+}
+
+bool inheritsObservedSuffix(HostnameSource source)
+{
+    return source == HostnameSource::LocalHost ||
+           source == HostnameSource::SystemResolver;
+}
+
 } // namespace
 
 QString normalizedHostnameKey(const QString &hostname)
@@ -40,6 +56,70 @@ QString hostnameSourceLabel(HostnameSource source)
     return "Unknown";
 }
 
+QString qualifyHostname(const QString &hostname, const QString &dnsSuffix)
+{
+    QString normalized = hostname.trimmed();
+    while (normalized.endsWith('.')) {
+        normalized.chop(1);
+    }
+    QString suffix = dnsSuffix.trimmed();
+    while (suffix.startsWith('.')) {
+        suffix.remove(0, 1);
+    }
+    while (suffix.endsWith('.')) {
+        suffix.chop(1);
+    }
+    if (normalizedHostnameKey(normalized).isEmpty() ||
+        normalizedHostnameKey(suffix).isEmpty() ||
+        isQualifiedHostname(normalized)) {
+        return normalized;
+    }
+    return normalized + '.' + suffix;
+}
+
+QString preferredPtrHostname(const QStringList &hostnames,
+                             const QStringList &adapterDnsSuffixes)
+{
+    QString best;
+    int bestScore = -1;
+    for (const QString &value : hostnames) {
+        QString hostname = value.trimmed();
+        while (hostname.endsWith('.')) {
+            hostname.chop(1);
+        }
+        if (normalizedHostnameKey(hostname).isEmpty()) {
+            continue;
+        }
+
+        int score = isQualifiedHostname(hostname) ? 100 : 0;
+        QString selected = hostname;
+        for (int index = 0; index < adapterDnsSuffixes.size(); ++index) {
+            const QString suffix = normalizedHostnameKey(
+                adapterDnsSuffixes.at(index));
+            if (suffix.isEmpty()) {
+                continue;
+            }
+            const QString key = normalizedHostnameKey(hostname);
+            if (key == suffix ||
+                key.endsWith(QStringLiteral(".") + suffix)) {
+                score = 300 - index;
+                break;
+            }
+            if (!isQualifiedHostname(hostname) && score < 200 - index) {
+                score = 200 - index;
+                selected = qualifyHostname(hostname, suffix);
+            }
+        }
+        if (score > bestScore ||
+            (score == bestScore && QString::compare(
+                                      selected, best, Qt::CaseInsensitive) < 0)) {
+            best = selected;
+            bestScore = score;
+        }
+    }
+    return best;
+}
+
 QList<HostnameEvidence> mergeHostnameEvidence(
     const QList<HostnameEvidence> &current,
     const HostnameEvidence &candidate)
@@ -62,13 +142,55 @@ QList<HostnameEvidence> mergeHostnameEvidence(
         }
         merged.append(normalized);
     }
+
     return merged;
+}
+
+QList<HostnameEvidence> canonicalHostnameEvidence(
+    const QList<HostnameEvidence> &evidence)
+{
+    QMap<QString, HostnameEvidence> qualifiedByShortName;
+    for (const HostnameEvidence &item : evidence) {
+        if (item.source != HostnameSource::DnsPtr ||
+            !isQualifiedHostname(item.hostname)) {
+            continue;
+        }
+        const QString shortKey = shortHostnameKey(item.hostname);
+        const HostnameEvidence current = qualifiedByShortName.value(shortKey);
+        if (!isUsable(current) || static_cast<int>(item.source) >
+                                      static_cast<int>(current.source)) {
+            qualifiedByShortName.insert(shortKey, item);
+        }
+    }
+
+    QList<HostnameEvidence> canonical;
+    canonical.reserve(evidence.size());
+    for (HostnameEvidence item : evidence) {
+        if (!isQualifiedHostname(item.hostname) &&
+            inheritsObservedSuffix(item.source)) {
+            const HostnameEvidence donor = qualifiedByShortName.value(
+                shortHostnameKey(item.hostname));
+            if (isUsable(donor)) {
+                item.hostname = donor.hostname;
+            }
+        }
+        const QString itemKey = normalizedHostnameKey(item.hostname);
+        const auto existing = std::find_if(
+            canonical.cbegin(), canonical.cend(), [&](const HostnameEvidence &value) {
+                return value.source == item.source &&
+                       normalizedHostnameKey(value.hostname) == itemKey;
+            });
+        if (existing == canonical.cend()) {
+            canonical.append(item);
+        }
+    }
+    return canonical;
 }
 
 HostnameEvidence preferredHostname(const QList<HostnameEvidence> &evidence)
 {
     HostnameEvidence best;
-    for (const HostnameEvidence &candidate : evidence) {
+    for (const HostnameEvidence &candidate : canonicalHostnameEvidence(evidence)) {
         if (!isUsable(candidate)) {
             continue;
         }
@@ -89,11 +211,12 @@ HostnameEvidence preferredHostname(const HostnameEvidence &current,
 QList<HostnameDisplayRow> hostnameDisplayRows(
     const QList<HostnameEvidence> &evidence)
 {
-    const HostnameEvidence preferred = preferredHostname(evidence);
+    const QList<HostnameEvidence> canonical = canonicalHostnameEvidence(evidence);
+    const HostnameEvidence preferred = preferredHostname(canonical);
     const QString preferredKey = normalizedHostnameKey(preferred.hostname);
     QMap<QString, HostnameDisplayRow> grouped;
     QMap<QString, QSet<QString>> labels;
-    for (const HostnameEvidence &item : evidence) {
+    for (const HostnameEvidence &item : canonical) {
         const QString key = normalizedHostnameKey(item.hostname);
         if (key.isEmpty()) {
             continue;

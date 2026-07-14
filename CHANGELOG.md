@@ -4,6 +4,8 @@ All notable changes to this project are documented in this file.
 
 ## [0.5.1] - 2026-07-14
 
+- Capture the selected adapter's assigned DNS search suffixes, prefer the explicit PTR record matching that scope, qualify a short PTR when necessary, retain `.local` mDNS evidence separately, and place source labels directly after each hostname in Details.
+
 ### Changed
 
 - Prefer the local OS hostname, explicit DNS PTR, and system-resolver evidence over mDNS while retaining every distinct detected name.
