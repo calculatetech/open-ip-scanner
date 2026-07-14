@@ -4,6 +4,7 @@
 #include "scannerwindow.h"
 #include "linuxneighborprobe.h"
 #include "scansession.h"
+#include "serviceprobe.h"
 #include "resulttablemodel.h"
 
 #include <QApplication>
@@ -950,24 +951,22 @@ struct ScannerWindowTestAccess {
         int port,
         int attempts = 1)
     {
-        ScannerWindow::ServiceDefinition definition;
+        Q_UNUSED(window)
+        ServiceDefinition definition;
         definition.id = serviceId;
         definition.label = label;
         definition.port = port;
-        ScanOptions options;
-        options.serviceAttempts = attempts;
-        options.serviceTimeoutMs = 500;
         TargetBudget budget(2000);
         auto cancellation = std::make_shared<std::atomic_bool>(false);
-        ServiceEvidenceLevel evidence = ServiceEvidenceLevel::OpenPort;
-        const bool open = window.probePlainService(definition,
-                                                   "127.0.0.1",
-                                                   QString(),
-                                                   budget,
-                                                   cancellation,
-                                                   options,
-                                                   &evidence);
-        return {open, evidence};
+        const ServiceProbeResult result = ServiceProbe().probe(
+            definition,
+            "127.0.0.1",
+            QString(),
+            attempts,
+            500,
+            budget,
+            cancellation);
+        return {result.open, result.evidence};
     }
 };
 

@@ -2,6 +2,21 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.5.15] - 2026-07-14
+
+### Changed
+
+- Moved the service catalog, TCP/TLS connection attempts, interface-address
+  binding, bounded response reads, and protocol verification out of
+  `ScannerWindow` into `ServiceProbe`.
+- Kept configured service order, accuracy-derived retries/timeouts, and concise
+  `ServiceHit` evidence unchanged through the production backend boundary.
+
+### Added
+
+- Added a window-free service-probe contract for catalog order, verified versus
+  open-port evidence, invalid binding, cancellation, and budget expiry.
+
 ## [0.5.14] - 2026-07-14
 
 ### Changed

@@ -12,6 +12,7 @@
 #include "settingsstore.h"
 #include "targetparser.h"
 #include "scansession.h"
+#include "serviceprobe.h"
 
 #include <QAction>
 #include <QAbstractButton>
@@ -77,8 +78,6 @@
 #include <QStringListModel>
 #include <QTableView>
 #include <QTcpSocket>
-#include <QSslError>
-#include <QSslSocket>
 #include <QTextEdit>
 #include <QTextDocument>
 #include <QTextBrowser>
@@ -1151,6 +1150,7 @@ QList<ScanResult> ScannerWindow::scanHosts(const ScanOptions &options,
         interfaceIndex, cancelRequested, createAvahiDbusBackend());
     auto neighborProbe = std::make_shared<LinuxNeighborProbe>();
     auto pingProbe = std::make_shared<LinuxPingProbe>();
+    auto serviceProbe = std::make_shared<ServiceProbe>();
     ProductionHostScanDependencies dependencies;
     dependencies.ping = [pingProbe](const QHostAddress &host,
                                     const ScanOptions &scanOptions,
@@ -1163,12 +1163,18 @@ QList<ScanResult> ScannerWindow::scanHosts(const ScanOptions &options,
                                budget,
                                cancellation);
     };
-    dependencies.services = [this](const QString &ip,
-                                   const QString &localIp,
-                                   const TargetBudget &budget,
-                                   const auto &cancellation,
-                                   const ScanOptions &scanOptions) {
-        return probeServices(ip, localIp, budget, cancellation, scanOptions);
+    dependencies.services = [serviceProbe](const QString &ip,
+                                           const QString &localIp,
+                                           const TargetBudget &budget,
+                                           const auto &cancellation,
+                                           const ScanOptions &scanOptions) {
+        return serviceProbe->scan(ip,
+                                  localIp,
+                                  scanOptions.enabledServiceIds,
+                                  scanOptions.serviceAttempts,
+                                  scanOptions.serviceTimeoutMs,
+                                  budget,
+                                  cancellation);
     };
     dependencies.neighbor = [neighborProbe](const QString &ip,
                                             const QString &interfaceName,
@@ -1366,70 +1372,6 @@ QString ScannerWindow::lookupGatewayIp(const QString &interfaceName) const
     return {};
 }
 
-QList<ScannerWindow::ServiceDefinition> ScannerWindow::availableServices() const
-{
-    return {
-        {"http", "HTTP", 80, true, true},
-        {"https", "HTTPS", 443, true, true},
-        {"ssh", "SSH", 22, true, false},
-        {"rdp", "RDP", 3389, true, false},
-        {"ftp", "FTP", 21, false, false},
-        {"telnet", "Telnet", 23, false, false},
-        {"smb", "SMB", 445, false, false},
-        {"smtp25", "SMTP", 25, false, false},
-        {"smtps465", "SMTPS", 465, false, false},
-        {"smtp587", "SMTP-STARTTLS", 587, false, false}
-    };
-}
-
-QList<ServiceHit> ScannerWindow::probeServices(const QString &ip,
-                                               const QString &localBindIp,
-                                               const TargetBudget &budget,
-                                               const std::shared_ptr<std::atomic_bool> &cancelRequested,
-                                               const ScanOptions &options) const
-{
-    QList<ServiceHit> hits;
-    const auto defs = availableServices();
-
-    for (const ServiceDefinition &def : defs) {
-        if (!options.enabledServiceIds.contains(def.id)) {
-            continue;
-        }
-        if (cancellable::isCancelled(cancelRequested) || budget.expired()) {
-            break;
-        }
-
-        ServiceEvidenceLevel evidence = ServiceEvidenceLevel::OpenPort;
-        const bool usesTls = def.id == "https" || def.id == "smtps465";
-        const bool open = usesTls
-                              ? probeTlsService(def,
-                                                ip,
-                                                localBindIp,
-                                                budget,
-                                                cancelRequested,
-                                                options,
-                                                &evidence)
-                              : probePlainService(def,
-                                                  ip,
-                                                  localBindIp,
-                                                  budget,
-                                                  cancelRequested,
-                                                  options,
-                                                  &evidence);
-        if (open) {
-            ServiceHit hit;
-            hit.id = def.id;
-            hit.label = def.label;
-            hit.port = def.port;
-            hit.isWeb = def.isWeb;
-            hit.evidence = evidence;
-            hits.append(hit);
-        }
-    }
-
-    return hits;
-}
-
 QString ScannerWindow::serviceText(const QList<ServiceHit> &services) const
 {
     QStringList parts;
@@ -1502,211 +1444,6 @@ void ScannerWindow::refreshDisplayedMacAddresses()
 {
     resultModel_->notifyMacFormatChanged();
     applyTableColumnSizing();
-}
-
-bool ScannerWindow::probePlainService(
-    const ServiceDefinition &definition,
-    const QString &ip,
-    const QString &localBindIp,
-    const TargetBudget &budget,
-    const std::shared_ptr<std::atomic_bool> &cancelRequested,
-    const ScanOptions &options,
-    ServiceEvidenceLevel *evidence) const
-{
-    bool sawOpenPort = false;
-    for (int attempt = 0; attempt < options.serviceAttempts; ++attempt) {
-        if (cancellable::isCancelled(cancelRequested) || budget.expired()) {
-            break;
-        }
-        QTcpSocket socket;
-        if (!localBindIp.isEmpty()) {
-            QHostAddress bindAddress;
-            if (!bindAddress.setAddress(localBindIp) ||
-                bindAddress.protocol() != QAbstractSocket::IPv4Protocol ||
-                !socket.bind(bindAddress, 0)) {
-                return false;
-            }
-        }
-        socket.connectToHost(ip, static_cast<quint16>(definition.port));
-        if (cancellable::waitForConnected(
-                socket, budget.clampTimeout(options.serviceTimeoutMs), cancelRequested) !=
-            cancellable::WaitResult::Completed) {
-            continue;
-        }
-        sawOpenPort = true;
-
-        const bool expectsResponse = definition.id == "http" || definition.id == "ssh" ||
-                                     definition.id == "ftp" || definition.id == "smtp25" ||
-                                     definition.id == "smtp587";
-        if (!expectsResponse) {
-            socket.abort();
-            return true;
-        }
-        QByteArray request;
-        if (definition.id == "http") {
-            request = "HEAD / HTTP/1.0\r\nHost: " + ip.toUtf8() + "\r\n\r\n";
-        }
-        if (!request.isEmpty()) {
-            socket.write(request);
-            if (cancellable::waitForBytesWritten(
-                    socket,
-                    budget.clampTimeout(options.serviceTimeoutMs),
-                    cancelRequested) != cancellable::WaitResult::Completed) {
-                socket.abort();
-                continue;
-            }
-        }
-        QByteArray response = readServiceResponse(
-            socket, budget, cancelRequested, options.serviceTimeoutMs);
-        bool verified = false;
-        if (definition.id == "smtp587") {
-            if (responseVerifiesService("smtp25", response)) {
-                socket.write("EHLO open-ip-scanner\r\n");
-                if (cancellable::waitForBytesWritten(
-                        socket,
-                        budget.clampTimeout(options.serviceTimeoutMs),
-                        cancelRequested) == cancellable::WaitResult::Completed) {
-                    response = readServiceResponse(
-                        socket, budget, cancelRequested, options.serviceTimeoutMs, true);
-                    verified = responseVerifiesService(definition.id, response);
-                }
-            }
-        } else {
-            verified = responseVerifiesService(definition.id, response);
-        }
-        if (verified) {
-            *evidence = ServiceEvidenceLevel::VerifiedProtocol;
-            socket.abort();
-            return true;
-        }
-        socket.abort();
-    }
-    return sawOpenPort;
-}
-
-bool ScannerWindow::probeTlsService(
-    const ServiceDefinition &definition,
-    const QString &ip,
-    const QString &localBindIp,
-    const TargetBudget &budget,
-    const std::shared_ptr<std::atomic_bool> &cancelRequested,
-    const ScanOptions &options,
-    ServiceEvidenceLevel *evidence) const
-{
-    bool sawOpenPort = false;
-    for (int attempt = 0; attempt < options.serviceAttempts; ++attempt) {
-        if (cancellable::isCancelled(cancelRequested) || budget.expired()) {
-            break;
-        }
-        QSslSocket socket;
-        bool tcpConnected = false;
-        QObject::connect(&socket, &QSslSocket::connected, &socket, [&tcpConnected]() {
-            tcpConnected = true;
-        });
-        QObject::connect(&socket,
-                         &QSslSocket::sslErrors,
-                         &socket,
-                         [&socket](const QList<QSslError> &) { socket.ignoreSslErrors(); });
-        if (!localBindIp.isEmpty()) {
-            QHostAddress bindAddress;
-            if (!bindAddress.setAddress(localBindIp) ||
-                bindAddress.protocol() != QAbstractSocket::IPv4Protocol ||
-                !socket.bind(bindAddress, 0)) {
-                return false;
-            }
-        }
-        socket.connectToHostEncrypted(ip, static_cast<quint16>(definition.port));
-        const int timeoutMs = budget.clampTimeout(options.serviceTimeoutMs);
-        QElapsedTimer elapsed;
-        elapsed.start();
-        while (!socket.isEncrypted() && elapsed.elapsed() < timeoutMs &&
-               !cancellable::isCancelled(cancelRequested) && !budget.expired()) {
-            const int remaining = timeoutMs - static_cast<int>(elapsed.elapsed());
-            socket.waitForEncrypted(std::min(25, remaining));
-            if (socket.state() == QAbstractSocket::UnconnectedState &&
-                socket.error() != QAbstractSocket::UnknownSocketError) {
-                break;
-            }
-        }
-        sawOpenPort = sawOpenPort || tcpConnected;
-        if (socket.isEncrypted()) {
-            bool verified = false;
-            if (definition.id == "https") {
-                socket.write("HEAD / HTTP/1.0\r\nHost: " + ip.toUtf8() + "\r\n\r\n");
-                if (cancellable::waitForBytesWritten(
-                        socket,
-                        budget.clampTimeout(options.serviceTimeoutMs),
-                        cancelRequested) == cancellable::WaitResult::Completed) {
-                    verified = responseVerifiesService(
-                        definition.id,
-                        readServiceResponse(
-                            socket, budget, cancelRequested, options.serviceTimeoutMs));
-                }
-            } else if (definition.id == "smtps465") {
-                verified = responseVerifiesService(
-                    definition.id,
-                    readServiceResponse(
-                        socket, budget, cancelRequested, options.serviceTimeoutMs));
-            }
-            if (verified) {
-                *evidence = ServiceEvidenceLevel::VerifiedProtocol;
-                socket.abort();
-                return true;
-            }
-        }
-        socket.abort();
-    }
-    return sawOpenPort;
-}
-
-QByteArray ScannerWindow::readServiceResponse(
-    QTcpSocket &socket,
-    const TargetBudget &budget,
-    const std::shared_ptr<std::atomic_bool> &cancelRequested,
-    int timeoutMs,
-    bool smtpMultiline) const
-{
-    constexpr int kMaxResponseBytes = 4096;
-    QByteArray response;
-    QElapsedTimer elapsed;
-    elapsed.start();
-    while (response.size() < kMaxResponseBytes && elapsed.elapsed() < timeoutMs &&
-           !cancellable::isCancelled(cancelRequested) && !budget.expired()) {
-        if (socket.bytesAvailable() > 0) {
-            response.append(socket.read(kMaxResponseBytes - response.size()));
-            const QList<QByteArray> lines = response.split('\n');
-            const bool hasCompleteLine = lines.size() > 1;
-            const QByteArray first = hasCompleteLine ? lines.first().trimmed() : QByteArray();
-            bool responseComplete = hasCompleteLine && !smtpMultiline;
-            if (smtpMultiline && hasCompleteLine) {
-                if (!first.startsWith("250-") && !first.startsWith("250 ")) {
-                    responseComplete = true;
-                } else {
-                    for (int lineIndex = 0; lineIndex + 1 < lines.size(); ++lineIndex) {
-                        if (lines.at(lineIndex).trimmed().startsWith("250 ")) {
-                            responseComplete = true;
-                            break;
-                        }
-                    }
-                }
-            }
-            if (responseComplete) {
-                break;
-            }
-            continue;
-        }
-        const int remaining = timeoutMs - static_cast<int>(elapsed.elapsed());
-        if (cancellable::waitForReadyRead(
-                socket,
-                budget.clampTimeout(remaining),
-                cancelRequested) != cancellable::WaitResult::Completed) {
-            if (socket.bytesAvailable() > 0) {
-                response.append(socket.read(kMaxResponseBytes - response.size()));
-            }
-            break;
-        }
-    }
-    return response;
 }
 
 QString ScannerWindow::collectDeviceDetails(const ScanResult &result,
@@ -2462,7 +2199,7 @@ void ScannerWindow::showSettingsDialog()
                                         settingslayout::kOuterMargin);
     servicesLayout->setSpacing(settingslayout::kControlSpacing);
     QHash<QString, QCheckBox *> serviceChecks;
-    for (const ServiceDefinition &def : availableServices()) {
+    for (const ServiceDefinition &def : ServiceProbe::definitions()) {
         auto *check = new QCheckBox(QString("Probe %1 (%2)").arg(def.label).arg(def.port), servicesPage);
         check->setChecked(enabledServiceIds_.contains(def.id));
         serviceChecks.insert(def.id, check);
@@ -2554,7 +2291,7 @@ void ScannerWindow::showSettingsDialog()
     programsLayout->setVerticalSpacing(settingslayout::kControlSpacing);
     programsLayout->setRowWrapPolicy(QFormLayout::WrapLongRows);
     QHash<QString, QLineEdit *> commandEdits;
-    for (const ServiceDefinition &def : availableServices()) {
+    for (const ServiceDefinition &def : ServiceProbe::definitions()) {
         if (def.isWeb) {
             continue;
         }
@@ -2873,7 +2610,7 @@ void ScannerWindow::showSettingsDialog()
     targetTextFormat_ = newTargetTextFormat;
 
     enabledServiceIds_.clear();
-    for (const ServiceDefinition &def : availableServices()) {
+    for (const ServiceDefinition &def : ServiceProbe::definitions()) {
         if (serviceChecks.contains(def.id) && serviceChecks[def.id]->isChecked()) {
             enabledServiceIds_.insert(def.id);
         }
@@ -3031,7 +2768,7 @@ QString ScannerWindow::probeSummary(const ScanOptions &options,
     bool usesTls = false;
     bool sendsSmtpEhlo = false;
     bool readsBanners = false;
-    for (const ServiceDefinition &definition : availableServices()) {
+    for (const ServiceDefinition &definition : ServiceProbe::definitions()) {
         if (!options.enabledServiceIds.contains(definition.id)) {
             continue;
         }
@@ -3147,7 +2884,7 @@ ScanOptions ScannerWindow::captureScanOptions(const AdapterInfo &adapter) const
     options.macDisplayFormat = macDisplayFormat_;
     options.enabledServiceIds = enabledServiceIds_;
     int serviceWaitUnits = 0;
-    for (const ServiceDefinition &definition : availableServices()) {
+    for (const ServiceDefinition &definition : ServiceProbe::definitions()) {
         if (options.enabledServiceIds.contains(definition.id)) {
             serviceWaitUnits += serviceProbeWaitUnits(definition.id);
         }

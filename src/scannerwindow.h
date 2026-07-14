@@ -37,7 +37,6 @@ class QToolBar;
 class QSplitter;
 class QStringListModel;
 class QTableView;
-class QTcpSocket;
 class QTextEdit;
 class QTimer;
 class QAction;
@@ -130,15 +129,6 @@ private:
         bool hasDefaultRoute = false;
     };
 
-    struct ServiceDefinition {
-        // Static service config for probe UI and execution.
-        QString id;
-        QString label;
-        int port = 0;
-        bool defaultEnabled = false;
-        bool isWeb = false;
-    };
-
     struct ViewportAnchor {
         QString identity;
         int pixelOffset = 0;
@@ -183,33 +173,7 @@ private:
     QString lookupGatewayIp(const QString &interfaceName) const;
 
     // Service detection and details enrichment.
-    QList<ServiceDefinition> availableServices() const;
-    QList<ServiceHit> probeServices(const QString &ip,
-                                    const QString &localBindIp,
-                                    const TargetBudget &budget,
-                                    const std::shared_ptr<std::atomic_bool> &cancelRequested,
-                                    const ScanOptions &options) const;
     QString collectDeviceDetails(const ScanResult &result, const ScanOptions &options) const;
-    bool probePlainService(const ServiceDefinition &definition,
-                           const QString &ip,
-                           const QString &localBindIp,
-                           const TargetBudget &budget,
-                           const std::shared_ptr<std::atomic_bool> &cancelRequested,
-                           const ScanOptions &options,
-                           ServiceEvidenceLevel *evidence) const;
-    bool probeTlsService(const ServiceDefinition &definition,
-                         const QString &ip,
-                         const QString &localBindIp,
-                         const TargetBudget &budget,
-                         const std::shared_ptr<std::atomic_bool> &cancelRequested,
-                         const ScanOptions &options,
-                         ServiceEvidenceLevel *evidence) const;
-    QByteArray readServiceResponse(
-        QTcpSocket &socket,
-        const TargetBudget &budget,
-        const std::shared_ptr<std::atomic_bool> &cancelRequested,
-        int timeoutMs,
-        bool smtpMultiline = false) const;
     void updateDetailsPaneForCurrentSelection();
     QList<ResolverEvent> resolverEventsForDisplayedResults() const;
     QByteArray resolverSupportBundle() const;

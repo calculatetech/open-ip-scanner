@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.28)
-project(OpenIpScanner VERSION 0.5.14 LANGUAGES CXX)
+project(OpenIpScanner VERSION 0.5.15 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -60,6 +60,8 @@ add_library(ois_linux STATIC
     src/linuxpingprobe.cpp
     src/mdnsresolver.h
     src/mdnsresolver.cpp
+    src/serviceprobe.h
+    src/serviceprobe.cpp
 )
 target_include_directories(ois_linux PUBLIC src)
 target_link_libraries(ois_linux
@@ -150,6 +152,11 @@ if(BUILD_TESTING)
     add_executable(linux_ping_probe_test tests/linuxpingprobe_test.cpp)
     target_link_libraries(linux_ping_probe_test PRIVATE ois_linux)
     add_test(NAME linux_ping_probe_contract COMMAND linux_ping_probe_test)
+
+    add_executable(service_probe_test tests/serviceprobe_test.cpp)
+    target_link_libraries(service_probe_test PRIVATE ois_linux)
+    add_test(NAME service_probe_contract COMMAND service_probe_test --skip-tls)
+    add_test(NAME service_probe_tls_integration COMMAND service_probe_test)
 
     add_executable(scan_budget_test tests/scanbudget_test.cpp)
     target_link_libraries(scan_budget_test PRIVATE ois_scan)
