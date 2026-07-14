@@ -155,6 +155,8 @@ public:
                     [this, watcher, callback = std::move(callback)]() {
                         {
                             QMutexLocker locker(&watchersMutex_);
+                            // Qt keeps this context alive until cancelAll() drains the dispatcher.
+                            // NOLINTNEXTLINE(clang-analyzer-core.CallAndMessage)
                             watchers_.remove(watcher);
                         }
                         QDBusPendingReply<int, int, int, QString, QString, quint32> reply =
@@ -190,6 +192,8 @@ public:
                 QSet<QDBusPendingCallWatcher *> pending;
                 {
                     QMutexLocker locker(&watchersMutex_);
+                    // This blocking dispatcher call completes before backend destruction.
+                    // NOLINTNEXTLINE(clang-analyzer-core.NonNullParamChecker)
                     pending = watchers_;
                     watchers_.clear();
                 }
