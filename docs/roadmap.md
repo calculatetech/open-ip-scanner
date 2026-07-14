@@ -2,11 +2,11 @@
 
 This file is the single source of truth for unfinished product, engineering, documentation, and release work. Detailed evidence for why each 1.0 item exists is in [the production-readiness audit](production-readiness-audit.md). New ideas belong here rather than in a second backlog.
 
-The audited baseline is `0.2.0` at commit `91e0a7a`; `0.4.3` is the active implementation branch, while `0.4.2` remains the latest human-verified version on `main`. Version 1.0 is not ready. Every unchecked item under “Required for 1.0” is a release gate; the post-1.0 section is explicitly outside the first production release.
+The audited baseline is `0.2.0` at commit `91e0a7a`; `0.4.3` is the latest human-verified version. Version 1.0 is not ready. Every unchecked item under “Required for 1.0” is a release gate; the post-1.0 section is explicitly outside the first production release.
 
 ## Delivered implementation increments
 
-The unchecked milestone boxes below mean their complete acceptance criteria are still open; they do not mean no work has landed. The cumulative implementation through `0.4.2` is human-verified and merged to `main`.
+The unchecked milestone boxes below mean their complete acceptance criteria are still open; they do not mean no work has landed. The cumulative implementation through `0.4.3` is human-verified.
 
 - `0.3.0` — **SCAN-CONFIGURATION:** active scans receive an immutable `ScanOptions` snapshot, with concurrent value-isolation and ThreadSanitizer coverage.
 - `0.3.1` — **SCAN-CANCELLATION:** Stop and close use bounded cancellation-aware process, socket, and hostname waits, with asynchronous window shutdown.
@@ -14,8 +14,9 @@ The unchecked milestone boxes below mean their complete acceptance criteria are 
 - `0.4.0` — **ACCESSIBILITY:** added the canonical UI layout specification and a stable, internally scrolling 600-by-440 Settings dialog with aligned Performance controls.
 - `0.4.1` — **TARGET-DEFAULTS:** generated bounded, parser-valid targets for large and point-to-point networks while keeping Auto Select probes on one valid adapter and route.
 - `0.4.2` — **NEIGHBOR-VALIDATION:** validated interface-scoped Linux neighbor evidence, applied conservative kernel-state freshness rules, and preserved interface-plus-IP result identity.
+- `0.4.3` — **SERVICE-EVIDENCE:** separated open ports from confirmed protocols, removed hidden detail traffic and OS guesses, restored all-accuracy TCP discovery, and corrected protocol-aware target budgeting.
 
-Correctness work is active at **SERVICE-EVIDENCE** on version `0.4.3`; that version remains unchanged through implementation, review, human verification, and merge. DUPLICATE-IP-CONFLICTS remains Post-1.0.
+Correctness work proceeds next to **RESULT-SCALING**. DUPLICATE-IP-CONFLICTS remains Post-1.0.
 
 ## Priority definitions
 
@@ -71,11 +72,11 @@ Priority matches the most severe audit finding an item closes. All items in the 
 
 #### SERVICE-EVIDENCE
 
-- [ ] **Separate open-port evidence from verified service identity.** `High`
+- [x] **Separate open-port evidence from verified service identity.** `High`
   - Display an open TCP port as an open port or “probable service” until a protocol-specific handshake confirms it. Do not claim HTTPS, SSH, RDP, SMTP, or an operating system merely from a conventional port number or an ambiguous banner.
   - Make banner and device-detail collection explicit, bounded, and lazy so a hidden details pane does not generate extra traffic for service-positive devices. Rebuild details when better host data arrives.
   - Current progress on `0.4.3`: every successful TCP connection is shown as `Unknown:<port>` unless the same connection yields protocol-specific evidence. HTTP requires a status line; HTTPS requires both TLS and an HTTP status line; SMTPS requires TLS and an SMTP greeting; SSH requires an `SSH-` banner; FTP and SMTP require matching greetings; and SMTP-STARTTLS additionally requires advertised STARTTLS capability. RDP, SMB, Telnet, and mismatches remain concise unknown-service tags. Enabled services participate in discovery at every accuracy level, higher accuracy can retry verification while retaining open-port evidence, the target ceiling accounts for each protocol's complete wait sequence, fragmented responses are bounded and accumulated, and the automatic detail stage sends no separate requests or OS inference. Pure fixtures cover every classifier and conventional/unconventional display, production option capture, and conventional/unconventional rendering, while production loopback coverage exercises plain verified, mismatched, fragmented, and retried probes on ephemeral ports.
-  - Remaining before completion: human validation of the new labels and active-port behavior.
+  - Completion evidence: normal, strict-warning, and ThreadSanitizer suites pass; fresh adversarial review found no remaining issue; and human validation confirmed the concise service labels and active-port behavior.
   - Done when mock-port fixtures produce truthful labels independent of conventional port numbers, OS text is removed, enabled protocol-verification traffic is documented, and the details pane sends no hidden request.
 
 #### RESULT-SCALING
