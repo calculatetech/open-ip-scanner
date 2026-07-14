@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.4.4] - 2026-07-13
+
+### Changed
+- Replaced per-cell result widgets with an interface-and-IP keyed table model and painted service tags.
+- Publish results continuously in bounded UI batches while preserving deterministic insertion order, selection, and the anchored viewport.
+- Reconcile authoritative completion results through the same bounded path without clearing, rebuilding, or unexpectedly sorting the table.
+
+### Added
+- Added a 4,096-row GUI responsiveness benchmark covering scrambled arrivals, explicit sorting, filtering, completion reconciliation, and scroll-anchor stability.
+
 ## [0.4.3] - 2026-07-13
 
 ### Changed

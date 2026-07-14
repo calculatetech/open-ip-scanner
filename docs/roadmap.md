@@ -2,11 +2,11 @@
 
 This file is the single source of truth for unfinished product, engineering, documentation, and release work. Detailed evidence for why each 1.0 item exists is in [the production-readiness audit](production-readiness-audit.md). New ideas belong here rather than in a second backlog.
 
-The audited baseline is `0.2.0` at commit `91e0a7a`; `0.4.3` is the latest human-verified version. Version 1.0 is not ready. Every unchecked item under “Required for 1.0” is a release gate; the post-1.0 section is explicitly outside the first production release.
+The audited baseline is `0.2.0` at commit `91e0a7a`; `0.4.4` is the active implementation branch, while `0.4.3` remains the latest human-verified version on `main`. Version 1.0 is not ready. Every unchecked item under “Required for 1.0” is a release gate; the post-1.0 section is explicitly outside the first production release.
 
 ## Delivered implementation increments
 
-The unchecked milestone boxes below mean their complete acceptance criteria are still open; they do not mean no work has landed. The cumulative implementation through `0.4.3` is human-verified.
+The unchecked milestone boxes below mean their complete acceptance criteria are still open; they do not mean no work has landed. The cumulative implementation through `0.4.3` is human-verified and merged to `main`.
 
 - `0.3.0` — **SCAN-CONFIGURATION:** active scans receive an immutable `ScanOptions` snapshot, with concurrent value-isolation and ThreadSanitizer coverage.
 - `0.3.1` — **SCAN-CANCELLATION:** Stop and close use bounded cancellation-aware process, socket, and hostname waits, with asynchronous window shutdown.
@@ -16,7 +16,7 @@ The unchecked milestone boxes below mean their complete acceptance criteria are 
 - `0.4.2` — **NEIGHBOR-VALIDATION:** validated interface-scoped Linux neighbor evidence, applied conservative kernel-state freshness rules, and preserved interface-plus-IP result identity.
 - `0.4.3` — **SERVICE-EVIDENCE:** separated open ports from confirmed protocols, removed hidden detail traffic and OS guesses, restored all-accuracy TCP discovery, and corrected protocol-aware target budgeting.
 
-Correctness work proceeds next to **RESULT-SCALING**. DUPLICATE-IP-CONFLICTS remains Post-1.0.
+Correctness work is active at **RESULT-SCALING** on version `0.4.4`; that version remains stable through implementation, review, human verification, and merge. DUPLICATE-IP-CONFLICTS remains Post-1.0.
 
 ## Priority definitions
 
@@ -82,9 +82,11 @@ Priority matches the most severe audit finding an item closes. All items in the 
 #### RESULT-SCALING
 
 - [ ] **Replace per-row table rebuilding with a scalable result model.** `High`
-  - Use a model keyed by interface and IP, batch worker updates, and defer sorting, filtering, column measurement, and widget construction. Service sorting must use actual service data rather than empty table cells.
-  - Preserve selection and progressive display without reconstructing the entire table through the expensive incremental path at scan completion.
-  - Done when a GUI benchmark inserts, updates, sorts, and filters 4,096 synthetic results while the event loop remains responsive, service sorting is deterministic, and the final model equals the worker result set.
+  - Use a model keyed by interface and IP and coalesce only the UI notifications needed to keep the event loop responsive. Publish completed results continuously; do not hold them until scan completion. Insert each new row at its deterministic position under the active ordering so existing rows do not undergo repeated global re-sorts. Service sorting must use actual service data rather than empty table cells.
+  - Preserve selection and the perceived scroll position—the top visible row identity and its exact pixel offset—during background updates and scan completion. The scrollbar's numeric value may change when rows are inserted above the viewport, but the content under the user's eyes must not move. Do not reconstruct, clear, or reorder the table at completion. A user-requested header sort may intentionally reorder rows and move the viewport; background updates must not cause an abrupt or delayed surprise sort or scroll jump.
+  - Current progress on `0.4.4`: `ResultTableModel` owns interface-and-IP keyed records and deterministic active ordering; a delegate paints service tags without persistent cell widgets; arrivals and authoritative completion reconciliation use bounded 64-row UI batches; and every background batch anchors selection plus the top visible identity and pixel offset. Existing rows do not move when later evidence upgrades their fields; only an explicit header sort globally reorders the table. A scrambled-arrival 4,096-row benchmark covers real-time publication, deterministic IP and service ordering, filtering, an unseen completion-only row, no model reset, no persistent widgets, selection stability, exact viewport anchoring, a 10 ms heartbeat below the 250 ms ceiling, and the five-second runner budget.
+  - Validation evidence: normal and strict-warning builds pass all 8 tests; the scrambled 4,096-row GUI contract remains below the five-second and 250 ms heartbeat ceilings. ThreadSanitizer passes the seven non-rendering tests but Qt 6's uninstrumented font-rendering pool reports QtCore/QtGui races when the offscreen benchmark paints; no report contains a project-owned result-model or batching frame. The final fresh adversarial review found no remaining issue after correcting active-filter state across explicit sorts and disabling the scan action during completion reconciliation. Reviewed branch publication and human validation of live scan ordering and viewport stability remain.
+  - Done when a GUI benchmark inserts, updates, explicitly sorts, and filters 4,096 synthetic results while the event loop remains responsive; progressive rows remain deterministically ordered and visible in real time; selection and the anchored viewport do not move during background publication or completion; completion causes no reset or reorder; service sorting is deterministic; and the final model equals the worker result set.
 
 ### mDNS reverse-hostname enrichment
 

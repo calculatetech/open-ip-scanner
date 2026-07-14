@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(OpenIpScanner VERSION 0.4.3 LANGUAGES CXX)
+project(OpenIpScanner VERSION 0.4.4 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -25,8 +25,13 @@ add_executable(open_ip_scanner
     src/neighborentry.cpp
     src/scanbudget.h
     src/scanoptions.h
+    src/scanresult.h
+    src/resulttablemodel.h
+    src/resulttablemodel.cpp
     src/serviceevidence.h
     src/serviceevidence.cpp
+    src/servicetagdelegate.h
+    src/servicetagdelegate.cpp
     src/settingslayout.h
     src/targetdefaults.h
     src/targetdefaults.cpp
@@ -98,8 +103,13 @@ if(BUILD_TESTING)
         src/neighborentry.cpp
         src/scanbudget.h
         src/scanoptions.h
+        src/scanresult.h
+        src/resulttablemodel.h
+        src/resulttablemodel.cpp
         src/serviceevidence.h
         src/serviceevidence.cpp
+        src/servicetagdelegate.h
+        src/servicetagdelegate.cpp
         src/settingslayout.h
         src/targetdefaults.h
         src/targetdefaults.cpp
