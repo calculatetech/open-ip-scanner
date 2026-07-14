@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.4.5] - 2026-07-14
+
+### Added
+- Added an exact hidden `test` target that publishes 768 deterministic benchmark-network devices without network traffic or an adapter.
+- Covered every configured service with confirmed and unknown-port evidence, known and unknown MAC vendors and hostnames, and varied service counts.
+- Paced progressive fixture results from Fast through Maximum Accuracy while preserving normal table ordering, viewport behavior, and prompt Stop handling.
+
 ## [0.4.4] - 2026-07-13
 
 ### Changed

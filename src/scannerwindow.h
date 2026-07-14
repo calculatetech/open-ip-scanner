@@ -159,6 +159,12 @@ private:
                                 const std::shared_ptr<std::atomic_bool> &cancelRequested,
                                 const std::function<void(int, int)> &onProgress,
                                 const std::function<void(const ScanResult &)> &onResult) const;
+    void startDebugScan();
+    QList<ScanResult> runDebugScan(
+        int accuracyLevel,
+        const std::shared_ptr<std::atomic_bool> &cancelRequested,
+        const std::function<void(int, int)> &onProgress,
+        const std::function<void(const ScanResult &)> &onResult) const;
 
     // Host discovery helpers.
     bool pingHost(const QHostAddress &address,
