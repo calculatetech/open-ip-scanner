@@ -67,6 +67,49 @@ struct ScannerWindowTestAccess {
                window.detailsByIdentity_.value(vpnKey) == "VPN details";
     }
 
+    static bool capturesAllScanOptions(ScannerWindow &window)
+    {
+        const int originalAccuracy = window.accuracyLevel_;
+        const int originalWorkers = window.maxParallelProbes_;
+        const int originalMacFormat = window.macDisplayFormat_;
+        const QSet<QString> originalServices = window.enabledServiceIds_;
+        const QHash<QString, QString> originalBuiltInVendors = window.builtInOuiVendors_;
+        const QHash<QString, QString> originalCustomVendors = window.customOuiVendors_;
+
+        window.accuracyLevel_ = 1;
+        window.maxParallelProbes_ = 7;
+        window.macDisplayFormat_ = ScannerWindow::MacPlainLower;
+        window.enabledServiceIds_ = {"http", "smtp587", "rdp"};
+        window.builtInOuiVendors_ = {{"AABBCC", "Built in fixture"}};
+        window.customOuiVendors_ = {{"DDEEFF", "Custom fixture"}};
+
+        ScannerWindow::AdapterInfo adapter;
+        adapter.interfaceName = "fixture0";
+        adapter.interfaceLabel = "Fixture adapter";
+        adapter.localIp = "192.0.2.10";
+        adapter.localMac = "02:00:00:00:00:10";
+        const ScanOptions options = window.captureScanOptions(adapter);
+
+        window.accuracyLevel_ = originalAccuracy;
+        window.maxParallelProbes_ = originalWorkers;
+        window.macDisplayFormat_ = originalMacFormat;
+        window.enabledServiceIds_ = originalServices;
+        window.builtInOuiVendors_ = originalBuiltInVendors;
+        window.customOuiVendors_ = originalCustomVendors;
+
+        return options.accuracyLevel == 1 && options.maxParallelProbes == 7 &&
+               options.interfaceName == "fixture0" &&
+               options.interfaceLabel == "Fixture adapter" &&
+               options.localIp == "192.0.2.10" &&
+               options.localMac == "02:00:00:00:00:10" && options.pingAttempts == 2 &&
+               options.pingTimeoutSeconds == 1 && options.serviceAttempts == 2 &&
+               options.serviceTimeoutMs == 750 && options.macDisplayFormat == 6 &&
+               options.enabledServiceIds == QSet<QString>({"http", "smtp587", "rdp"}) &&
+               options.targetDeadlineMs == 17000 &&
+               options.builtInOuiVendors.value("AABBCC") == "Built in fixture" &&
+               options.customOuiVendors.value("DDEEFF") == "Custom fixture";
+    }
+
     static std::pair<bool, ServiceEvidenceLevel> probePlainService(
         const ScannerWindow &window,
         const QString &serviceId,
@@ -274,6 +317,7 @@ int main(int argc, char **argv)
     REQUIRE(parsedTargets.size() == parserPlan.uniqueHostCount);
     REQUIRE(parserPlan.targetText.size() <= 2048);
     REQUIRE(ScannerWindowTestAccess::preservesInterfaceIdentity(window));
+    REQUIRE(ScannerWindowTestAccess::capturesAllScanOptions(window));
 
     const auto verifiedSsh = probeMockEndpoint(window, "ssh", "SSH-2.0-fixture\r\n");
     REQUIRE(verifiedSsh.first);

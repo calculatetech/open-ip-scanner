@@ -55,16 +55,21 @@ inline ScanBudgetProfile scanBudgetProfile(int accuracyLevel)
     }
 }
 
-inline int targetDeadlineForProfile(const ScanBudgetProfile &profile, int enabledServiceCount)
+inline bool shouldProbeServicesForDiscovery(bool alive, int enabledServiceCount)
 {
-    if (enabledServiceCount <= 0) {
+    return !alive && enabledServiceCount > 0;
+}
+
+inline int targetDeadlineForProfile(const ScanBudgetProfile &profile, int serviceWaitUnits)
+{
+    if (serviceWaitUnits <= 0) {
         return profile.targetDeadlineMs;
     }
     const std::int64_t pingWork =
         static_cast<std::int64_t>(profile.pingAttempts) *
         pingAttemptWaitMs(profile.pingTimeoutSeconds);
     const std::int64_t serviceWork =
-        static_cast<std::int64_t>(enabledServiceCount) * profile.serviceAttempts *
+        static_cast<std::int64_t>(serviceWaitUnits) * profile.serviceAttempts *
         profile.serviceTimeoutMs;
     const std::int64_t required = pingWork + serviceWork + kNonServiceStageReserveMs;
     return static_cast<int>(std::min<std::int64_t>(

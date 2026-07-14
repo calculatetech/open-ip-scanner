@@ -58,6 +58,11 @@ int main()
     require(std::string_view(scanBudgetProfileSummary(2)).find("3 attempts") == 0);
     require(std::string_view(scanBudgetProfileSummary(3)).find("4 attempts") == 0);
 
+    require(shouldProbeServicesForDiscovery(false, 1));
+    require(shouldProbeServicesForDiscovery(false, 10));
+    require(!shouldProbeServicesForDiscovery(false, 0));
+    require(!shouldProbeServicesForDiscovery(true, 1));
+
     require(targetDeadlineForProfile(fast, 0) == 5000);
     require(targetDeadlineForProfile(fast, 4) == 5000);
     require(targetDeadlineForProfile(fast, 10) == 7000);

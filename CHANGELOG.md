@@ -7,6 +7,7 @@ All notable changes to this project are documented in this file.
 ### Changed
 - Distinguish open-port evidence from protocol-verified service identity and remove separate automatic device-detail traffic.
 - Verify HTTP status lines, SSH banners, FTP/SMTP greetings, STARTTLS capability, and TLS-plus-application evidence on the original probe connection; label unsupported or mismatched protocols as concise `Unknown:<port>` tags.
+- Use enabled service probes to discover ping-silent hosts at every accuracy level, without probing the same service twice, and size each target deadline for the complete protocol-specific wait sequence.
 - Removed heuristic operating-system claims and separate automatic banner/detail requests; the details pane now renders only evidence already collected by enabled probes.
 
 ### Added

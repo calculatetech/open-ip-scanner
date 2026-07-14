@@ -37,6 +37,15 @@ int main()
     REQUIRE(!responseVerifiesService("smtp587", "250-fixture\r\n250-STARTTLS\r\n"));
     REQUIRE(!responseVerifiesService("rdp", "HTTP/1.1 200 OK\r\n"));
 
+    REQUIRE(serviceProbeWaitUnits("rdp") == 1);
+    REQUIRE(serviceProbeWaitUnits("ssh") == 2);
+    REQUIRE(serviceProbeWaitUnits("ftp") == 2);
+    REQUIRE(serviceProbeWaitUnits("smtp25") == 2);
+    REQUIRE(serviceProbeWaitUnits("smtps465") == 2);
+    REQUIRE(serviceProbeWaitUnits("http") == 3);
+    REQUIRE(serviceProbeWaitUnits("https") == 3);
+    REQUIRE(serviceProbeWaitUnits("smtp587") == 4);
+
     REQUIRE(serviceEvidenceText("SSH", 2222, ServiceEvidenceLevel::VerifiedProtocol) ==
             "SSH:2222");
     REQUIRE(serviceEvidenceText("SSH", 22, ServiceEvidenceLevel::OpenPort) ==

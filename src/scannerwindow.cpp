@@ -1265,6 +1265,7 @@ QList<ScanResult> ScannerWindow::scanHosts(const ScanOptions &options,
                 QString discoveredMac;
                 NeighborObservation neighbor;
                 QList<ServiceHit> discoveredServices;
+                bool servicesProbed = false;
                 if (ipString == options.localIp) {
                     alive = true;
                     discoveredMac = options.localMac;
@@ -1272,6 +1273,13 @@ QList<ScanResult> ScannerWindow::scanHosts(const ScanOptions &options,
                     alive = true;
                 } else {
                     alive = pingHost(host, options, budget, cancelRequested);
+                    if (shouldProbeServicesForDiscovery(
+                            alive, options.enabledServiceIds.size()) && !budget.expired()) {
+                        servicesProbed = true;
+                        discoveredServices = probeServices(
+                            ipString, options.localIp, budget, cancelRequested, options);
+                        alive = !discoveredServices.isEmpty();
+                    }
                     if (!alive) {
                         neighbor = lookupNeighbor(
                             ipString, options.interfaceName, budget, cancelRequested);
@@ -1282,11 +1290,6 @@ QList<ScanResult> ScannerWindow::scanHosts(const ScanOptions &options,
                             alive = true;
                         }
                     }
-                    if (!alive && options.accuracyLevel >= 2 && !budget.expired()) {
-                        discoveredServices = probeServices(
-                            ipString, options.localIp, budget, cancelRequested, options);
-                        alive = !discoveredServices.isEmpty();
-                    }
                 }
 
                 if (alive) {
@@ -1296,13 +1299,13 @@ QList<ScanResult> ScannerWindow::scanHosts(const ScanOptions &options,
                     for (const AliveHostStage stage : kAliveHostStageOrder) {
                         switch (stage) {
                         case AliveHostStage::Services:
-                            result.services = discoveredServices.isEmpty()
-                                                  ? probeServices(ipString,
+                            result.services = servicesProbed
+                                                  ? discoveredServices
+                                                  : probeServices(ipString,
                                                                   options.localIp,
                                                                   budget,
                                                                   cancelRequested,
-                                                                  options)
-                                                  : discoveredServices;
+                                                                  options);
                             break;
                         case AliveHostStage::MacAddress:
                             if (discoveredMac.isEmpty()) {
@@ -3271,8 +3274,13 @@ ScanOptions ScannerWindow::captureScanOptions(const AdapterInfo &adapter) const
     options.serviceTimeoutMs = budget.serviceTimeoutMs;
     options.macDisplayFormat = macDisplayFormat_;
     options.enabledServiceIds = enabledServiceIds_;
-    options.targetDeadlineMs =
-        targetDeadlineForProfile(budget, options.enabledServiceIds.size());
+    int serviceWaitUnits = 0;
+    for (const ServiceDefinition &definition : availableServices()) {
+        if (options.enabledServiceIds.contains(definition.id)) {
+            serviceWaitUnits += serviceProbeWaitUnits(definition.id);
+        }
+    }
+    options.targetDeadlineMs = targetDeadlineForProfile(budget, serviceWaitUnits);
     options.builtInOuiVendors = builtInOuiVendors_;
     options.customOuiVendors = customOuiVendors_;
     return options;

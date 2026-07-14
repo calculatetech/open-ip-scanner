@@ -9,6 +9,7 @@ enum class ServiceEvidenceLevel {
 };
 
 bool responseVerifiesService(const QString &serviceId, const QByteArray &response);
+int serviceProbeWaitUnits(const QString &serviceId);
 QString serviceEvidenceText(const QString &label,
                             int port,
                             ServiceEvidenceLevel evidence);

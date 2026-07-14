@@ -72,6 +72,21 @@ bool responseVerifiesService(const QString &serviceId, const QByteArray &respons
     return false;
 }
 
+int serviceProbeWaitUnits(const QString &serviceId)
+{
+    if (serviceId == "smtp587") {
+        return 4;
+    }
+    if (serviceId == "http" || serviceId == "https") {
+        return 3;
+    }
+    if (serviceId == "ssh" || serviceId == "ftp" || serviceId == "smtp25" ||
+        serviceId == "smtps465") {
+        return 2;
+    }
+    return 1;
+}
+
 QString serviceEvidenceText(const QString &label, int port, ServiceEvidenceLevel evidence)
 {
     if (evidence == ServiceEvidenceLevel::VerifiedProtocol) {
