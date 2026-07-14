@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.28)
-project(OpenIpScanner VERSION 0.5.8 LANGUAGES CXX)
+project(OpenIpScanner VERSION 0.5.9 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -41,6 +41,8 @@ add_library(ois_scan STATIC
     src/scanbudget.h
     src/scanoptions.h
     src/scanresult.h
+    src/scansession.h
+    src/scansession.cpp
 )
 target_include_directories(ois_scan PUBLIC src)
 target_link_libraries(ois_scan PUBLIC ois_core Qt6::Core Qt6::Network)
@@ -114,6 +116,10 @@ if(BUILD_TESTING)
     add_executable(scan_options_test tests/scanoptions_test.cpp)
     target_link_libraries(scan_options_test PRIVATE ois_scan)
     add_test(NAME scan_options_snapshot_isolation COMMAND scan_options_test)
+
+    add_executable(scan_session_test tests/scansession_test.cpp)
+    target_link_libraries(scan_session_test PRIVATE ois_scan)
+    add_test(NAME scan_session_lifecycle COMMAND scan_session_test)
 
     add_executable(scan_cancellation_test tests/scancancellation_test.cpp)
     target_link_libraries(scan_cancellation_test PRIVATE ois_linux)

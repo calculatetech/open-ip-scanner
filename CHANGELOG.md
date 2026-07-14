@@ -2,6 +2,21 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.5.9] - 2026-07-14
+
+### Changed
+
+- Replaced the window-owned top-level scan future and callback marshaling with
+  a reusable `ScanSession` lifecycle in the scan layer.
+- Routed production and hidden-fixture scans through the same session-owned
+  cancellation, progress, incremental-result, and completion boundary.
+
+### Added
+
+- Added a deterministic injected-work lifecycle contract covering overlap
+  rejection, GUI-thread callback delivery, one completion, cancellation, and
+  suppression of late results.
+
 ## [0.5.8] - 2026-07-14
 
 ### Changed

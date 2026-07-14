@@ -2,6 +2,7 @@
 #include "mdnsresolver.h"
 #include "settingslayout.h"
 #include "scannerwindow.h"
+#include "scansession.h"
 #include "resulttablemodel.h"
 
 #include <QApplication>
@@ -846,7 +847,7 @@ struct ScannerWindowTestAccess {
         fastTimer.start();
         bool observedIncrementalPublication = false;
         while ((window.scanInProgress_ || window.scanCompletionPending_ ||
-                window.scanWatcher_.isRunning()) && fastTimer.elapsed() < 6000) {
+                window.scanSession_->isRunning()) && fastTimer.elapsed() < 6000) {
             QApplication::processEvents(QEventLoop::AllEvents, 20);
             const int rows = window.resultModel_->rowCount();
             observedIncrementalPublication = observedIncrementalPublication ||
@@ -855,7 +856,7 @@ struct ScannerWindowTestAccess {
         }
         const bool completedFixture = !window.scanInProgress_ &&
                                       !window.scanCompletionPending_ &&
-                                      !window.scanWatcher_.isRunning() &&
+                                      !window.scanSession_->isRunning() &&
                                       window.resultModel_->rowCount() ==
                                           debugScanFixtureResultCount();
         const bool endpointsPresent =
@@ -871,7 +872,7 @@ struct ScannerWindowTestAccess {
         QElapsedTimer publicationTimer;
         publicationTimer.start();
         while (window.resultModel_->rowCount() < 3 &&
-               window.scanWatcher_.isRunning() && publicationTimer.elapsed() < 2000) {
+               window.scanSession_->isRunning() && publicationTimer.elapsed() < 2000) {
             QApplication::processEvents(QEventLoop::AllEvents, 20);
         }
         const int rowsBeforeCancellation = window.resultModel_->rowCount();
@@ -879,12 +880,12 @@ struct ScannerWindowTestAccess {
         cancellationTimer.start();
         window.startScan();
         while ((window.scanInProgress_ || window.scanCompletionPending_ ||
-                window.scanWatcher_.isRunning()) && cancellationTimer.elapsed() < 2000) {
+                window.scanSession_->isRunning()) && cancellationTimer.elapsed() < 2000) {
             QApplication::processEvents(QEventLoop::AllEvents, 20);
         }
         const bool canceledPromptly = !window.scanInProgress_ &&
                                       !window.scanCompletionPending_ &&
-                                      !window.scanWatcher_.isRunning() &&
+                                      !window.scanSession_->isRunning() &&
                                       cancellationTimer.elapsed() < 1000 &&
                                       rowsBeforeCancellation > 0 &&
                                       window.resultModel_->rowCount() <

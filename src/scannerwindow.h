@@ -1,6 +1,5 @@
 #pragma once
 
-#include <QFutureWatcher>
 #include <QHash>
 #include <QHostAddress>
 #include <QIcon>
@@ -46,20 +45,21 @@ struct ScannerWindowTestAccess;
 class ResultTableModel;
 class ServiceTagDelegate;
 class ScanMdnsResolver;
+class ScanSession;
 
 class ScannerWindow : public QMainWindow {
     Q_OBJECT
 
 public:
     explicit ScannerWindow(QWidget *parent = nullptr);
-    ~ScannerWindow() override = default;
+    ~ScannerWindow() override;
 
 protected:
     void closeEvent(QCloseEvent *event) override;
 
 private slots:
     void startScan();
-    void finishScan();
+    void finishScan(const QList<ScanResult> &finalResults, bool wasCanceled);
     void updateProgress(int current, int total);
     void addOrUpdateResultRow(const ScanResult &result);
     void queueResultForDisplay(const ScanResult &result);
@@ -345,11 +345,10 @@ private:
     QHash<QString, QString> builtInOuiVendors_;
     QHash<QString, QString> customOuiVendors_;
 
-    std::shared_ptr<std::atomic_bool> cancelRequested_;
+    ScanSession *scanSession_ = nullptr;
     QList<ScanResult> pendingDisplayResults_;
     QTimer *resultFlushTimer_ = nullptr;
     QTimer *settingsSaveTimer_ = nullptr;
-    QFutureWatcher<QList<ScanResult>> scanWatcher_;
     bool scanCompletionPending_ = false;
     bool completedScanWasCanceled_ = false;
     bool scanInProgress_ = false;

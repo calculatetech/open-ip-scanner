@@ -9,6 +9,7 @@
 #include "settingslayout.h"
 #include "settingsstore.h"
 #include "targetparser.h"
+#include "scansession.h"
 
 #include <QAction>
 #include <QAbstractButton>
@@ -216,6 +217,7 @@ ScannerWindow::ScannerWindow(QWidget *parent)
     scanButton_->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Preferred);
 
     resultModel_ = new ResultTableModel(this);
+    scanSession_ = new ScanSession(this);
     resultModel_->setMacFormatter([this](const QString &mac) {
         return formatMacForDisplay(mac);
     });
@@ -399,7 +401,15 @@ ScannerWindow::ScannerWindow(QWidget *parent)
         validateTargetLimitFeedback(targetInput_->text());
     });
     connect(targetInput_, &QLineEdit::returnPressed, this, &ScannerWindow::startScan);
-    connect(&scanWatcher_, &QFutureWatcher<QList<ScanResult>>::finished, this, &ScannerWindow::finishScan);
+    connect(scanSession_, &ScanSession::progressChanged,
+            this, &ScannerWindow::updateProgress);
+    connect(scanSession_, &ScanSession::resultReady, this, [this](const ScanResult &result) {
+        if (!scanCompletionPending_ && scanInProgress_) {
+            queueResultForDisplay(result);
+        }
+    });
+    connect(scanSession_, &ScanSession::completed,
+            this, &ScannerWindow::finishScan);
     connect(table_, &QWidget::customContextMenuRequested, this, &ScannerWindow::showTableContextMenu);
     connect(table_->horizontalHeader(), &QWidget::customContextMenuRequested, this, &ScannerWindow::showHeaderContextMenu);
     connect(table_, &QTableView::doubleClicked, this, [this](const QModelIndex &index) {
@@ -431,6 +441,14 @@ ScannerWindow::ScannerWindow(QWidget *parent)
         searchScopeCombo_->setCurrentIndex(0);
         applyTableFilters();
     });
+}
+
+ScannerWindow::~ScannerWindow()
+{
+    if (scanSession_ != nullptr) {
+        scanSession_->cancel();
+        scanSession_->waitForFinished();
+    }
 }
 
 void ScannerWindow::setupMenuBar()
@@ -860,7 +878,7 @@ void ScannerWindow::refreshAdapters()
     }
 
     const bool hasNetwork = !adapters_.isEmpty();
-    if (!scanWatcher_.isRunning()) {
+    if (!scanSession_->isRunning()) {
         scanButton_->setEnabled(hasNetwork ||
                                 isDebugScanFixtureTarget(targetInput_->text()));
     }
@@ -877,11 +895,9 @@ void ScannerWindow::refreshAdapters()
 
 void ScannerWindow::closeEvent(QCloseEvent *event)
 {
-    if (scanWatcher_.isRunning()) {
+    if (scanSession_->isRunning()) {
         closePending_ = true;
-        if (cancelRequested_) {
-            cancelRequested_->store(true);
-        }
+        scanSession_->cancel();
         showStatusMessage("Stopping scan before closing...");
         scanButton_->setEnabled(false);
         event->ignore();
@@ -931,11 +947,9 @@ void ScannerWindow::startScan()
     if (scanCompletionPending_) {
         return;
     }
-    if (scanWatcher_.isRunning()) {
-        if (cancelRequested_) {
-            cancelRequested_->store(true);
-            showStatusMessage("Stopping scan...");
-        }
+    if (scanSession_->isRunning()) {
+        scanSession_->cancel();
+        showStatusMessage("Stopping scan...");
         return;
     }
 
@@ -1044,38 +1058,16 @@ void ScannerWindow::startScan()
     statusProgressBar_->setValue(0);
     statusProgressBar_->setVisible(true);
 
-    cancelRequested_ = std::make_shared<std::atomic_bool>(false);
-    const std::shared_ptr<std::atomic_bool> scanCancellation = cancelRequested_;
-
-    QFuture<QList<ScanResult>> future = QtConcurrent::run([this, scanOptions, hosts, scanCancellation]() {
-        const auto onProgress = [this, scanCancellation](int current, int total) {
-            if (cancellable::isCancelled(scanCancellation)) {
-                return;
-            }
-            QMetaObject::invokeMethod(this, [this, current, total, scanCancellation]() {
-                if (cancellable::isCancelled(scanCancellation)) {
-                    return;
-                }
-                updateProgress(current, total);
-            }, Qt::QueuedConnection);
-        };
-
-        const auto onResult = [this, scanCancellation](const ScanResult &result) {
-            if (cancellable::isCancelled(scanCancellation)) {
-                return;
-            }
-            QMetaObject::invokeMethod(this, [this, result, scanCancellation]() {
-                if (cancellable::isCancelled(scanCancellation) ||
-                    scanCompletionPending_ || !scanInProgress_) {
-                    return;
-                }
-                queueResultForDisplay(result);
-            }, Qt::QueuedConnection);
-        };
-
-        return scanHosts(scanOptions, hosts, scanCancellation, onProgress, onResult);
-    });
-    scanWatcher_.setFuture(future);
+    const bool launched = scanSession_->start(
+        [this, scanOptions, hosts](const ScanSession::Cancellation &cancellation,
+                                   const ScanSession::ProgressCallback &progress,
+                                   const ScanSession::ResultCallback &result) {
+            return scanHosts(scanOptions, hosts, cancellation, progress, result);
+        });
+    if (!launched) {
+        completeScanPresentation();
+        showStatusMessage("Could not start the scan worker. Try again.");
+    }
 }
 
 void ScannerWindow::startDebugScan()
@@ -1099,36 +1091,17 @@ void ScannerWindow::startDebugScan()
     statusProgressBar_->setValue(0);
     statusProgressBar_->setVisible(true);
 
-    cancelRequested_ = std::make_shared<std::atomic_bool>(false);
-    const std::shared_ptr<std::atomic_bool> scanCancellation = cancelRequested_;
     const int fixtureAccuracy = std::clamp(accuracyLevel_, 0, 3);
-    QFuture<QList<ScanResult>> future = QtConcurrent::run(
-        [this, fixtureAccuracy, scanCancellation]() {
-            const auto onProgress = [this, scanCancellation](int current, int progressTotal) {
-                if (cancellable::isCancelled(scanCancellation)) {
-                    return;
-                }
-                QMetaObject::invokeMethod(
-                    this, [this, current, progressTotal, scanCancellation]() {
-                        if (!cancellable::isCancelled(scanCancellation)) {
-                            updateProgress(current, progressTotal);
-                        }
-                    }, Qt::QueuedConnection);
-            };
-            const auto onResult = [this, scanCancellation](const ScanResult &result) {
-                if (cancellable::isCancelled(scanCancellation)) {
-                    return;
-                }
-                QMetaObject::invokeMethod(this, [this, result, scanCancellation]() {
-                    if (!cancellable::isCancelled(scanCancellation) &&
-                        !scanCompletionPending_ && scanInProgress_) {
-                        queueResultForDisplay(result);
-                    }
-                }, Qt::QueuedConnection);
-            };
-            return runDebugScan(fixtureAccuracy, scanCancellation, onProgress, onResult);
+    const bool launched = scanSession_->start(
+        [this, fixtureAccuracy](const ScanSession::Cancellation &cancellation,
+                                const ScanSession::ProgressCallback &progress,
+                                const ScanSession::ResultCallback &result) {
+            return runDebugScan(fixtureAccuracy, cancellation, progress, result);
         });
-    scanWatcher_.setFuture(future);
+    if (!launched) {
+        completeScanPresentation();
+        showStatusMessage("Could not start the test scan worker. Try again.");
+    }
 }
 
 QList<ScanResult> ScannerWindow::runDebugScan(
@@ -2217,13 +2190,10 @@ void ScannerWindow::openService(const QString &ip, const ServiceHit &service)
     }
 }
 
-void ScannerWindow::finishScan()
+void ScannerWindow::finishScan(const QList<ScanResult> &finalResults, bool wasCanceled)
 {
-    const bool wasCanceled = cancelRequested_ && cancelRequested_->load();
-    const QList<ScanResult> finalResults = scanWatcher_.result();
     if (closePending_) {
         scanInProgress_ = false;
-        cancelRequested_.reset();
         closePending_ = false;
         QTimer::singleShot(0, this, &QWidget::close);
         return;
@@ -2277,7 +2247,6 @@ void ScannerWindow::completeScanPresentation()
                               : QString("Scan complete. %1 host(s) detected.").arg(resultModel_->rowCount()));
     }
 
-    cancelRequested_.reset();
 }
 
 void ScannerWindow::updateProgress(int current, int total)
