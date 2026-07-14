@@ -1,6 +1,7 @@
 #include "scanbudget.h"
 
 #include <cstdlib>
+#include <string_view>
 
 namespace {
 
@@ -20,23 +21,23 @@ int main()
     const ScanBudgetProfile high = scanBudgetProfile(2);
     const ScanBudgetProfile maximum = scanBudgetProfile(3);
 
-    require(fast.targetDeadlineMs == 3000 && fast.pingAttempts == 1 &&
+    require(fast.targetDeadlineMs == 5000 && fast.pingAttempts == 1 &&
             fast.pingTimeoutSeconds == 1 && fast.serviceAttempts == 1 &&
             fast.serviceTimeoutMs == 350);
-    require(balanced.targetDeadlineMs == 8000 && balanced.pingAttempts == 1 &&
-            balanced.pingTimeoutSeconds == 1 && balanced.serviceAttempts == 1 &&
-            balanced.serviceTimeoutMs == 1000);
-    require(high.targetDeadlineMs == 15000 && high.pingAttempts == 2 &&
-            high.pingTimeoutSeconds == 1 && high.serviceAttempts == 1 &&
-            high.serviceTimeoutMs == 1500);
-    require(maximum.targetDeadlineMs == 30000 && maximum.pingAttempts == 2 &&
-            maximum.pingTimeoutSeconds == 2 && maximum.serviceAttempts == 2 &&
+    require(balanced.targetDeadlineMs == 11000 && balanced.pingAttempts == 2 &&
+            balanced.pingTimeoutSeconds == 1 && balanced.serviceAttempts == 2 &&
+            balanced.serviceTimeoutMs == 750);
+    require(high.targetDeadlineMs == 25000 && high.pingAttempts == 3 &&
+            high.pingTimeoutSeconds == 2 && high.serviceAttempts == 3 &&
+            high.serviceTimeoutMs == 1250);
+    require(maximum.targetDeadlineMs == 50000 && maximum.pingAttempts == 4 &&
+            maximum.pingTimeoutSeconds == 3 && maximum.serviceAttempts == 4 &&
             maximum.serviceTimeoutMs == 2000);
     require(scanBudgetProfile(-1).targetDeadlineMs == fast.targetDeadlineMs);
     require(scanBudgetProfile(99).targetDeadlineMs == maximum.targetDeadlineMs);
 
-    require(estimatedScanUpperBoundMs(4096, 4, maximum.targetDeadlineMs) == 31027200);
-    require(estimatedScanUpperBoundMs(5, 4, balanced.targetDeadlineMs) == 16600);
+    require(estimatedScanUpperBoundMs(4096, 4, maximum.targetDeadlineMs) == 51507200);
+    require(estimatedScanUpperBoundMs(5, 4, balanced.targetDeadlineMs) == 22600);
     require(estimatedScanUpperBoundMs(0, 4, balanced.targetDeadlineMs) == 0);
     require(estimatedScanUpperBoundMs(5, 0, balanced.targetDeadlineMs) == 0);
     require(estimatedScanUpperBoundMs(-1, 4, balanced.targetDeadlineMs) == 0);
@@ -52,6 +53,20 @@ int main()
     require(pingAttemptWaitMs(1) == 1500);
     require(pingAttemptWaitMs(2) == 2500);
     require(pingAttemptWaitMs(0) == 0);
+    require(std::string_view(scanBudgetProfileSummary(0)).find("1 attempt") == 0);
+    require(std::string_view(scanBudgetProfileSummary(1)).find("2 attempts") == 0);
+    require(std::string_view(scanBudgetProfileSummary(2)).find("3 attempts") == 0);
+    require(std::string_view(scanBudgetProfileSummary(3)).find("4 attempts") == 0);
+
+    require(targetDeadlineForProfile(fast, 0) == 5000);
+    require(targetDeadlineForProfile(fast, 4) == 5000);
+    require(targetDeadlineForProfile(fast, 10) == 7000);
+    require(targetDeadlineForProfile(balanced, 4) == 11000);
+    require(targetDeadlineForProfile(balanced, 10) == 20000);
+    require(targetDeadlineForProfile(high, 4) == 25000);
+    require(targetDeadlineForProfile(high, 10) == 47000);
+    require(targetDeadlineForProfile(maximum, 4) == 50000);
+    require(targetDeadlineForProfile(maximum, 10) == 96000);
 
     TargetBudget::TimePoint now{};
     TargetBudget budget(100, [&]() { return now; });

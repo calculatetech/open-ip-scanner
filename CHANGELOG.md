@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.3.4] - 2026-07-13
+
+### Changed
+- Made the accuracy slider explicitly scale ping and port-probe attempts from one short Fast pass through four longer Maximum passes.
+- Added concrete timeout/attempt feedback beside the slider and guidance for quick discovery versus thorough investigation.
+- Derived the internal safety ceiling from the selected profile and enabled-port count so every port retains the advertised attempts, including when all optional probes are enabled.
+
 ## [0.3.3] - 2026-07-13
 
 ### Fixed

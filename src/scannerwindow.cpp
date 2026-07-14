@@ -2626,13 +2626,17 @@ void ScannerWindow::showSettingsDialog()
 
     auto *accuracySlider = new QSlider(Qt::Horizontal, performancePage);
     accuracySlider->setRange(0, 3);
+    accuracySlider->setTickInterval(1);
+    accuracySlider->setTickPosition(QSlider::TicksBelow);
     accuracySlider->setValue(accuracyLevel_);
     auto *accuracyValueLabel = new QLabel(performancePage);
-    accuracyValueLabel->setText(accuracyLabel());
+    accuracyValueLabel->setText(
+        QString("%1 — %2").arg(accuracyLabel(), scanBudgetProfileSummary(accuracyLevel_)));
     connect(accuracySlider, &QSlider::valueChanged, &dialog, [accuracyValueLabel](int value) {
         const int clamped = std::clamp(value, 0, 3);
         const char *labels[] = {"Fast", "Balanced", "High", "Maximum"};
-        accuracyValueLabel->setText(labels[clamped]);
+        accuracyValueLabel->setText(
+            QString("%1 — %2").arg(labels[clamped], scanBudgetProfileSummary(clamped)));
     });
     auto *accuracyRow = new QWidget(performancePage);
     auto *accuracyRowLayout = new QHBoxLayout(accuracyRow);
@@ -2640,6 +2644,12 @@ void ScannerWindow::showSettingsDialog()
     accuracyRowLayout->addWidget(accuracySlider, 1);
     accuracyRowLayout->addWidget(accuracyValueLabel);
     performanceLayout->addRow("Accuracy:", accuracyRow);
+    auto *accuracyHelp = new QLabel(
+        "Fast gives a quick lay of the land. Higher settings repeat ping and port probes "
+        "with longer waits so intermittent or sleeping devices have more chances to respond.",
+        performancePage);
+    accuracyHelp->setWordWrap(true);
+    performanceLayout->addRow(QString(), accuracyHelp);
     pages->addWidget(performancePage);
 
     auto *programsPage = new QWidget(pages);
@@ -3003,8 +3013,9 @@ void ScannerWindow::showHelpDialog()
         "<h3>Advanced</h3>"
         "<p><b>Performance:</b> Worker count controls parallel host probing. "
         "Higher values scan faster but increase network load.</p>"
-        "<p><b>Accuracy:</b> Increases retries and service timeout depth to find hosts that "
-        "drop ICMP or respond intermittently.</p>"
+        "<p><b>Accuracy:</b> Fast performs one short probe pass for a quick lay of the land. "
+        "Balanced through Maximum progressively repeat ping and port probes and wait longer "
+        "for intermittent, sleeping, or slower devices.</p>"
         "<p><b>Services:</b> Enable/disable per-port probing and configure launch commands in "
         "Settings &rarr; Programs.</p>"
         "<p><b>Filtering:</b> Use Find to filter by IP, hostname, MAC, vendor, services, or OUI prefix.</p>"
@@ -3051,9 +3062,10 @@ ScanOptions ScannerWindow::captureScanOptions(const AdapterInfo &adapter) const
     options.pingTimeoutSeconds = budget.pingTimeoutSeconds;
     options.serviceAttempts = budget.serviceAttempts;
     options.serviceTimeoutMs = budget.serviceTimeoutMs;
-    options.targetDeadlineMs = budget.targetDeadlineMs;
     options.macDisplayFormat = macDisplayFormat_;
     options.enabledServiceIds = enabledServiceIds_;
+    options.targetDeadlineMs =
+        targetDeadlineForProfile(budget, options.enabledServiceIds.size());
     options.builtInOuiVendors = builtInOuiVendors_;
     options.customOuiVendors = customOuiVendors_;
     return options;
