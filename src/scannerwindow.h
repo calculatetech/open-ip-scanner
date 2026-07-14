@@ -160,11 +160,17 @@ private:
                                 const std::function<void(const ScanResult &)> &onResult) const;
 
     // Host discovery helpers.
-    bool pingHost(const QHostAddress &address, const ScanOptions &options) const;
-    QString lookupMacAddress(const QString &ip, const QString &interfaceName) const;
+    bool pingHost(const QHostAddress &address,
+                  const ScanOptions &options,
+                  const std::shared_ptr<std::atomic_bool> &cancelRequested) const;
+    QString lookupMacAddress(const QString &ip,
+                             const QString &interfaceName,
+                             const std::shared_ptr<std::atomic_bool> &cancelRequested) const;
     QString lookupVendor(const QString &mac, const ScanOptions &options) const;
-    QString lookupHostname(const QString &ip) const;
-    QString lookupMdnsHostname(const QString &ip) const;
+    QString lookupHostname(const QString &ip,
+                           const std::shared_ptr<std::atomic_bool> &cancelRequested) const;
+    QString lookupMdnsHostname(const QString &ip,
+                               const std::shared_ptr<std::atomic_bool> &cancelRequested) const;
     QString lookupGatewayIp(const QString &interfaceName) const;
 
     // Service detection and details enrichment.
@@ -175,9 +181,12 @@ private:
                                     const ScanOptions &options) const;
     QString collectDeviceDetails(const ScanResult &result,
                                  const QString &localBindIp,
+                                 const std::shared_ptr<std::atomic_bool> &cancelRequested,
                                  const ScanOptions &options) const;
     QString fetchTcpBanner(const QString &ip, int port, int timeoutMs,
-                           const QString &localBindIp, const QByteArray &prologue = {}) const;
+                           const QString &localBindIp,
+                           const std::shared_ptr<std::atomic_bool> &cancelRequested,
+                           const QByteArray &prologue = {}) const;
     QString extractHttpServerHeader(const QString &rawResponse) const;
     QString inferOsFromSignals(const QStringList &signalList) const;
     void updateDetailsPaneForCurrentSelection();
@@ -185,7 +194,8 @@ private:
                     int port,
                     const QString &localBindIp,
                     int timeoutMs,
-                    int attempts) const;
+                    int attempts,
+                    const std::shared_ptr<std::atomic_bool> &cancelRequested) const;
     QString serviceText(const QList<ServiceHit> &services) const;
     QString formatMacForDisplay(const QString &mac) const;
     QString formatMacForDisplay(const QString &mac, int displayFormat) const;
@@ -278,6 +288,7 @@ private:
     QHash<QString, QString> detailsByIp_;
     QFutureWatcher<QList<ScanResult>> scanWatcher_;
     bool scanInProgress_ = false;
+    bool closePending_ = false;
 
     QIcon playIcon_;
     QIcon stopIcon_;
