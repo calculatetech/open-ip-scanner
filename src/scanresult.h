@@ -1,5 +1,6 @@
 #pragma once
 
+#include "hostnameevidence.h"
 #include "serviceevidence.h"
 
 #include <QList>
@@ -19,6 +20,7 @@ struct ScanResult {
     QString mac;
     QString vendor;
     QString hostname;
+    HostnameQuality hostnameQuality = HostnameQuality::Unknown;
     QList<ServiceHit> services;
     QString detailsText;
 };

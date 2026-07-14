@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(OpenIpScanner VERSION 0.4.5 LANGUAGES CXX)
+project(OpenIpScanner VERSION 0.5.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -9,11 +9,11 @@ set(CMAKE_AUTORCC ON)
 
 include(GNUInstallDirs)
 
-find_package(Qt6 QUIET COMPONENTS Widgets Network Concurrent PrintSupport)
+find_package(Qt6 QUIET COMPONENTS Widgets Network Concurrent PrintSupport DBus)
 if (Qt6_FOUND)
     set(QT_PACKAGE Qt6)
 else()
-    find_package(Qt5 REQUIRED COMPONENTS Widgets Network Concurrent PrintSupport)
+    find_package(Qt5 REQUIRED COMPONENTS Widgets Network Concurrent PrintSupport DBus)
     set(QT_PACKAGE Qt5)
 endif()
 
@@ -23,6 +23,10 @@ add_executable(open_ip_scanner
     src/cancellablewait.cpp
     src/debugscanfixture.h
     src/debugscanfixture.cpp
+    src/hostnameevidence.h
+    src/hostnameevidence.cpp
+    src/mdnsresolver.h
+    src/mdnsresolver.cpp
     src/neighborentry.h
     src/neighborentry.cpp
     src/scanbudget.h
@@ -45,6 +49,23 @@ add_executable(open_ip_scanner
 include(CTest)
 
 if(BUILD_TESTING)
+    add_executable(mdns_resolver_test
+        tests/mdnsresolver_test.cpp
+        src/cancellablewait.h
+        src/cancellablewait.cpp
+        src/hostnameevidence.h
+        src/hostnameevidence.cpp
+        src/mdnsresolver.h
+        src/mdnsresolver.cpp
+    )
+    target_include_directories(mdns_resolver_test PRIVATE src)
+    target_link_libraries(mdns_resolver_test PRIVATE
+        ${QT_PACKAGE}::Core
+        ${QT_PACKAGE}::Network
+        ${QT_PACKAGE}::DBus
+    )
+    add_test(NAME mdns_resolver_contract COMMAND mdns_resolver_test)
+
     add_executable(debug_scan_fixture_test
         tests/debugscanfixture_test.cpp
         src/debugscanfixture.h
@@ -117,6 +138,10 @@ if(BUILD_TESTING)
         src/cancellablewait.cpp
         src/debugscanfixture.h
         src/debugscanfixture.cpp
+        src/hostnameevidence.h
+        src/hostnameevidence.cpp
+        src/mdnsresolver.h
+        src/mdnsresolver.cpp
         src/neighborentry.h
         src/neighborentry.cpp
         src/scanbudget.h
@@ -141,6 +166,7 @@ if(BUILD_TESTING)
         ${QT_PACKAGE}::Network
         ${QT_PACKAGE}::Concurrent
         ${QT_PACKAGE}::PrintSupport
+        ${QT_PACKAGE}::DBus
     )
     target_compile_definitions(settings_dialog_test PRIVATE
         OPEN_IP_SCANNER_VERSION="${PROJECT_VERSION}"
@@ -160,6 +186,7 @@ target_link_libraries(open_ip_scanner PRIVATE
     ${QT_PACKAGE}::Network
     ${QT_PACKAGE}::Concurrent
     ${QT_PACKAGE}::PrintSupport
+    ${QT_PACKAGE}::DBus
 )
 
 target_compile_definitions(open_ip_scanner PRIVATE
@@ -226,7 +253,7 @@ set(CPACK_DEBIAN_PACKAGE_SECTION "net")
 set(CPACK_DEBIAN_PACKAGE_PRIORITY "optional")
 set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
 set(CPACK_DEBIAN_PACKAGE_DEPENDS "iputils-ping, iproute2")
-set(CPACK_DEBIAN_PACKAGE_RECOMMENDS "avahi-utils")
+set(CPACK_DEBIAN_PACKAGE_RECOMMENDS "avahi-daemon")
 
 include(CPack)
 

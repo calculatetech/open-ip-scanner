@@ -44,6 +44,7 @@ class QWidget;
 struct ScannerWindowTestAccess;
 class ResultTableModel;
 class ServiceTagDelegate;
+class ScanMdnsResolver;
 
 class ScannerWindow : public QMainWindow {
     Q_OBJECT
@@ -183,12 +184,12 @@ private:
         const TargetBudget &budget,
         const std::shared_ptr<std::atomic_bool> &cancelRequested) const;
     QString lookupVendor(const QString &mac, const ScanOptions &options) const;
-    QString lookupHostname(const QString &ip,
-                           const TargetBudget &budget,
-                           const std::shared_ptr<std::atomic_bool> &cancelRequested) const;
-    QString lookupMdnsHostname(const QString &ip,
-                               const TargetBudget &budget,
-                               const std::shared_ptr<std::atomic_bool> &cancelRequested) const;
+    HostnameEvidence lookupHostname(
+        const QString &ip,
+        const HostnameEvidence &preliminary,
+        const TargetBudget &budget,
+        const std::shared_ptr<std::atomic_bool> &cancelRequested,
+        ScanMdnsResolver &mdnsResolver) const;
     QString lookupGatewayIp(const QString &interfaceName) const;
 
     // Service detection and details enrichment.

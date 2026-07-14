@@ -2,11 +2,11 @@
 
 This file is the single source of truth for unfinished product, engineering, documentation, and release work. Detailed evidence for why each 1.0 item exists is in [the production-readiness audit](production-readiness-audit.md). New ideas belong here rather than in a second backlog.
 
-The audited baseline is `0.2.0` at commit `91e0a7a`; `0.4.5` is the latest human-verified version on `main`. Version 1.0 is not ready. Every unchecked item under “Required for 1.0” is a release gate; the post-1.0 section is explicitly outside the first production release.
+The audited baseline is `0.2.0` at commit `91e0a7a`; `0.5.0` is the latest human-verified version. Version 1.0 is not ready. Every unchecked item under “Required for 1.0” is a release gate; the post-1.0 section is explicitly outside the first production release.
 
 ## Delivered implementation increments
 
-The unchecked milestone boxes below mean their complete acceptance criteria are still open; they do not mean no work has landed. The cumulative implementation through `0.4.4` is human-verified.
+The unchecked milestone boxes below mean their complete acceptance criteria are still open; they do not mean no work has landed. The cumulative implementation through `0.4.5` is human-verified.
 
 - `0.3.0` — **SCAN-CONFIGURATION:** active scans receive an immutable `ScanOptions` snapshot, with concurrent value-isolation and ThreadSanitizer coverage.
 - `0.3.1` — **SCAN-CANCELLATION:** Stop and close use bounded cancellation-aware process, socket, and hostname waits, with asynchronous window shutdown.
@@ -17,6 +17,7 @@ The unchecked milestone boxes below mean their complete acceptance criteria are 
 - `0.4.3` — **SERVICE-EVIDENCE:** separated open ports from confirmed protocols, removed hidden detail traffic and OS guesses, restored all-accuracy TCP discovery, and corrected protocol-aware target budgeting.
 - `0.4.4` — **RESULT-SCALING:** replaced per-cell widgets with a keyed live result model, preserved deterministic ordering and viewport stability, and added accuracy-scaled active confirmation for slow cached neighbors.
 - `0.4.5` — **DEBUG-SCAN-FIXTURE:** added the hidden adapter-free `test` target with 768 deterministic, Accuracy-paced devices for repeatable table stability and performance checks.
+- `0.5.0` — **MDNS-RESOLVER:** replaced per-host helper processes with one cancellable, interface-scoped Avahi D-Bus reverse resolver per scan and added explicit hostname evidence quality.
 
 **RESULT-SCALING** is human-verified on version `0.4.4`. DUPLICATE-IP-CONFLICTS remains Post-1.0.
 
@@ -97,26 +98,31 @@ Priority matches the most severe audit finding an item closes. All items in the 
 
 #### MDNS-RESOLVER
 
-- [ ] **Implement one asynchronous, interface-scoped Avahi reverse resolver per scan.** `High`
+- [x] **Implement one asynchronous, interface-scoped Avahi reverse resolver per scan.** `High`
   - Replace one `avahi-resolve-address` child process per live host with an injectable asynchronous IPv4 reverse resolver. On Linux, use Avahi’s client API or an equivalently cancellable backend that binds every result to the selected interface.
   - Cache observations by interface plus IPv4 address, honor record lifetime, and never accept an answer from an ambiguous link. Keep DNS-SD browsing and IPv6 out of the 1.0 contract.
   - Define hostname quality/precedence so a later `.local` result can replace a preliminary local-host or gateway name when appropriate instead of being discarded merely because the first value was non-`Unknown`.
+  - Current progress on `0.5.0`: one `ScanMdnsResolver` per production scan owns an asynchronous Avahi system-D-Bus backend and coalesces duplicate interface-plus-address requests. Calls force multicast-only IPv4 resolution on the selected interface, accept only an exact returned interface, lookup protocol, address protocol, and normalized address, and reject malformed hostnames. Avahi's one-shot D-Bus reply exposes no record TTL, so completed positive and negative observations are retained for at most 250 ms—long enough to share near-simultaneous consumers, then revalidated through Avahi rather than kept for a minutes-long scan. The smaller of the two-second resolver ceiling and the caller's remaining target budget is passed to the D-Bus operation itself; Stop wakes waiting workers within 25 milliseconds. Explicit hostname quality makes Avahi mDNS evidence outrank system-resolver and preliminary local names while equal-quality evidence remains stable. Qt DBus is a linked dependency, packages recommend `avahi-daemon`, and no production path invokes `avahi-resolve-address`.
+  - Completion evidence: normal and strict-warning builds pass all 10 tests. Controlled fixtures cover positive and negative coalescing plus expiry/revalidation, caller-budget propagation, explicit Avahi no-answer versus D-Bus transport-timeout classification, concurrent duplicates, wrong-interface and wrong-protocol rejection, invalid input, timeout, sub-500 ms cancellation, and stable quality precedence; the production hostname path upgrades a preliminary name to `fixture.local`. All nine non-rendering tests pass under ThreadSanitizer, and the real local Avahi D-Bus backend resolves the loopback reverse record with multicast-only flags. The generated 0.5.0 Debian package depends on Qt DBus and recommends `avahi-daemon`. Fresh adversarial review found no actionable issue, and human validation confirmed that mDNS names populate correctly.
   - Done when controlled positive and negative reverse records enrich the correct rows within a documented deadline, duplicate preliminary results converge on the selected best hostname, and stopping the scan cancels resolution immediately.
 
 #### ENRICHMENT-PROVENANCE
 
 - [ ] **Expose enrichment provenance and Avahi health.** `High`
-  - Store the source of each hostname and service: local host, direct Avahi reverse lookup, system resolver, neighbor cache, port inference, or verified handshake.
+  - Store every distinct hostname and its source: local host, explicit DNS PTR lookup, system resolver, direct Avahi reverse lookup, or preliminary evidence. Store service evidence as open port or verified handshake.
+  - Select the table hostname using this precedence: local OS hostname, explicit PTR, system resolver, mDNS, then preliminary evidence. A generic system-resolver result must remain labeled `System`; only an explicit PTR response may be labeled `PTR`.
+  - Keep the results table concise. Its Hostname cell contains only the preferred name, and its service tags remain `Name:port` or `Unknown:port`; do not add provenance suffixes, confidence badges, backend states, documentary tooltips, or extra provenance columns.
+  - Put successful per-device provenance in the details pane. Use one visually aligned `Hostname(s):` list, preferred name first, with short parenthesized labels such as `(Local)`, `(PTR)`, `(System)`, and `(mDNS)`. List every distinct detected name; normalize case and a trailing root dot for deduplication, and combine labels when multiple sources report the same name. Service details use equally concise labels such as `(Verified)` and `(Open)`.
   - Add a diagnostic surface that distinguishes missing client library/tool, inactive daemon, multicast unavailable, no record, malformed response, timeout, and cancellation. Do not silently turn every failure into `Unknown`.
-  - Make merge precedence explicit so the local machine’s known positive Avahi result is not queried and then discarded behind an earlier lower-quality name.
-  - Done when the UI can identify which fields came from Avahi, a support bundle records capability and failure state without sensitive payloads, and scanning the local audit fixture shows its `.local` name as mDNS-derived.
+  - Opening or selecting the details pane must not trigger network traffic. Backend availability and failures belong in diagnostics rather than per-row prose.
+  - Done when the table remains value-only, selected-device details show the aligned compact hostname and service evidence lists, a support bundle records capability and failure state without sensitive payloads, and deterministic conflicts select the required preferred name without discarding alternate evidence.
 
 #### MDNS-TESTS
 
 - [ ] **Add a deterministic mDNS reverse-resolution compatibility suite.** `High`
-  - Test success, no reverse record, delayed response, malformed data, preliminary-name merge precedence, expiry, missing daemon, missing backend, wrong interface, overlapping addresses, cancellation, and system-resolver fallback.
+  - Test success, no reverse record, delayed response, malformed data, explicit PTR and system-resolver precedence, local-name precedence, alternate-name retention, expiry, missing daemon, missing backend, wrong interface, overlapping addresses, cancellation, and fallback behavior.
   - Include an end-to-end fixture with a controlled responder; do not rely on whatever consumer devices happen to be present on a developer LAN.
-  - Done when these tests run under CTest in CI and prove both the parser/backend contract and visible row provenance.
+  - Done when these tests run under CTest in CI, prove the parser/backend contract, show only the selected plain hostname in the table, and show every distinct source-labeled name in the aligned details list.
 
 ### Settings, persisted data, and export
 

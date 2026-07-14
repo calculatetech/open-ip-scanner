@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.5.0] - 2026-07-14
+
+### Added
+- Added one asynchronous, interface-scoped Avahi D-Bus reverse resolver per scan with near-simultaneous positive and negative request coalescing.
+- Added strict interface, IPv4 protocol, address, and hostname validation plus target-budgeted backend timeouts, prompt cancellation, and conservative 250 ms observation revalidation.
+- Added hostname quality precedence so mDNS `.local` evidence replaces preliminary or system-resolver names while equal-quality values remain stable.
+- Added deterministic resolver coverage and a live local Avahi backend check; Debian packages now recommend `avahi-daemon` instead of the unused command-line utilities.
+
 ## [0.4.5] - 2026-07-14
 
 ### Added

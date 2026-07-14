@@ -35,7 +35,7 @@ Yes, this project is **100% vibe coded**.
 
 - `iputils-ping`
 - `iproute2`
-- Optional for mDNS hostname resolution: `avahi-utils`
+- Optional for mDNS hostname resolution: `avahi-daemon`
 
 ### Build
 
@@ -54,7 +54,7 @@ sudo apt update
 sudo apt install -y \
   build-essential cmake ninja-build \
   qt6-base-dev qt6-tools-dev \
-  iputils-ping iproute2 avahi-utils
+  iputils-ping iproute2 avahi-daemon
 ```
 
 ## Build

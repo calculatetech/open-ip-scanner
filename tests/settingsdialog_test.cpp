@@ -1,4 +1,5 @@
 #include "debugscanfixture.h"
+#include "mdnsresolver.h"
 #include "settingslayout.h"
 #include "scannerwindow.h"
 #include "resulttablemodel.h"
@@ -32,6 +33,24 @@
 #include <cstdlib>
 #include <thread>
 #include <utility>
+
+class ImmediateMdnsBackend final : public MdnsLookupBackend {
+public:
+    void resolve(int interfaceIndex,
+                 const QString &address,
+                 int,
+                 Callback callback) override
+    {
+        callback({MdnsLookupStatus::Resolved,
+                  interfaceIndex,
+                  0,
+                  0,
+                  address,
+                  "fixture.local."});
+    }
+
+    void cancelAll() override {}
+};
 
 struct ScannerWindowTestAccess {
     static QList<QHostAddress> parseTargets(const ScannerWindow &window,
@@ -118,6 +137,21 @@ struct ScannerWindowTestAccess {
                options.targetDeadlineMs == 22500 &&
                options.builtInOuiVendors.value("AABBCC") == "Built in fixture" &&
                options.customOuiVendors.value("DDEEFF") == "Custom fixture";
+    }
+
+    static bool upgradesPreliminaryHostnameWithMdns(ScannerWindow &window)
+    {
+        auto cancellation = std::make_shared<std::atomic_bool>(false);
+        ScanMdnsResolver resolver(
+            7, cancellation, std::make_unique<ImmediateMdnsBackend>());
+        const HostnameEvidence result = window.lookupHostname(
+            "192.0.2.10",
+            {"preliminary-host", HostnameQuality::Preliminary},
+            TargetBudget(3000),
+            cancellation,
+            resolver);
+        return result.hostname == "fixture.local" &&
+               result.quality == HostnameQuality::AvahiMdns;
     }
 
     static bool resultScalingContract(ScannerWindow &window)
@@ -618,6 +652,7 @@ int main(int argc, char **argv)
     REQUIRE(parserPlan.targetText.size() <= 2048);
     REQUIRE(ScannerWindowTestAccess::preservesInterfaceIdentity(window));
     REQUIRE(ScannerWindowTestAccess::capturesAllScanOptions(window));
+    REQUIRE(ScannerWindowTestAccess::upgradesPreliminaryHostnameWithMdns(window));
     REQUIRE(ScannerWindowTestAccess::resultScalingContract(window));
     REQUIRE(ScannerWindowTestAccess::debugScanContract(window));
     REQUIRE(ScannerWindowTestAccess::confirmsDelayedNeighbor(window));

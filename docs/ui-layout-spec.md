@@ -24,6 +24,16 @@ Performance controls use one shared three-column grid:
 
 The concrete constants live in `src/settingslayout.h`. `settings_layout_contract` verifies the maximum dialog geometry and proves the performance row fits inside the specified page width. `settings_dialog_stability` opens the production dialog offscreen, moves the Accuracy slider through its range, and verifies that the dialog, sliders, description region, and button row retain their geometry.
 
+## Results and details contract
+
+The results table is a concise inventory, not an evidence narrative. Cells display selected values only. The Hostname column contains the preferred hostname without a source suffix, badge, confidence label, failure state, or documentary tooltip. Service tags remain the compact `Name:port` and `Unknown:port` forms. Provenance must not add table columns or change row height.
+
+The details pane is the on-demand surface for successful per-device evidence. Hostname provenance appears under one `Hostname(s):` heading as an aligned name-and-source list, with the preferred name first. Source labels are short parenthesized descriptors: `(Local)`, `(PTR)`, `(System)`, and `(mDNS)`. Every distinct detected name is retained; names that differ only by case or a trailing root dot share one row, with their source labels combined. Service evidence uses the same restrained style, normally `(Verified)` or `(Open)`.
+
+Changing selection or opening the details pane sends no network traffic. Resolver availability, timeout, malformed-response, and other operational failures belong in diagnostics, not in result cells or per-device prose. Dynamic evidence updates may replace the preferred table value and refresh details, but must preserve the existing ordering, selection, and viewport stability contracts.
+
 ## Human verification
 
 Open Settings and switch through every category. On Performance, drag both sliders from minimum to maximum and confirm their tracks remain equal in length and position. The accuracy name and description may change, but neither slider, either row, the help paragraph, nor the dialog buttons may move. Confirm the dialog remains 600 by 440 and that pages with more content scroll internally.
+
+Run a fixture containing conflicting Local, PTR, System, and mDNS names. Confirm the table shows only the preferred plain hostname. Open Details and confirm `Hostname(s):` lists every distinct detected name in aligned rows with short source labels, without changing the table layout or sending new traffic.
