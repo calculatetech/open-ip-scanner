@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.4.0] - 2026-07-13
+
+### Changed
+- Standardized Settings dialog geometry at 600 by 440 logical pixels with consistent margins, section spacing, and internally scrolling pages.
+- Aligned both Performance sliders to the same fixed length and reserved stable value and accuracy-description regions so changing a slider cannot move or resize nearby controls.
+
+### Added
+- Added the canonical UI layout specification and an automated Settings geometry contract.
+
 ## [0.3.4] - 2026-07-13
 
 ### Changed

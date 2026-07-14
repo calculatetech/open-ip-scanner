@@ -1,5 +1,6 @@
 #include "scannerwindow.h"
 #include "cancellablewait.h"
+#include "settingslayout.h"
 
 #include <QAction>
 #include <QApplication>
@@ -21,6 +22,7 @@
 #include <QFontMetrics>
 #include <QFuture>
 #include <QGuiApplication>
+#include <QGridLayout>
 #include <QHeaderView>
 #include <QHostInfo>
 #include <QHBoxLayout>
@@ -44,6 +46,7 @@
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QRegularExpressionValidator>
+#include <QScrollArea>
 #include <QSet>
 #include <QSettings>
 #include <QSignalBlocker>
@@ -2545,26 +2548,46 @@ void ScannerWindow::showSettingsDialog()
 {
     // Category list + stacked pages keeps a large settings surface organized.
     QDialog dialog(this);
+    dialog.setObjectName("settingsDialog");
     dialog.setWindowTitle("Settings");
-    dialog.resize(800, 560);
+    dialog.setFixedSize(settingslayout::kDialogWidth, settingslayout::kDialogHeight);
     dialog.setModal(true);
 
     auto *layout = new QVBoxLayout(&dialog);
+    layout->setContentsMargins(settingslayout::kOuterMargin,
+                               settingslayout::kOuterMargin,
+                               settingslayout::kOuterMargin,
+                               settingslayout::kOuterMargin);
+    layout->setSpacing(settingslayout::kSectionSpacing);
     auto *body = new QWidget(&dialog);
     auto *bodyLayout = new QHBoxLayout(body);
     bodyLayout->setContentsMargins(0, 0, 0, 0);
+    bodyLayout->setSpacing(settingslayout::kSectionSpacing);
 
     auto *categories = new QListWidget(body);
-    categories->setFixedWidth(170);
+    categories->setObjectName("settingsCategories");
+    categories->setFixedWidth(settingslayout::kNavigationWidth);
     categories->addItems({"Appearance", "Services", "Performance", "Programs", "OUI Prefixes", "Toolbar"});
 
     auto *pages = new QStackedWidget(body);
+    const auto addSettingsPage = [pages](QWidget *page) {
+        auto *scroll = new QScrollArea(pages);
+        scroll->setFrameShape(QFrame::NoFrame);
+        scroll->setWidgetResizable(true);
+        scroll->setWidget(page);
+        pages->addWidget(scroll);
+    };
     bodyLayout->addWidget(categories);
     bodyLayout->addWidget(pages, 1);
     layout->addWidget(body, 1);
 
     auto *appearancePage = new QWidget(pages);
     auto *appearanceLayout = new QVBoxLayout(appearancePage);
+    appearanceLayout->setContentsMargins(settingslayout::kOuterMargin,
+                                          settingslayout::kOuterMargin,
+                                          settingslayout::kOuterMargin,
+                                          settingslayout::kOuterMargin);
+    appearanceLayout->setSpacing(settingslayout::kControlSpacing);
     auto *ipCheck = new QCheckBox("Show IP Address column", appearancePage);
     auto *hostCheck = new QCheckBox("Show Hostname column", appearancePage);
     auto *macCheck = new QCheckBox("Show MAC Address column", appearancePage);
@@ -2590,13 +2613,20 @@ void ScannerWindow::showSettingsDialog()
     appearanceLayout->addWidget(vendorCheck);
     appearanceLayout->addWidget(svcCheck);
     auto *macFormatForm = new QFormLayout();
+    macFormatForm->setHorizontalSpacing(settingslayout::kSectionSpacing);
+    macFormatForm->setVerticalSpacing(settingslayout::kControlSpacing);
     macFormatForm->addRow("MAC display format:", macFormatCombo);
     appearanceLayout->addLayout(macFormatForm);
     appearanceLayout->addStretch(1);
-    pages->addWidget(appearancePage);
+    addSettingsPage(appearancePage);
 
     auto *servicesPage = new QWidget(pages);
     auto *servicesLayout = new QVBoxLayout(servicesPage);
+    servicesLayout->setContentsMargins(settingslayout::kOuterMargin,
+                                        settingslayout::kOuterMargin,
+                                        settingslayout::kOuterMargin,
+                                        settingslayout::kOuterMargin);
+    servicesLayout->setSpacing(settingslayout::kControlSpacing);
     QHash<QString, QCheckBox *> serviceChecks;
     for (const ServiceDefinition &def : availableServices()) {
         auto *check = new QCheckBox(QString("Probe %1 (%2)").arg(def.label).arg(def.port), servicesPage);
@@ -2605,55 +2635,90 @@ void ScannerWindow::showSettingsDialog()
         servicesLayout->addWidget(check);
     }
     servicesLayout->addStretch(1);
-    pages->addWidget(servicesPage);
+    addSettingsPage(servicesPage);
 
     auto *performancePage = new QWidget(pages);
-    auto *performanceLayout = new QFormLayout(performancePage);
+    auto *performanceLayout = new QGridLayout(performancePage);
+    performanceLayout->setContentsMargins(settingslayout::kOuterMargin,
+                                           settingslayout::kOuterMargin,
+                                           settingslayout::kOuterMargin,
+                                           settingslayout::kOuterMargin);
+    performanceLayout->setHorizontalSpacing(settingslayout::kSectionSpacing);
+    performanceLayout->setVerticalSpacing(settingslayout::kControlSpacing);
+    performanceLayout->setColumnMinimumWidth(0, settingslayout::kRowLabelWidth);
     auto *workerSlider = new QSlider(Qt::Horizontal, performancePage);
+    workerSlider->setObjectName("settingsWorkerSlider");
     workerSlider->setRange(1, kMaxParallelProbes);
+    workerSlider->setFixedWidth(settingslayout::kSliderWidth);
+    workerSlider->setTickInterval(1);
+    workerSlider->setTickPosition(QSlider::TicksBelow);
     workerSlider->setValue(maxParallelProbes_);
     auto *workerLabel = new QLabel(performancePage);
+    workerLabel->setObjectName("settingsWorkerValue");
+    workerLabel->setFixedWidth(settingslayout::kValueWidth);
     workerLabel->setText(QString("%1 thread%2").arg(maxParallelProbes_).arg(maxParallelProbes_ == 1 ? "" : "s"));
     connect(workerSlider, &QSlider::valueChanged, &dialog, [workerLabel](int value) {
         workerLabel->setText(QString("%1 thread%2").arg(value).arg(value == 1 ? "" : "s"));
     });
-    auto *workerRow = new QWidget(performancePage);
-    auto *workerRowLayout = new QHBoxLayout(workerRow);
-    workerRowLayout->setContentsMargins(0, 0, 0, 0);
-    workerRowLayout->addWidget(workerSlider, 1);
-    workerRowLayout->addWidget(workerLabel);
-    performanceLayout->addRow("Scan workers:", workerRow);
+    auto *workerRowLabel = new QLabel("Scan workers:", performancePage);
+    workerRowLabel->setObjectName("settingsWorkerRowLabel");
+    workerRowLabel->setFixedWidth(settingslayout::kRowLabelWidth);
+    performanceLayout->addWidget(workerRowLabel, 0, 0);
+    performanceLayout->addWidget(workerSlider, 0, 1);
+    performanceLayout->addWidget(workerLabel, 0, 2);
 
     auto *accuracySlider = new QSlider(Qt::Horizontal, performancePage);
+    accuracySlider->setObjectName("settingsAccuracySlider");
     accuracySlider->setRange(0, 3);
+    accuracySlider->setFixedWidth(settingslayout::kSliderWidth);
     accuracySlider->setTickInterval(1);
     accuracySlider->setTickPosition(QSlider::TicksBelow);
     accuracySlider->setValue(accuracyLevel_);
     auto *accuracyValueLabel = new QLabel(performancePage);
-    accuracyValueLabel->setText(
-        QString("%1 — %2").arg(accuracyLabel(), scanBudgetProfileSummary(accuracyLevel_)));
-    connect(accuracySlider, &QSlider::valueChanged, &dialog, [accuracyValueLabel](int value) {
+    accuracyValueLabel->setObjectName("settingsAccuracyValue");
+    accuracyValueLabel->setFixedWidth(settingslayout::kValueWidth);
+    accuracyValueLabel->setText(accuracyLabel());
+    auto *accuracyDetailsLabel = new QLabel(performancePage);
+    accuracyDetailsLabel->setObjectName("settingsAccuracyDetails");
+    accuracyDetailsLabel->setFixedHeight(settingslayout::kDynamicDescriptionHeight);
+    accuracyDetailsLabel->setWordWrap(true);
+    accuracyDetailsLabel->setAlignment(Qt::AlignLeft | Qt::AlignTop);
+    accuracyDetailsLabel->setText(scanBudgetProfileSummary(accuracyLevel_));
+    connect(accuracySlider,
+            &QSlider::valueChanged,
+            &dialog,
+            [accuracyValueLabel, accuracyDetailsLabel](int value) {
         const int clamped = std::clamp(value, 0, 3);
         const char *labels[] = {"Fast", "Balanced", "High", "Maximum"};
-        accuracyValueLabel->setText(
-            QString("%1 — %2").arg(labels[clamped], scanBudgetProfileSummary(clamped)));
+        accuracyValueLabel->setText(labels[clamped]);
+        accuracyDetailsLabel->setText(scanBudgetProfileSummary(clamped));
     });
-    auto *accuracyRow = new QWidget(performancePage);
-    auto *accuracyRowLayout = new QHBoxLayout(accuracyRow);
-    accuracyRowLayout->setContentsMargins(0, 0, 0, 0);
-    accuracyRowLayout->addWidget(accuracySlider, 1);
-    accuracyRowLayout->addWidget(accuracyValueLabel);
-    performanceLayout->addRow("Accuracy:", accuracyRow);
+    auto *accuracyRowLabel = new QLabel("Accuracy:", performancePage);
+    accuracyRowLabel->setObjectName("settingsAccuracyRowLabel");
+    accuracyRowLabel->setFixedWidth(settingslayout::kRowLabelWidth);
+    performanceLayout->addWidget(accuracyRowLabel, 1, 0);
+    performanceLayout->addWidget(accuracySlider, 1, 1);
+    performanceLayout->addWidget(accuracyValueLabel, 1, 2);
+    performanceLayout->addWidget(accuracyDetailsLabel, 2, 1, 1, 2);
     auto *accuracyHelp = new QLabel(
         "Fast gives a quick lay of the land. Higher settings repeat ping and port probes "
         "with longer waits so intermittent or sleeping devices have more chances to respond.",
         performancePage);
+    accuracyHelp->setObjectName("settingsAccuracyHelp");
     accuracyHelp->setWordWrap(true);
-    performanceLayout->addRow(QString(), accuracyHelp);
-    pages->addWidget(performancePage);
+    performanceLayout->addWidget(accuracyHelp, 3, 0, 1, 3);
+    performanceLayout->setRowStretch(4, 1);
+    addSettingsPage(performancePage);
 
     auto *programsPage = new QWidget(pages);
     auto *programsLayout = new QFormLayout(programsPage);
+    programsLayout->setContentsMargins(settingslayout::kOuterMargin,
+                                        settingslayout::kOuterMargin,
+                                        settingslayout::kOuterMargin,
+                                        settingslayout::kOuterMargin);
+    programsLayout->setHorizontalSpacing(settingslayout::kSectionSpacing);
+    programsLayout->setVerticalSpacing(settingslayout::kControlSpacing);
+    programsLayout->setRowWrapPolicy(QFormLayout::WrapLongRows);
     QHash<QString, QLineEdit *> commandEdits;
     for (const ServiceDefinition &def : availableServices()) {
         if (def.isWeb) {
@@ -2668,10 +2733,15 @@ void ScannerWindow::showSettingsDialog()
         programsLayout->addRow(QString("%1 command:").arg(def.label), edit);
         commandEdits.insert(def.id, edit);
     }
-    pages->addWidget(programsPage);
+    addSettingsPage(programsPage);
 
     auto *ouiPage = new QWidget(pages);
     auto *ouiLayout = new QVBoxLayout(ouiPage);
+    ouiLayout->setContentsMargins(settingslayout::kOuterMargin,
+                                  settingslayout::kOuterMargin,
+                                  settingslayout::kOuterMargin,
+                                  settingslayout::kOuterMargin);
+    ouiLayout->setSpacing(settingslayout::kControlSpacing);
     auto *ouiHelp = new QLabel("Custom OUI overrides (one per line): PREFIX=Vendor\nExamples: 00163E=My Lab Vendor, 00:11:22=VendorX", ouiPage);
     ouiHelp->setWordWrap(true);
     auto *ouiEdit = new QPlainTextEdit(ouiPage);
@@ -2685,11 +2755,18 @@ void ScannerWindow::showSettingsDialog()
     ouiEdit->setMaximumBlockCount(2000);
     ouiLayout->addWidget(ouiHelp);
     ouiLayout->addWidget(ouiEdit, 1);
-    pages->addWidget(ouiPage);
+    addSettingsPage(ouiPage);
 
     auto *toolbarPage = new QWidget(pages);
     auto *toolbarPageLayout = new QVBoxLayout(toolbarPage);
+    toolbarPageLayout->setContentsMargins(settingslayout::kOuterMargin,
+                                           settingslayout::kOuterMargin,
+                                           settingslayout::kOuterMargin,
+                                           settingslayout::kOuterMargin);
+    toolbarPageLayout->setSpacing(settingslayout::kControlSpacing);
     auto *styleForm = new QFormLayout();
+    styleForm->setHorizontalSpacing(settingslayout::kSectionSpacing);
+    styleForm->setVerticalSpacing(settingslayout::kControlSpacing);
     auto *displayModeCombo = new QComboBox(toolbarPage);
     displayModeCombo->addItem("Icon only", 0);
     displayModeCombo->addItem("Icon + Text", 1);
@@ -2728,6 +2805,7 @@ void ScannerWindow::showSettingsDialog()
     auto *listsRow = new QWidget(toolbarPage);
     auto *listsLayout = new QHBoxLayout(listsRow);
     listsLayout->setContentsMargins(0, 0, 0, 0);
+    listsLayout->setSpacing(settingslayout::kControlSpacing);
     auto *availableList = new QListWidget(listsRow);
     auto *currentList = new QListWidget(listsRow);
     availableList->setSelectionMode(QAbstractItemView::SingleSelection);
@@ -2748,6 +2826,7 @@ void ScannerWindow::showSettingsDialog()
     auto *moveButtons = new QWidget(listsRow);
     auto *moveButtonsLayout = new QVBoxLayout(moveButtons);
     moveButtonsLayout->setContentsMargins(0, 0, 0, 0);
+    moveButtonsLayout->setSpacing(settingslayout::kControlSpacing);
     moveButtonsLayout->addStretch(1);
     auto *addButton = new QPushButton(">", moveButtons);
     auto *removeButton = new QPushButton("<", moveButtons);
@@ -2758,7 +2837,6 @@ void ScannerWindow::showSettingsDialog()
     moveButtonsLayout->addWidget(removeButton);
     moveButtonsLayout->addWidget(upButton);
     moveButtonsLayout->addWidget(downButton);
-    moveButtonsLayout->addSpacing(10);
     moveButtonsLayout->addWidget(defaultsButton);
     moveButtonsLayout->addStretch(1);
 
@@ -2881,12 +2959,13 @@ void ScannerWindow::showSettingsDialog()
     if (currentList->count() > 0) {
         currentList->setCurrentRow(0);
     }
-    pages->addWidget(toolbarPage);
+    addSettingsPage(toolbarPage);
 
     connect(categories, &QListWidget::currentRowChanged, pages, &QStackedWidget::setCurrentIndex);
     categories->setCurrentRow(0);
 
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
+    buttons->setObjectName("settingsButtons");
     connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
     connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
     layout->addWidget(buttons);

@@ -2,7 +2,7 @@
 
 This file is the single source of truth for unfinished product, engineering, documentation, and release work. Detailed evidence for why each 1.0 item exists is in [the production-readiness audit](production-readiness-audit.md). New ideas belong here rather than in a second backlog.
 
-The audited baseline is `0.2.0` at commit `91e0a7a`; the current development increment is `0.3.4`. Version 1.0 is not ready. Every unchecked item under “Required for 1.0” is a release gate; the post-1.0 section is explicitly outside the first production release.
+The audited baseline is `0.2.0` at commit `91e0a7a`; the current development increment is `0.4.0`. Version 1.0 is not ready. Every unchecked item under “Required for 1.0” is a release gate; the post-1.0 section is explicitly outside the first production release.
 
 ## Priority definitions
 
@@ -164,6 +164,7 @@ Priority matches the most severe audit finding an item closes. All items in the 
 - [ ] **ACCESSIBILITY — Fix startup warnings, accessibility, and theme behavior.** `Medium`
   - Set the Qt high-DPI rounding policy through the supported pre-application API or remove the override; clean startup must not emit the current policy-order warning.
   - Give icon-only controls explicit accessible names and keyboard paths, avoid hard-coded selection/service colors that defeat system contrast, test screen-reader labels and high scaling, and add scrolling/responsive sizing to dense settings pages.
+  - Current progress: the canonical [UI layout specification](ui-layout-spec.md) limits Settings to 600 by 440, standardizes spacing and aligned Performance controls, reserves stable geometry for dynamic descriptions, and requires internal page scrolling. An automated geometry contract protects the dimensions and row fit.
   - Done when offscreen and real-session startup are warning-free, automated accessibility inspection finds names/roles for interactive controls, and light, dark, high-contrast, 200% scale, and keyboard-only smoke tests pass.
 
 <a id="release-docs"></a>
