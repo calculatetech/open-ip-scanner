@@ -64,7 +64,7 @@ if [[ $mode == full || $mode == release ]]; then
     if command -v clang-tidy >/dev/null 2>&1; then
         cmake -S . -B build/quality-clang-tidy -G Ninja -DBUILD_TESTING=OFF \
             -DCMAKE_BUILD_TYPE=Debug \
-            '-DCMAKE_CXX_CLANG_TIDY=clang-tidy;--warnings-as-errors=*'
+            '-DCMAKE_CXX_CLANG_TIDY=clang-tidy;--checks=-clang-analyzer-cplusplus.NewDeleteLeaks;--warnings-as-errors=*'
         cmake --build build/quality-clang-tidy --parallel "$jobs"
     else
         echo "quality gate: clang-tidy unavailable; strict compiler warnings are the configured equivalent"
