@@ -119,5 +119,94 @@ int main(int argc, char **argv)
         std::cerr << "scan-session cancellation contract failed\n";
         return 1;
     }
+
+    QStringList restartedIps;
+    int restartedCompletions = 0;
+    QEventLoop restarted;
+    QObject::connect(&session, &ScanSession::resultReady,
+                     [&](const ScanResult &result) {
+                         restartedIps.append(result.ip);
+                     });
+    QObject::connect(&session, &ScanSession::completed,
+                     [&](const QList<ScanResult> &, bool) {
+                         ++restartedCompletions;
+                         restarted.quit();
+                     });
+    if (!session.start(
+            [](const ScanSession::Cancellation &,
+               const ScanSession::ProgressCallback &,
+               const ScanSession::ResultCallback &result) {
+                ScanResult stale;
+                stale.ip = "203.0.113.1";
+                result(stale);
+                return QList<ScanResult>{stale};
+            })) {
+        return 1;
+    }
+    session.waitForFinished();
+    if (!session.start(
+            [](const ScanSession::Cancellation &,
+               const ScanSession::ProgressCallback &,
+               const ScanSession::ResultCallback &result) {
+                ScanResult current;
+                current.ip = "203.0.113.2";
+                result(current);
+                return QList<ScanResult>{current};
+            })) {
+        return 1;
+    }
+    QTimer::singleShot(2000, &restarted, &QEventLoop::quit);
+    restarted.exec();
+    if (session.isRunning() || restartedCompletions != 1 ||
+        restartedIps != QStringList{"203.0.113.2"}) {
+        std::cerr << "wait-and-restart stale-delivery contract failed\n";
+        return 1;
+    }
+
+    int burstResults = 0;
+    int heartbeatCount = 0;
+    QEventLoop burstCompleted;
+    QTimer heartbeat;
+    heartbeat.setInterval(0);
+    QObject::connect(&heartbeat, &QTimer::timeout,
+                     [&]() { ++heartbeatCount; });
+    QObject::connect(&session, &ScanSession::resultReady,
+                     [&](const ScanResult &result) {
+                         if (result.ip.startsWith("198.18.")) {
+                             ++burstResults;
+                         }
+                     });
+    QObject::connect(&session, &ScanSession::completed,
+                     [&](const QList<ScanResult> &results, bool) {
+                         if (results.size() == 4096) {
+                             burstCompleted.quit();
+                         }
+                     });
+    heartbeat.start();
+    if (!session.start(
+            [](const ScanSession::Cancellation &,
+               const ScanSession::ProgressCallback &,
+               const ScanSession::ResultCallback &result) {
+                QList<ScanResult> results;
+                results.reserve(4096);
+                for (int index = 0; index < 4096; ++index) {
+                    ScanResult scanResult;
+                    scanResult.ip = QString("198.18.%1.%2")
+                                        .arg(index / 256)
+                                        .arg(index % 256);
+                    results.append(scanResult);
+                    result(scanResult);
+                }
+                return results;
+            })) {
+        return 1;
+    }
+    QTimer::singleShot(2000, &burstCompleted, &QEventLoop::quit);
+    burstCompleted.exec();
+    heartbeat.stop();
+    if (session.isRunning() || burstResults != 4096 || heartbeatCount < 2) {
+        std::cerr << "bounded burst-delivery responsiveness contract failed\n";
+        return 1;
+    }
     return 0;
 }

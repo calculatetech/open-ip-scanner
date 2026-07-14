@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.5.12] - 2026-07-14
+
+### Fixed
+
+- Replaced cross-thread Qt delivery calls in `ScanSession` with a standard
+  synchronized record queue drained by an owner-thread timer, removing a
+  sanitizer-visible race while retaining prompt owner-thread signals.
+- Backed idle polling off to 25 ms and capped delivery at 128 records per GUI
+  turn so long scans avoid busy polling and large result bursts yield between
+  batches.
+- Bound every queued delivery to its originating cancellation token so stale
+  events cannot affect a later session after an explicit wait and restart.
+
 ## [0.5.11] - 2026-07-14
 
 ### Changed

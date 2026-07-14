@@ -9,6 +9,8 @@
 #include <memory>
 #include <thread>
 
+class QTimer;
+
 class ScanSession : public QObject {
     Q_OBJECT
 
@@ -33,7 +35,13 @@ signals:
     void completed(const QList<ScanResult> &results, bool canceled);
 
 private:
+    struct DeliveryQueue;
+    void drainDeliveries();
+
     std::thread worker_;
     std::atomic_bool running_{false};
     Cancellation cancellation_;
+    std::shared_ptr<DeliveryQueue> deliveries_;
+    QTimer *deliveryTimer_ = nullptr;
+    int idlePollIntervalMs_ = 1;
 };
