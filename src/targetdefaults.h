@@ -1,8 +1,14 @@
 #pragma once
 
 #include <QList>
+#include <QPair>
 #include <QString>
 #include <QStringList>
+
+enum class TargetTextFormat {
+    Cidr,
+    Range
+};
 
 struct DefaultNetworkInput {
     quint32 localAddress = 0;
@@ -19,4 +25,5 @@ struct DefaultTargetPlan {
 
 DefaultTargetPlan buildDefaultTargetPlan(const QList<DefaultNetworkInput> &networks,
                                          int maxHosts = 4096,
-                                         int maxTextCharacters = 2048);
+                                         int maxTextCharacters = 2048,
+                                         TargetTextFormat format = TargetTextFormat::Cidr);

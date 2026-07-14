@@ -2,7 +2,7 @@
 
 This file is the single source of truth for unfinished product, engineering, documentation, and release work. Detailed evidence for why each 1.0 item exists is in [the production-readiness audit](production-readiness-audit.md). New ideas belong here rather than in a second backlog.
 
-The audited baseline is `0.2.0` at commit `91e0a7a`; `0.5.2` is the latest human-verified version. Version 1.0 is not ready. Every unchecked item under “Required for 1.0” is a release gate; the post-1.0 section is explicitly outside the first production release.
+The audited baseline is `0.2.0` at commit `91e0a7a`; `0.5.2` is the latest human-verified version, and `0.5.3` is the active TARGET-FORMAT-PREFERENCE branch. Version 1.0 is not ready. Every unchecked item under “Required for 1.0” is a release gate; the post-1.0 section is explicitly outside the first production release.
 
 ## Delivered implementation increments
 
@@ -134,9 +134,11 @@ Priority matches the most severe audit finding an item closes. All items in the 
 
 #### TARGET-FORMAT-PREFERENCE
 
-- [ ] **Let users choose CIDR or begin/end notation for generated targets.** `Medium`
+- [x] **Let users choose CIDR or begin/end notation for generated targets.** `Medium`
   - Add a persisted setting that formats automatically generated targets as compact CIDR notation or explicit begin/end ranges without changing which addresses will be scanned.
   - Keep CIDR and range choices semantically equivalent, preserve the existing 4,096-host and input-length protections, and use the same preference for Auto Select and adapter-specific defaults.
+  - Current progress on `0.5.3`: Appearance settings offers persisted CIDR and begin/end choices, defaulting to CIDR. Auto Select and adapter-specific default planners share the preference. The formatter emits exact CIDR tokens using the production parser's `/1`–`/30` usable-host and `/31`–`/32` endpoint semantics; both renderings are constrained against the same accepted address prefix so format changes cannot alter target count, deduplication, route selection, or the 2,048-character limit.
+  - Completion evidence: deterministic default-planner cases cover CIDR and range output for bounded large networks, `/20`, `/24`, `/31`, `/32`, partial multi-network plans, overlap, host caps, and text caps. Production-parser coverage proves both formats produce identical ordered host lists; Settings-flow coverage changes Auto Select from CIDR to range and an explicit second adapter from range to CIDR without changing selection or parsed hosts; settings round-trip coverage restores the range choice; and the formatter limit path completes in bounded time. Normal and strict suites pass 11/11, all ten non-rendering tests pass under ThreadSanitizer, the generated Debian package reports version 0.5.3, the initial review finding was repaired, and final fresh review found no actionable issue.
   - Done when both formats round-trip through the production parser to identical address sets, the preference survives restart, and changing it never changes adapter routing or target count.
 
 #### SETTINGS-MIGRATIONS

@@ -312,6 +312,7 @@ private:
     bool targetLimitWarningActive_ = false;
     bool rememberLastTargetOnLaunch_ = false;
     QString pendingLastTarget_;
+    TargetTextFormat targetTextFormat_ = TargetTextFormat::Cidr;
 
     int maxParallelProbes_ = 4;
     int accuracyLevel_ = 2; // 0=Fast, 1=Balanced, 2=High, 3=Maximum

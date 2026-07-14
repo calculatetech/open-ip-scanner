@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.5.3] - 2026-07-14
+
+### Added
+
+- Added a persisted CIDR or begin/end preference for automatically generated
+  Auto Select and adapter-specific targets, with CIDR as the default.
+- Added exact CIDR serialization that preserves the parser's usable-host
+  semantics, adapter routing, host counts, deduplication, and input limits.
+
 ## [0.5.2] - 2026-07-14
 
 ### Added

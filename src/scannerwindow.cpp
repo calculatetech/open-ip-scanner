@@ -711,7 +711,8 @@ DefaultTargetPlan ScannerWindow::buildDefaultTargetPlanForNetworks(
             appendInterface(target.interfaceName);
         }
     }
-    return ::buildDefaultTargetPlan(inputs, kMaxHostsToScan);
+    return ::buildDefaultTargetPlan(
+        inputs, kMaxHostsToScan, 2048, targetTextFormat_);
 }
 
 DefaultTargetPlan ScannerWindow::buildDefaultTargetPlanForAdapter(
@@ -873,7 +874,10 @@ void ScannerWindow::applyDefaultTargets()
         if (!adapterPlan.targetText.isEmpty()) {
             targetInput_->setText(adapterPlan.targetText);
         } else {
-            targetInput_->setText(QString("%1/32").arg(adapters_[selected].localIp));
+            targetInput_->setText(
+                targetTextFormat_ == TargetTextFormat::Cidr
+                    ? QString("%1/32").arg(adapters_[selected].localIp)
+                    : adapters_[selected].localIp);
         }
         if (!adapterPlan.omittedInterfaces.isEmpty()) {
             appliedDefaultTargetNotice_ =
@@ -2857,6 +2861,13 @@ void ScannerWindow::showSettingsDialog()
     macFormatCombo->addItem("AABBCCDDEEFF (plain upper)", MacPlainUpper);
     macFormatCombo->addItem("aabbccddeeff (plain lower)", MacPlainLower);
     macFormatCombo->setCurrentIndex(std::max(0, macFormatCombo->findData(macDisplayFormat_)));
+    auto *targetFormatCombo = new QComboBox(appearancePage);
+    targetFormatCombo->setObjectName("settingsTargetFormat");
+    targetFormatCombo->addItem("CIDR (192.168.1.0/24)", "cidr");
+    targetFormatCombo->addItem(
+        "Begin/end range (192.168.1.1-192.168.1.254)", "range");
+    targetFormatCombo->setCurrentIndex(
+        targetTextFormat_ == TargetTextFormat::Cidr ? 0 : 1);
     ipCheck->setChecked(!table_->isColumnHidden(ColIp));
     hostCheck->setChecked(!table_->isColumnHidden(ColHostname));
     macCheck->setChecked(!table_->isColumnHidden(ColMac));
@@ -2871,6 +2882,7 @@ void ScannerWindow::showSettingsDialog()
     macFormatForm->setHorizontalSpacing(settingslayout::kSectionSpacing);
     macFormatForm->setVerticalSpacing(settingslayout::kControlSpacing);
     macFormatForm->addRow("MAC display format:", macFormatCombo);
+    macFormatForm->addRow("Generated targets:", targetFormatCombo);
     appearanceLayout->addLayout(macFormatForm);
     appearanceLayout->addStretch(1);
     addSettingsPage(appearancePage);
@@ -3249,6 +3261,13 @@ void ScannerWindow::showSettingsDialog()
         macDisplayFormat_ = newMacDisplayFormat;
         refreshDisplayedMacAddresses();
     }
+    const TargetTextFormat newTargetTextFormat =
+        targetFormatCombo->currentData().toString() == "range"
+            ? TargetTextFormat::Range
+            : TargetTextFormat::Cidr;
+    const bool targetTextFormatChanged =
+        newTargetTextFormat != targetTextFormat_;
+    targetTextFormat_ = newTargetTextFormat;
 
     enabledServiceIds_.clear();
     for (const ServiceDefinition &def : availableServices()) {
@@ -3310,6 +3329,19 @@ void ScannerWindow::showSettingsDialog()
         toolbarOrder_ = kToolbarDefaultOrder;
     }
     rebuildMainToolbar();
+
+    if (targetTextFormatChanged) {
+        const int preferred = preferredAdapterIndex();
+        const DefaultTargetPlan defaultPlan =
+            preferred >= 0
+                ? buildDefaultTargetPlanForAdapter(
+                      adapters_[preferred].interfaceName)
+                : DefaultTargetPlan{};
+        defaultTargetText_ = defaultPlan.targetText;
+        if (!userCustomizedTargets_) {
+            applyDefaultTargets();
+        }
+    }
 
     applyTableColumnSizing();
     saveSettings();
@@ -3425,6 +3457,7 @@ void ScannerWindow::applyDefaultSettings()
     maxParallelProbes_ = 4;
     accuracyLevel_ = 1;
     rememberLastTargetOnLaunch_ = false;
+    targetTextFormat_ = TargetTextFormat::Cidr;
     pendingLastTarget_.clear();
     toolbarDisplayMode_ = 0;
     macDisplayFormat_ = MacColonUpper;
@@ -3480,6 +3513,10 @@ void ScannerWindow::loadSettings()
     maxParallelProbes_ = std::clamp(settings.value("performance/max_parallel_probes", 4).toInt(), 1, kMaxParallelProbes);
     accuracyLevel_ = std::clamp(settings.value("performance/accuracy_level", 1).toInt(), 0, 3);
     rememberLastTargetOnLaunch_ = settings.value("targets/remember_last", false).toBool();
+    targetTextFormat_ = settings.value("targets/generated_format", "cidr").toString() ==
+                                "range"
+                            ? TargetTextFormat::Range
+                            : TargetTextFormat::Cidr;
     pendingLastTarget_.clear();
     if (rememberLastTargetAction_ != nullptr) {
         const QSignalBlocker blocker(rememberLastTargetAction_);
@@ -3629,6 +3666,9 @@ void ScannerWindow::saveSettings() const
     }
     settings.setValue("targets/history", targetHistory_);
     settings.setValue("targets/remember_last", rememberLastTargetOnLaunch_);
+    settings.setValue("targets/generated_format",
+                      targetTextFormat_ == TargetTextFormat::Cidr ? "cidr"
+                                                                  : "range");
     settings.setValue("targets/last_input", targetInput_->text().trimmed());
 
     settings.beginWriteArray("oui/custom_entries");

@@ -5,6 +5,7 @@
 #include "resulttablemodel.h"
 
 #include <QApplication>
+#include <QComboBox>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QElapsedTimer>
@@ -15,6 +16,7 @@
 #include <QMetaObject>
 #include <QPoint>
 #include <QPushButton>
+#include <QSettings>
 #include <QSlider>
 #include <QStandardPaths>
 #include <QTableView>
@@ -40,6 +42,88 @@ struct ScannerWindowTestAccess {
                                             QString *error)
     {
         return window.parseTargetsInput(text, error);
+    }
+
+    static bool targetFormatRoundTrips(ScannerWindow &window)
+    {
+        const TargetTextFormat original = window.targetTextFormat_;
+        window.targetTextFormat_ = TargetTextFormat::Range;
+        window.saveSettings();
+        window.targetTextFormat_ = TargetTextFormat::Cidr;
+        window.loadSettings();
+        const bool restored =
+            window.targetTextFormat_ == TargetTextFormat::Range;
+        window.targetTextFormat_ = original;
+        window.saveSettings();
+        return restored;
+    }
+
+    static bool usesTargetFormat(const ScannerWindow &window,
+                                 TargetTextFormat format)
+    {
+        return window.targetTextFormat_ == format;
+    }
+
+    static void installTargetFormatFixture(ScannerWindow &window)
+    {
+        window.networkTargets_ = {
+            {QHostAddress("10.50.0.0"),
+             24,
+             "eth-fixture",
+             "Primary fixture",
+             "10.50.0.9",
+             "02:00:00:00:00:01"},
+            {QHostAddress("192.0.2.4"),
+             30,
+             "camera-fixture",
+             "Camera fixture",
+             "192.0.2.5",
+             "02:00:00:00:00:02"}};
+        window.adapters_ = {
+            {"eth-fixture",
+             "Primary fixture",
+             "10.50.0.9",
+             "02:00:00:00:00:01",
+             {},
+             true,
+             true,
+             true},
+            {"camera-fixture",
+             "Camera fixture",
+             "192.0.2.5",
+             "02:00:00:00:00:02",
+             {},
+             true,
+             true,
+             false}};
+        window.adapterCombo_->clear();
+        window.adapterCombo_->addItem("Auto Select", -1);
+        window.adapterCombo_->addItem("Primary fixture", 0);
+        window.adapterCombo_->addItem("Camera fixture", 1);
+        window.adapterCombo_->setCurrentIndex(0);
+        window.targetTextFormat_ = TargetTextFormat::Cidr;
+        window.defaultTargetText_ =
+            window.buildDefaultTargetPlanForAdapter("eth-fixture").targetText;
+        window.userCustomizedTargets_ = false;
+        window.applyDefaultTargets();
+    }
+
+    static int selectedAdapter(const ScannerWindow &window)
+    {
+        return window.adapterCombo_->currentData().toInt();
+    }
+
+    static QString targetText(const ScannerWindow &window)
+    {
+        return window.targetInput_->text();
+    }
+
+    static void selectAdapterAndApply(ScannerWindow &window, int adapterData)
+    {
+        const int index = window.adapterCombo_->findData(adapterData);
+        window.adapterCombo_->setCurrentIndex(index);
+        window.userCustomizedTargets_ = false;
+        window.applyDefaultTargets();
     }
 
     static bool preservesInterfaceIdentity(ScannerWindow &window)
@@ -747,6 +831,7 @@ int main(int argc, char **argv)
 {
     QStandardPaths::setTestModeEnabled(true);
     QApplication app(argc, argv);
+    QSettings("OpenIPScanner", "OpenIPScanner").clear();
     ScannerWindow window;
     bool ok = true;
 
@@ -761,6 +846,22 @@ int main(int argc, char **argv)
     REQUIRE(parserError.isEmpty());
     REQUIRE(parsedTargets.size() == parserPlan.uniqueHostCount);
     REQUIRE(parserPlan.targetText.size() <= 2048);
+    const DefaultTargetPlan rangeParserPlan = buildDefaultTargetPlan(
+        {{QHostAddress("10.2.3.4").toIPv4Address(),
+          20,
+          "eth0",
+          "Ethernet"}},
+        4096,
+        2048,
+        TargetTextFormat::Range);
+    QString rangeParserError;
+    const QList<QHostAddress> rangeParsedTargets =
+        ScannerWindowTestAccess::parseTargets(
+            window, rangeParserPlan.targetText, &rangeParserError);
+    REQUIRE(rangeParserError.isEmpty());
+    REQUIRE(rangeParsedTargets == parsedTargets);
+    REQUIRE(rangeParserPlan.uniqueHostCount == parserPlan.uniqueHostCount);
+    REQUIRE(ScannerWindowTestAccess::targetFormatRoundTrips(window));
     REQUIRE(ScannerWindowTestAccess::preservesInterfaceIdentity(window));
     REQUIRE(ScannerWindowTestAccess::capturesAllScanOptions(window));
     REQUIRE(ScannerWindowTestAccess::parsesAdapterDnsDomains());
@@ -803,6 +904,18 @@ int main(int argc, char **argv)
     REQUIRE(verifiedStartTls.first);
     REQUIRE(verifiedStartTls.second == ServiceEvidenceLevel::VerifiedProtocol);
 
+    ScannerWindowTestAccess::installTargetFormatFixture(window);
+    const QString autoCidrText = ScannerWindowTestAccess::targetText(window);
+    QString autoCidrError;
+    const QList<QHostAddress> autoCidrHosts =
+        ScannerWindowTestAccess::parseTargets(
+            window, autoCidrText, &autoCidrError);
+    REQUIRE(autoCidrError.isEmpty());
+    REQUIRE(ScannerWindowTestAccess::selectedAdapter(window) == -1);
+
+    QList<QHostAddress> explicitRangeHosts;
+    QString explicitRangeText;
+
     QTimer::singleShot(0, &window, [&window]() {
         QMetaObject::invokeMethod(&window, "showSettingsDialog", Qt::DirectConnection);
     });
@@ -817,6 +930,7 @@ int main(int argc, char **argv)
         auto *categories = dialog->findChild<QListWidget *>("settingsCategories");
         auto *workerSlider = dialog->findChild<QSlider *>("settingsWorkerSlider");
         auto *accuracySlider = dialog->findChild<QSlider *>("settingsAccuracySlider");
+        auto *targetFormat = dialog->findChild<QComboBox *>("settingsTargetFormat");
         auto *workerValue = dialog->findChild<QLabel *>("settingsWorkerValue");
         auto *accuracyValue = dialog->findChild<QLabel *>("settingsAccuracyValue");
         auto *workerRowLabel = dialog->findChild<QLabel *>("settingsWorkerRowLabel");
@@ -827,6 +941,7 @@ int main(int argc, char **argv)
         REQUIRE(categories != nullptr);
         REQUIRE(workerSlider != nullptr);
         REQUIRE(accuracySlider != nullptr);
+        REQUIRE(targetFormat != nullptr);
         REQUIRE(workerValue != nullptr);
         REQUIRE(accuracyValue != nullptr);
         REQUIRE(workerRowLabel != nullptr);
@@ -835,6 +950,7 @@ int main(int argc, char **argv)
         REQUIRE(help != nullptr);
         REQUIRE(buttons != nullptr);
         if (categories == nullptr || workerSlider == nullptr || accuracySlider == nullptr ||
+            targetFormat == nullptr ||
             workerValue == nullptr || accuracyValue == nullptr || workerRowLabel == nullptr ||
             accuracyRowLabel == nullptr || details == nullptr || help == nullptr ||
             buttons == nullptr) {
@@ -876,8 +992,92 @@ int main(int argc, char **argv)
             REQUIRE(buttons->geometry() == buttonsGeometry);
         }
 
-        dialog->reject();
-        app.exit(ok ? EXIT_SUCCESS : EXIT_FAILURE);
+        REQUIRE(targetFormat->currentData().toString() == "cidr");
+        targetFormat->setCurrentIndex(
+            targetFormat->findData(QStringLiteral("range")));
+        QPushButton *okButton = buttons->button(QDialogButtonBox::Ok);
+        REQUIRE(okButton != nullptr);
+        if (okButton != nullptr) {
+            okButton->click();
+            QTimer::singleShot(0, &app, [&]() {
+                REQUIRE(ScannerWindowTestAccess::usesTargetFormat(
+                    window, TargetTextFormat::Range));
+                REQUIRE(ScannerWindowTestAccess::selectedAdapter(window) == -1);
+                const QString autoRangeText =
+                    ScannerWindowTestAccess::targetText(window);
+                QString autoRangeError;
+                const QList<QHostAddress> autoRangeHosts =
+                    ScannerWindowTestAccess::parseTargets(
+                        window, autoRangeText, &autoRangeError);
+                REQUIRE(autoRangeError.isEmpty());
+                REQUIRE(autoRangeHosts == autoCidrHosts);
+                REQUIRE(autoRangeText != autoCidrText);
+
+                ScannerWindowTestAccess::selectAdapterAndApply(window, 1);
+                REQUIRE(ScannerWindowTestAccess::selectedAdapter(window) == 1);
+                explicitRangeText = ScannerWindowTestAccess::targetText(window);
+                QString explicitRangeError;
+                explicitRangeHosts = ScannerWindowTestAccess::parseTargets(
+                    window, explicitRangeText, &explicitRangeError);
+                REQUIRE(explicitRangeError.isEmpty());
+
+                QTimer::singleShot(0, &window, [&window]() {
+                    QMetaObject::invokeMethod(
+                        &window, "showSettingsDialog", Qt::DirectConnection);
+                });
+                QTimer::singleShot(100, &app, [&]() {
+                    auto *secondDialog =
+                        window.findChild<QDialog *>("settingsDialog");
+                    REQUIRE(secondDialog != nullptr);
+                    if (secondDialog == nullptr) {
+                        app.exit(EXIT_FAILURE);
+                        return;
+                    }
+                    auto *secondFormat = secondDialog->findChild<QComboBox *>(
+                        "settingsTargetFormat");
+                    auto *secondButtons =
+                        secondDialog->findChild<QDialogButtonBox *>(
+                            "settingsButtons");
+                    REQUIRE(secondFormat != nullptr);
+                    REQUIRE(secondButtons != nullptr);
+                    if (secondFormat == nullptr || secondButtons == nullptr) {
+                        secondDialog->reject();
+                        app.exit(EXIT_FAILURE);
+                        return;
+                    }
+                    REQUIRE(secondFormat->currentData().toString() == "range");
+                    secondFormat->setCurrentIndex(
+                        secondFormat->findData(QStringLiteral("cidr")));
+                    QPushButton *secondOk =
+                        secondButtons->button(QDialogButtonBox::Ok);
+                    REQUIRE(secondOk != nullptr);
+                    if (secondOk == nullptr) {
+                        secondDialog->reject();
+                        app.exit(EXIT_FAILURE);
+                        return;
+                    }
+                    secondOk->click();
+                    QTimer::singleShot(0, &app, [&]() {
+                        REQUIRE(ScannerWindowTestAccess::usesTargetFormat(
+                            window, TargetTextFormat::Cidr));
+                        REQUIRE(ScannerWindowTestAccess::selectedAdapter(window) == 1);
+                        const QString explicitCidrText =
+                            ScannerWindowTestAccess::targetText(window);
+                        QString explicitCidrError;
+                        const QList<QHostAddress> explicitCidrHosts =
+                            ScannerWindowTestAccess::parseTargets(
+                                window, explicitCidrText, &explicitCidrError);
+                        REQUIRE(explicitCidrError.isEmpty());
+                        REQUIRE(explicitCidrHosts == explicitRangeHosts);
+                        REQUIRE(explicitCidrText != explicitRangeText);
+                        app.exit(ok ? EXIT_SUCCESS : EXIT_FAILURE);
+                    });
+                });
+            });
+        } else {
+            dialog->reject();
+            app.exit(EXIT_FAILURE);
+        }
     });
 
     return app.exec();
