@@ -2,7 +2,7 @@
 
 This file is the single source of truth for unfinished product, engineering, documentation, and release work. Detailed evidence for why each 1.0 item exists is in [the production-readiness audit](production-readiness-audit.md). New ideas belong here rather than in a second backlog.
 
-The audited baseline is `0.2.0` at commit `91e0a7a`; `0.5.2` is the latest manually tested version, versions from `0.5.3` onward are being adversarially reviewed and merged under the explicit waiver for remaining pre-1.0 work, and `0.6.5` is the active QUALITY-GATE branch. Version 1.0 is not ready. Every unchecked item under “Required for 1.0” is a release gate; the post-1.0 section is explicitly outside the first production release.
+The audited baseline is `0.2.0` at commit `91e0a7a`; `0.5.2` is the latest manually tested version, and versions from `0.5.3` onward are being adversarially reviewed and merged under the explicit waiver for remaining pre-1.0 work. Version 1.0 is not ready. Every unchecked item under “Required for 1.0” is a release gate; the post-1.0 section is explicitly outside the first production release.
 
 ## Delivered implementation increments
 
@@ -40,6 +40,8 @@ The unchecked milestone boxes below mean their complete acceptance criteria are 
 - `0.6.6` — **DESKTOP-METADATA:** adopted a stable reverse-DNS desktop
   identity, complete AppStream metadata, a completed-fixture screenshot, and
   installed-tree migration validation.
+- `0.6.7` — **SEARCH-ENRICHMENT:** searches normalized underlying evidence
+  while preserving stable live-result order, selection, and viewport position.
 
 **RESULT-SCALING** is human-verified on version `0.4.4`. DUPLICATE-IP-CONFLICTS remains Post-1.0.
 
@@ -361,9 +363,21 @@ Priority matches the most severe audit finding an item closes. All items in the 
 
 #### SEARCH-ENRICHMENT
 
-- [ ] **Include enrichment evidence in result searches.** `Medium`
+- [x] **Include enrichment evidence in result searches.** `Medium`
   - Search the complete normalized result evidence rather than only the currently displayed cell text. Match IP address, MAC address, vendor, preferred and alternate hostnames including full DNS suffixes, service names, and service ports.
   - Update filtering as enrichment arrives without reordering results, resetting the model, changing selection, or disturbing the anchored viewport. Source labels and backend failure prose remain details/diagnostic presentation rather than searchable device identity.
+  - Current progress on `0.6.7`: `ResultTableModel` matches the underlying
+    normalized evidence instead of rendered cells. Verified service names and
+    IDs are searchable; every observed service port is searchable, while an
+    open-only probable service name remains excluded as unverified. Direct
+    model coverage exercises every field, alternate hidden FQDNs, authoritative
+    removal/restoration, separator-independent partial and 24/28/36-bit OUI
+    prefixes, and excluded presentation prose. The live 4,096-row contract
+    checks add, remove, and restore cycles without changing ordering, selection,
+    model continuity, or the exact pixel-anchored viewport. The post-fix full
+    Release gate passed normal and strict 34/34, ASan/UBSan 33/33,
+    ThreadSanitizer 32/32, and Release 34/34 with a tested package. The final
+    fresh adversarial review found no actionable issue.
   - Done when deterministic model tests find a row by every supported evidence field—including an alternate FQDN hidden from the table—remove and restore matches as evidence changes, and preserve active ordering, selection, and viewport behavior.
 
 #### SERVICE-PILL-THEMING

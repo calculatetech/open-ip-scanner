@@ -896,7 +896,8 @@ struct ScannerWindowTestAccess {
         ptr.hostname = "fixture.example";
         ptr.hostnameSource = HostnameSource::DnsPtr;
         ptr.hostnameEvidence = {
-            {ptr.hostname, ptr.hostnameSource}};
+            {ptr.hostname, ptr.hostnameSource},
+            {mdns.hostname, mdns.hostnameSource}};
         ptr.detailsText = "<p>stale PTR-only details</p>";
 
         window.resultModel_->clear();
@@ -962,6 +963,7 @@ struct ScannerWindowTestAccess {
     {
         window.resultModel_->clear();
         window.pendingDisplayResults_.clear();
+        window.pendingDisplayIdentityRows_.clear();
         int modelResetCount = 0;
         const QMetaObject::Connection resetConnection = QObject::connect(
             window.resultModel_, &QAbstractItemModel::modelReset, &window,
@@ -986,6 +988,30 @@ struct ScannerWindowTestAccess {
             previousHeartbeatMs = now;
         });
         heartbeat.start();
+
+        ScanResult olderSnapshot;
+        olderSnapshot.ip = "198.51.100.20";
+        olderSnapshot.interfaceName = "queue-fixture";
+        olderSnapshot.hostname = "stale.queue.example";
+        olderSnapshot.hostnameEvidence = {
+            {olderSnapshot.hostname, HostnameSource::DnsPtr},
+        };
+        ScanResult newerSnapshot = olderSnapshot;
+        newerSnapshot.hostname = "current.queue.example";
+        newerSnapshot.hostnameEvidence = {
+            {newerSnapshot.hostname, HostnameSource::DnsPtr},
+        };
+        window.queueResultForDisplay(olderSnapshot);
+        window.queueResultForDisplay(newerSnapshot);
+        while (!window.pendingDisplayResults_.isEmpty() ||
+               window.resultFlushTimer_->isActive()) {
+            QApplication::processEvents(QEventLoop::AllEvents, 20);
+        }
+        const bool queueKeepsNewestSnapshot =
+            window.resultModel_->resultForIdentity(neighborIdentityKey(
+                newerSnapshot.interfaceName, newerSnapshot.ip)).hostname ==
+            newerSnapshot.hostname;
+        window.resultModel_->clear();
 
         for (int arrival = 0; arrival < 4096; ++arrival) {
             const int i = (arrival * 4051) % 4096;
@@ -1087,6 +1113,11 @@ struct ScannerWindowTestAccess {
         completionOnly.interfaceName = "fixture0";
         completionOnly.hostname = "completion-only";
         finalSnapshot.append(completionOnly);
+        window.searchScopeCombo_->setCurrentIndex(0);
+        window.searchInput_->setText("host-");
+        window.applyTableFilters();
+        const int filterCountBeforeCompletion =
+            window.tableFilterApplicationCount_;
         const ScannerWindow::ViewportAnchor completionAnchorBefore =
             window.captureViewportAnchor();
         const QString completionSelectionBefore = window.rowIdentityKey(
@@ -1100,6 +1131,8 @@ struct ScannerWindowTestAccess {
             window.captureViewportAnchor();
         const QString completionSelectionAfter = window.rowIdentityKey(
             window.table_->currentIndex().row());
+        const bool completionFilteringBounded =
+            window.tableFilterApplicationCount_ - filterCountBeforeCompletion == 1;
         QStringList orderAfterCompletion;
         orderAfterCompletion.reserve(window.resultModel_->rowCount());
         for (int row = 0; row < window.resultModel_->rowCount(); ++row) {
@@ -1117,31 +1150,118 @@ struct ScannerWindowTestAccess {
         }
         QApplication::processEvents();
         heartbeat.stop();
+        const qint64 benchmarkElapsedMs = elapsed.elapsed();
+
+        for (int row = 1000; row < 1020; ++row) {
+            ScanResult enriched = window.resultModel_->resultAt(row);
+            enriched.hostnameEvidence = {
+                {QString("match-%1.corp.search.example").arg(row),
+                 HostnameSource::DnsPtr},
+            };
+            window.resultModel_->upsertResult(enriched);
+        }
+        window.searchScopeCombo_->setCurrentIndex(
+            window.searchScopeCombo_->findData("hostname"));
+        window.searchInput_->setText("corp.search.example");
+        window.applyTableFilters();
+        window.table_->scrollTo(window.resultModel_->index(1005, 0),
+                                QAbstractItemView::PositionAtTop);
+        window.table_->setCurrentIndex(window.resultModel_->index(1010, 0));
+        QApplication::processEvents();
+        const ScannerWindow::ViewportAnchor enrichmentAnchorBefore =
+            window.captureViewportAnchor();
+        const QString enrichmentSelectionBefore = window.rowIdentityKey(
+            window.table_->currentIndex().row());
+        ScanResult newlyMatching = window.resultModel_->resultAt(500);
+        newlyMatching.hostnameEvidence = {
+            {"newly-visible.corp.search.example", HostnameSource::DnsPtr},
+        };
+        const QString newlyMatchingIdentity = neighborIdentityKey(
+            newlyMatching.interfaceName, newlyMatching.ip);
+        window.addOrUpdateResultRow(newlyMatching);
+        QApplication::processEvents();
+        const ScannerWindow::ViewportAnchor enrichmentAnchorAfter =
+            window.captureViewportAnchor();
+        const QString enrichmentSelectionAfter = window.rowIdentityKey(
+            window.table_->currentIndex().row());
+        const bool enrichmentAddedStable =
+            !window.table_->isRowHidden(
+                window.resultModel_->rowForIdentity(newlyMatchingIdentity)) &&
+            enrichmentAnchorBefore.identity == enrichmentAnchorAfter.identity &&
+            enrichmentAnchorBefore.pixelOffset == enrichmentAnchorAfter.pixelOffset &&
+            enrichmentSelectionBefore == enrichmentSelectionAfter;
+
+        ScanResult noLongerMatching = newlyMatching;
+        noLongerMatching.hostnameEvidence.clear();
+        const ScannerWindow::ViewportAnchor removalAnchorBefore =
+            window.captureViewportAnchor();
+        window.addOrUpdateResultRow(noLongerMatching);
+        QApplication::processEvents();
+        const ScannerWindow::ViewportAnchor removalAnchorAfter =
+            window.captureViewportAnchor();
+        const bool enrichmentRemovedStable =
+            window.table_->isRowHidden(
+                window.resultModel_->rowForIdentity(newlyMatchingIdentity)) &&
+            removalAnchorBefore.identity == removalAnchorAfter.identity &&
+            removalAnchorBefore.pixelOffset == removalAnchorAfter.pixelOffset &&
+            enrichmentSelectionAfter == window.rowIdentityKey(
+                window.table_->currentIndex().row());
+
+        const ScannerWindow::ViewportAnchor restorationAnchorBefore =
+            window.captureViewportAnchor();
+        window.addOrUpdateResultRow(newlyMatching);
+        QApplication::processEvents();
+        const ScannerWindow::ViewportAnchor restorationAnchorAfter =
+            window.captureViewportAnchor();
+        const bool enrichmentRestoredStable =
+            !window.table_->isRowHidden(
+                window.resultModel_->rowForIdentity(newlyMatchingIdentity)) &&
+            restorationAnchorBefore.identity == restorationAnchorAfter.identity &&
+            restorationAnchorBefore.pixelOffset == restorationAnchorAfter.pixelOffset &&
+            enrichmentSelectionAfter == window.rowIdentityKey(
+                window.table_->currentIndex().row());
+        const bool enrichmentFilterStable = enrichmentAddedStable &&
+                                            enrichmentRemovedStable &&
+                                            enrichmentRestoredStable;
+        window.searchInput_->clear();
+        window.searchScopeCombo_->setCurrentIndex(0);
+        window.applyTableFilters();
+
         window.hide();
         QObject::disconnect(resetConnection);
         const bool enforceTiming =
             qEnvironmentVariableIsEmpty("OIS_SKIP_HARDWARE_TIMING_ASSERTIONS");
         const bool passed =
-               ordered && servicesOrdered && visibleRows > 0 && visibleRows < 4096 &&
+               queueKeepsNewestSnapshot && ordered && servicesOrdered &&
+               visibleRows > 0 && visibleRows < 4096 &&
                filteredIdentitiesBeforeSort == filteredIdentitiesAfterSort &&
+               enrichmentFilterStable &&
                (!enforceTiming ||
-                (elapsed.elapsed() < 5000 && maximumHeartbeatGapMs < 250)) &&
+                (benchmarkElapsedMs < 5000 && maximumHeartbeatGapMs < 250)) &&
                modelResetCount == 0 && before.identity == after.identity &&
                before.pixelOffset == after.pixelOffset &&
                selectedBefore == selectedAfter && !hasIndexWidget &&
                completionAnchorBefore.identity == completionAnchorAfter.identity &&
                completionAnchorBefore.pixelOffset == completionAnchorAfter.pixelOffset &&
                completionSelectionBefore == completionSelectionAfter &&
+               completionFilteringBounded &&
                scanActionDisabledDuringCompletion &&
                orderBeforeCompletion == orderAfterCompletion &&
                window.resultModel_->rowCount() == 4098;
         qInfo() << "result scaling diagnostics"
-                << "elapsedMs" << elapsed.elapsed()
+                << "elapsedMs" << benchmarkElapsedMs
                 << "maximumHeartbeatGapMs" << maximumHeartbeatGapMs
                 << "rows" << window.resultModel_->rowCount()
                 << "visibleRows" << visibleRows
                 << "ordered" << ordered
                 << "servicesOrdered" << servicesOrdered
+                << "enrichmentFilterStable" << enrichmentFilterStable
+                << "enrichmentAnchorBefore" << enrichmentAnchorBefore.identity
+                << enrichmentAnchorBefore.pixelOffset
+                << "enrichmentAnchorAfter" << enrichmentAnchorAfter.identity
+                << enrichmentAnchorAfter.pixelOffset
+                << "enrichmentSelectionStable"
+                << (enrichmentSelectionBefore == enrichmentSelectionAfter)
                 << "modelResetCount" << modelResetCount
                 << "timingEnforced" << enforceTiming;
         return passed;

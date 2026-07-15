@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.6.7] - 2026-07-14
+
+### Changed
+
+- Search complete normalized device evidence, including alternate full
+  hostnames and service ports, while preserving live result presentation.
+
 ## [0.6.6] - 2026-07-14
 
 ### Added

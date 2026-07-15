@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.28)
-project(OpenIpScanner VERSION 0.6.6 LANGUAGES CXX)
+project(OpenIpScanner VERSION 0.6.7 LANGUAGES CXX)
 
 set(OIS_APP_ID "io.github.calculatetech.OpenIpScanner")
 set(OIS_GENERATED_RESOURCE_DIR "${CMAKE_BINARY_DIR}/generated-resources")
@@ -218,6 +218,10 @@ if(BUILD_TESTING)
     add_executable(device_presentation_test tests/devicepresentation_test.cpp)
     target_link_libraries(device_presentation_test PRIVATE ois_ui)
     add_test(NAME device_presentation_contract COMMAND device_presentation_test)
+
+    add_executable(result_table_model_test tests/resulttablemodel_test.cpp)
+    target_link_libraries(result_table_model_test PRIVATE ois_ui)
+    add_test(NAME result_search_evidence_contract COMMAND result_table_model_test)
 
     add_executable(scan_cancellation_test tests/scancancellation_test.cpp)
     target_link_libraries(scan_cancellation_test PRIVATE ois_linux)

@@ -272,7 +272,9 @@ private:
     std::function<bool(const QUrl &)> urlLauncher_;
     std::function<bool(const QString &, const QStringList &)> detachedLauncher_;
     QList<ScanResult> pendingDisplayResults_;
+    QHash<QString, int> pendingDisplayIdentityRows_;
     QTimer *resultFlushTimer_ = nullptr;
+    int tableFilterApplicationCount_ = 0;
     QTimer *settingsSaveTimer_ = nullptr;
     bool scanCompletionPending_ = false;
     bool completedScanWasCanceled_ = false;

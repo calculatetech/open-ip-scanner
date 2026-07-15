@@ -7,6 +7,54 @@
 
 #include <algorithm>
 
+namespace {
+
+bool sameHostnameEvidence(const QList<HostnameEvidence> &left,
+                          const QList<HostnameEvidence> &right)
+{
+    if (left.size() != right.size()) {
+        return false;
+    }
+    for (int index = 0; index < left.size(); ++index) {
+        if (left.at(index).hostname != right.at(index).hostname ||
+            left.at(index).source != right.at(index).source) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool sameServices(const QList<ServiceHit> &left, const QList<ServiceHit> &right)
+{
+    if (left.size() != right.size()) {
+        return false;
+    }
+    for (int index = 0; index < left.size(); ++index) {
+        const ServiceHit &lhs = left.at(index);
+        const ServiceHit &rhs = right.at(index);
+        if (lhs.id != rhs.id || lhs.label != rhs.label || lhs.port != rhs.port ||
+            lhs.isWeb != rhs.isWeb || lhs.evidence != rhs.evidence) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool sameResult(const ScanResult &left, const ScanResult &right)
+{
+    return left.ip == right.ip && left.interfaceName == right.interfaceName &&
+           left.mac == right.mac && left.vendor == right.vendor &&
+           left.hostname == right.hostname &&
+           left.hostnameSource == right.hostnameSource &&
+           sameHostnameEvidence(left.hostnameEvidence, right.hostnameEvidence) &&
+           left.resolverEvents == right.resolverEvents &&
+           sameServices(left.services, right.services) &&
+           left.detailsText == right.detailsText &&
+           left.discoveryMethod == right.discoveryMethod;
+}
+
+} // namespace
+
 ResultTableModel::ResultTableModel(QObject *parent) : QAbstractTableModel(parent) {}
 
 int ResultTableModel::rowCount(const QModelIndex &parent) const
@@ -78,18 +126,20 @@ void ResultTableModel::clear()
     endRemoveRows();
 }
 
-void ResultTableModel::upsertResult(const ScanResult &result)
+bool ResultTableModel::upsertResult(const ScanResult &result)
 {
     if (result.ip.isEmpty()) {
-        return;
+        return false;
     }
     const QString identity = identityFor(result);
     const int existing = identityRows_.value(identity, -1);
     if (existing >= 0) {
-        if (mergeResult(&rows_[existing], result)) {
-            emit dataChanged(index(existing, 0), index(existing, ColumnCount - 1));
+        if (sameResult(rows_.at(existing), result)) {
+            return false;
         }
-        return;
+        rows_[existing] = result;
+        emit dataChanged(index(existing, 0), index(existing, ColumnCount - 1));
+        return true;
     }
     const int row = insertionRow(result);
     beginInsertRows({}, row, row);
@@ -102,6 +152,7 @@ void ResultTableModel::upsertResult(const ScanResult &result)
             identityRows_.insert(identityFor(rows_.at(shiftedRow)), shiftedRow);
         }
     }
+    return true;
 }
 
 void ResultTableModel::setMacFormatter(std::function<QString(const QString &)> formatter)
@@ -137,6 +188,49 @@ ScanResult ResultTableModel::resultForIdentity(const QString &identity) const
     return resultAt(rowForIdentity(identity));
 }
 
+bool ResultTableModel::matchesSearch(int row,
+                                     const QString &query,
+                                     const QString &scope) const
+{
+    if (row < 0 || row >= rows_.size()) {
+        return false;
+    }
+    const QString normalizedQuery = normalizedText(query);
+    if (normalizedQuery.isEmpty()) {
+        return true;
+    }
+
+    const ScanResult &result = rows_.at(row);
+    const QString normalizedHostnameQuery = normalizedHostnameKey(query);
+    if (scope == "ip") {
+        return textContains(result.ip, normalizedQuery);
+    }
+    if (scope == "hostname") {
+        return hostnameContains(result, normalizedHostnameQuery);
+    }
+    if (scope == "vendor") {
+        return evidenceTextContains(result.vendor, normalizedQuery);
+    }
+    if (scope == "services") {
+        return servicesContain(result, normalizedQuery);
+    }
+    if (scope == "mac") {
+        return macContains(result.mac, query, normalizedQuery);
+    }
+    if (scope == "oui") {
+        const QString compactQuery = normalizedMacSearchText(query);
+        const QString compactMac = normalizedMacSearchText(result.mac);
+        return !compactQuery.isEmpty() && compactQuery.size() <= 12 &&
+               compactMac.startsWith(compactQuery);
+    }
+
+    return textContains(result.ip, normalizedQuery) ||
+           hostnameContains(result, normalizedHostnameQuery) ||
+           evidenceTextContains(result.vendor, normalizedQuery) ||
+           servicesContain(result, normalizedQuery) ||
+           macContains(result.mac, query, normalizedQuery);
+}
+
 QString ResultTableModel::identityFor(const ScanResult &result)
 {
     return neighborIdentityKey(result.interfaceName, result.ip);
@@ -145,6 +239,88 @@ QString ResultTableModel::identityFor(const ScanResult &result)
 QString ResultTableModel::normalizedText(const QString &value)
 {
     return value.trimmed().toCaseFolded();
+}
+
+QString ResultTableModel::normalizedMacSearchText(const QString &value)
+{
+    QString normalized;
+    normalized.reserve(value.size());
+    for (const QChar character : value.trimmed()) {
+        if (character == ':' || character == '.' || character == '-' ||
+            character.isSpace()) {
+            continue;
+        }
+        const QChar folded = character.toLower();
+        if (!folded.isDigit() && (folded < 'a' || folded > 'f')) {
+            return {};
+        }
+        normalized.append(folded);
+    }
+    return normalized;
+}
+
+bool ResultTableModel::textContains(const QString &value,
+                                    const QString &normalizedQuery)
+{
+    return normalizedText(value).contains(normalizedQuery);
+}
+
+bool ResultTableModel::evidenceTextContains(const QString &value,
+                                            const QString &normalizedQuery)
+{
+    const QString normalized = normalizedText(value);
+    return !normalized.isEmpty() && normalized != QStringLiteral("unknown") &&
+           normalized.contains(normalizedQuery);
+}
+
+bool ResultTableModel::macContains(const QString &mac,
+                                   const QString &query,
+                                   const QString &normalizedQuery)
+{
+    if (evidenceTextContains(mac, normalizedQuery)) {
+        return true;
+    }
+    const QString compactQuery = normalizedMacSearchText(query);
+    return !compactQuery.isEmpty() &&
+           normalizedMacSearchText(mac).contains(compactQuery);
+}
+
+bool ResultTableModel::hostnameContains(const ScanResult &result,
+                                        const QString &normalizedQuery)
+{
+    if (normalizedQuery.isEmpty()) {
+        return false;
+    }
+    if (normalizedHostnameKey(result.hostname).contains(normalizedQuery)) {
+        return true;
+    }
+    if (result.hostnameEvidence.isEmpty()) {
+        return false;
+    }
+    const QList<HostnameEvidence> canonical =
+        canonicalHostnameEvidence(result.hostnameEvidence);
+    return std::any_of(canonical.cbegin(), canonical.cend(),
+                       [&normalizedQuery](const HostnameEvidence &evidence) {
+                           return normalizedHostnameKey(evidence.hostname)
+                               .contains(normalizedQuery);
+                       });
+}
+
+bool ResultTableModel::servicesContain(const ScanResult &result,
+                                       const QString &normalizedQuery)
+{
+    return std::any_of(
+        result.services.cbegin(), result.services.cend(),
+        [&normalizedQuery](const ServiceHit &service) {
+            if (QString::number(service.port).contains(normalizedQuery)) {
+                return true;
+            }
+            if (service.evidence != ServiceEvidenceLevel::VerifiedProtocol) {
+                return false;
+            }
+            return normalizedText(service.label).contains(normalizedQuery) ||
+                   normalizedText(service.id).contains(normalizedQuery);
+        });
 }
 
 QString ResultTableModel::tableHostname(const ScanResult &result)
@@ -263,49 +439,4 @@ void ResultTableModel::rebuildIdentityRows()
     for (int row = 0; row < rows_.size(); ++row) {
         identityRows_.insert(identityFor(rows_.at(row)), row);
     }
-}
-
-bool ResultTableModel::mergeResult(ScanResult *current, const ScanResult &incoming)
-{
-    bool changed = false;
-    const auto upgrade = [&changed](QString *value, const QString &incomingValue) {
-        if ((value->isEmpty() || *value == "Unknown") && !incomingValue.isEmpty() &&
-            incomingValue != "Unknown") {
-            *value = incomingValue;
-            changed = true;
-        }
-    };
-    for (const HostnameEvidence &candidate : incoming.hostnameEvidence) {
-        const QList<HostnameEvidence> merged = mergeHostnameEvidence(
-            current->hostnameEvidence, candidate);
-        if (merged.size() != current->hostnameEvidence.size()) {
-            current->hostnameEvidence = merged;
-            changed = true;
-        }
-    }
-    const HostnameEvidence preferred = preferredHostname(current->hostnameEvidence);
-    if (!preferred.hostname.isEmpty() &&
-        (current->hostname != preferred.hostname ||
-         current->hostnameSource != preferred.source)) {
-        current->hostname = preferred.hostname;
-        current->hostnameSource = preferred.source;
-        changed = true;
-    } else {
-        upgrade(&current->hostname, incoming.hostname);
-    }
-    upgrade(&current->mac, incoming.mac);
-    upgrade(&current->vendor, incoming.vendor);
-    if (current->services.isEmpty() && !incoming.services.isEmpty()) {
-        current->services = incoming.services;
-        changed = true;
-    }
-    for (const ResolverEvent &event : incoming.resolverEvents) {
-        const QList<ResolverEvent> merged = mergeResolverEvents(
-            current->resolverEvents, event);
-        if (merged.size() != current->resolverEvents.size()) {
-            current->resolverEvents = merged;
-            changed = true;
-        }
-    }
-    return changed;
 }

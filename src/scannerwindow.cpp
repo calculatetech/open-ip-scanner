@@ -1083,6 +1083,7 @@ void ScannerWindow::startScan()
     }
 
     pendingDisplayResults_.clear();
+    pendingDisplayIdentityRows_.clear();
     resultFlushTimer_->stop();
     scanCompletionPending_ = false;
     resultModel_->clear();
@@ -1124,6 +1125,7 @@ void ScannerWindow::startScan()
 void ScannerWindow::startDebugScan()
 {
     pendingDisplayResults_.clear();
+    pendingDisplayIdentityRows_.clear();
     resultFlushTimer_->stop();
     scanCompletionPending_ = false;
     resultModel_->clear();
@@ -1361,8 +1363,14 @@ void ScannerWindow::beginScanCompletionPresentation(
     bool wasCanceled)
 {
     pendingDisplayResults_.clear();
+    pendingDisplayIdentityRows_.clear();
     resultFlushTimer_->stop();
     pendingDisplayResults_ = finalResults;
+    for (int row = 0; row < pendingDisplayResults_.size(); ++row) {
+        const ScanResult &result = pendingDisplayResults_.at(row);
+        pendingDisplayIdentityRows_.insert(
+            neighborIdentityKey(result.interfaceName, result.ip), row);
+    }
     completedScanWasCanceled_ = wasCanceled;
     scanCompletionPending_ = true;
     scanButton_->setEnabled(false);
@@ -1440,7 +1448,9 @@ void ScannerWindow::addOrUpdateResultRow(const ScanResult &result)
         return;
     }
     const ViewportAnchor anchor = captureViewportAnchor();
-    resultModel_->upsertResult(result);
+    if (!resultModel_->upsertResult(result)) {
+        return;
+    }
     applyTableFilters();
     restoreViewportAnchor(anchor);
     updateDetailsPaneForCurrentSelection();
@@ -1451,7 +1461,15 @@ void ScannerWindow::queueResultForDisplay(const ScanResult &result)
     if (result.ip.isEmpty()) {
         return;
     }
-    pendingDisplayResults_.append(result);
+    const QString identity = neighborIdentityKey(result.interfaceName, result.ip);
+    const int pendingRow = pendingDisplayIdentityRows_.value(identity, -1);
+    if (pendingRow >= 0) {
+        pendingDisplayResults_[pendingRow] = result;
+    } else {
+        pendingDisplayIdentityRows_.insert(
+            identity, static_cast<int>(pendingDisplayResults_.size()));
+        pendingDisplayResults_.append(result);
+    }
     if (!resultFlushTimer_->isActive()) {
         resultFlushTimer_->start();
     }
@@ -1466,10 +1484,15 @@ void ScannerWindow::flushPendingResults()
     const ViewportAnchor anchor = captureViewportAnchor();
     const int count = std::min(kMaximumRowsPerUiTurn,
                                static_cast<int>(pendingDisplayResults_.size()));
+    bool changed = false;
     for (int i = 0; i < count; ++i) {
-        resultModel_->upsertResult(pendingDisplayResults_.takeLast());
+        const ScanResult result = pendingDisplayResults_.takeLast();
+        pendingDisplayIdentityRows_.remove(
+            neighborIdentityKey(result.interfaceName, result.ip));
+        changed = resultModel_->upsertResult(result) || changed;
     }
-    if (searchInput_ != nullptr && !searchInput_->text().trimmed().isEmpty()) {
+    if (changed && searchInput_ != nullptr &&
+        !searchInput_->text().trimmed().isEmpty()) {
         applyTableFilters();
     }
     restoreViewportAnchor(anchor);
@@ -1663,6 +1686,7 @@ void ScannerWindow::copySelectedCell()
 
 void ScannerWindow::applyTableFilters()
 {
+    ++tableFilterApplicationCount_;
     for (int row = 0; row < resultModel_->rowCount(); ++row) {
         table_->setRowHidden(row, !rowMatchesFilters(row));
     }
@@ -1671,53 +1695,8 @@ void ScannerWindow::applyTableFilters()
 bool ScannerWindow::rowMatchesFilters(int row) const
 {
     const QString query = searchInput_ ? searchInput_->text().trimmed() : QString();
-    if (query.isEmpty()) {
-        return true;
-    }
-
     const QString scope = searchScopeCombo_ ? searchScopeCombo_->currentData().toString() : QString("all");
-    const QString hostname = cellText(row, ColHostname);
-    const QString vendor = cellText(row, ColVendor);
-    const QString services = cellText(row, ColServices);
-    const QString mac = cellText(row, ColMac);
-
-    if (scope == "vendor") {
-        return vendor.contains(query, Qt::CaseInsensitive);
-    }
-    if (scope == "services") {
-        return services.contains(query, Qt::CaseInsensitive);
-    }
-    if (scope == "ip") {
-        return cellText(row, ColIp).contains(query, Qt::CaseInsensitive);
-    }
-    if (scope == "hostname") {
-        return hostname.contains(query, Qt::CaseInsensitive);
-    }
-    if (scope == "mac") {
-        return mac.contains(query, Qt::CaseInsensitive);
-    }
-    if (scope == "oui") {
-        const QString qPrefix = normalizeOuiPrefix(query);
-        if (qPrefix.isEmpty()) {
-            return mac.contains(query, Qt::CaseInsensitive);
-        }
-        return normalizeOuiPrefix(mac).startsWith(qPrefix, Qt::CaseInsensitive);
-    }
-
-    if (vendor.contains(query, Qt::CaseInsensitive)) {
-        return true;
-    }
-    if (services.contains(query, Qt::CaseInsensitive)) {
-        return true;
-    }
-    if (mac.contains(query, Qt::CaseInsensitive)) {
-        return true;
-    }
-    if (hostname.contains(query, Qt::CaseInsensitive)) {
-        return true;
-    }
-    const QString ip = cellText(row, ColIp);
-    return ip.contains(query, Qt::CaseInsensitive);
+    return resultModel_->matchesSearch(row, query, scope);
 }
 
 void ScannerWindow::copyCellText(int row, int column) const
@@ -3256,10 +3235,12 @@ void ScannerWindow::restoreViewportAnchor(const ViewportAnchor &anchor)
         table_->verticalScrollBar()->setValue(anchor.scrollValue);
         return;
     }
+    table_->doItemsLayout();
     const QModelIndex index = resultModel_->index(row, 0);
-    table_->scrollTo(index, QAbstractItemView::PositionAtTop);
+    const int currentPixelOffset = table_->visualRect(index).top();
     table_->verticalScrollBar()->setValue(
-        table_->verticalScrollBar()->value() - anchor.pixelOffset);
+        table_->verticalScrollBar()->value() + currentPixelOffset -
+        anchor.pixelOffset);
 }
 
 void ScannerWindow::setDetailsPaneVisible(bool visible)
