@@ -490,7 +490,8 @@ def main() -> int:
             "release/*.deb",
             "SBOM subject must use the exact canonical package path")
     require(sbom_attestation.get("with", {}).get("sbom-path") ==
-            "${{ runner.temp }}/open-ip-scanner-provenance/*.spdx.json",
+            "${{ runner.temp }}/open-ip-scanner-provenance/"
+            "open-ip-scanner_1.0.0_amd64.spdx.json",
             "SBOM attestation must use the exact canonical SPDX path")
     package_upload = step_with(release_job, "name", "Upload verified installable package")
     require(package_upload.get("with", {}).get("path") == "release/*.deb",

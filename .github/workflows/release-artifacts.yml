@@ -51,7 +51,7 @@ jobs:
         uses: actions/attest-sbom@4651f806c01d8637787e274ac3bdf724ef169f34
         with:
           subject-path: release/*.deb
-          sbom-path: ${{ runner.temp }}/open-ip-scanner-provenance/*.spdx.json
+          sbom-path: ${{ runner.temp }}/open-ip-scanner-provenance/open-ip-scanner_1.0.0_amd64.spdx.json
       - name: Upload verified installable package
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
