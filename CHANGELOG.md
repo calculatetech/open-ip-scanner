@@ -2,6 +2,21 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.0.0] - 2026-07-15
+
+### Added
+
+- Deliver bounded, accuracy-scaled IPv4 discovery with stable progressive
+  results, source-aware hostname enrichment, truthful service evidence,
+  privacy-preserving diagnostics, and reproducible Debian packaging.
+- Publish the supported Linux x86-64 release with checksums, an SPDX SBOM, and
+  keyless GitHub build and SBOM attestations.
+
+### Changed
+
+- Complete the documented production-readiness, accessibility, platform,
+  security, support, and release-candidate gates for the first stable release.
+
 ## [0.7.9] - 2026-07-15
 
 ### Changed

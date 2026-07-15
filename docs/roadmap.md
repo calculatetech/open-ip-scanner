@@ -2,7 +2,7 @@
 
 This file is the single source of truth for unfinished product, engineering, documentation, and release work. Detailed evidence for why each 1.0 item exists is in [the production-readiness audit](production-readiness-audit.md). New ideas belong here rather than in a second backlog.
 
-The audited baseline is `0.2.0` at commit `91e0a7a`; cumulative application behavior through `0.7.8` is human-verified, including the complete Kubuntu 26.04 desktop checklist. Version 1.0 is not yet authorized. Every unchecked item under “Required for 1.0” is a release gate; the post-1.0 section is explicitly outside the first production release.
+The audited baseline is `0.2.0` at commit `91e0a7a`; cumulative application behavior through `0.7.9` is human-verified, including the complete Kubuntu 26.04 desktop checklist. The owner authorized the `1.0.0` candidate and automated GitHub release on 2026-07-15. Every unchecked item under “Required for 1.0” is a release gate; the post-1.0 section is explicitly outside the first production release.
 
 ## Delivered implementation increments
 
@@ -401,9 +401,9 @@ Priority matches the most severe audit finding an item closes. All items in the 
     ThreadSanitizer 37/37, zero-warning Lintian, install/remove, hardening, and
     two byte-identical packages. The externally staged source archive,
     SHA-256 manifest, and SPDX inventory independently validate. The same gate
-    also passes from clean candidate commit `e4a53cd`. GitHub OIDC attestations
-    and their independent verification remain gated to the separately
-    authorized final `1.0.0` candidate.
+    also passed from the clean committed 0.7.9 candidate. GitHub OIDC
+    attestations and their independent verification remained gated to the
+    separately authorized final `1.0.0` candidate.
   - Done when hardening inspection meets the documented baseline, two clean builds produce matching artifacts after normalization, and users can verify signed checksums and provenance.
 
 #### PREFIX-SAFETY
@@ -517,7 +517,7 @@ Priority matches the most severe audit finding an item closes. All items in the 
 
 #### RELEASE-DOCS
 
-- [ ] **Complete the 1.0 release documentation and support contract.** `Medium`
+- [x] **Complete the 1.0 release documentation and support contract.** `Medium`
   - Reconcile README, Help, About, changelog, package metadata, and actual behavior. Document mDNS troubleshooting, scan limitations, permissions, privacy, data provenance, support channels, security-reporting process, compatibility, upgrade/migration behavior, and known limitations.
   - Add a 1.0 release checklist that consumes the automated gates, updates every version source, creates signed artifacts, and records validation evidence.
   - Current progress on `0.7.2`: the canonical user guide, support process,
@@ -537,7 +537,12 @@ Priority matches the most severe audit finding an item closes. All items in the 
     evidence are reconciled, Settings is correctly described as resizable from
     a 600-by-440 minimum, and the large-scan upper bound is correctly located
     in pre-scan confirmation rather than the concise status bar. The final
-    `1.0.0` changelog/version reconciliation remains separately authorized.
+    `1.0.0` changelog/version reconciliation remained separately authorized.
+  - Completed for `1.0.0`: the owner authorized the stable candidate and
+    automated GitHub release, the final changelog now reconciles the cumulative
+    product, support, platform, and provenance contract, and the checklist
+    requires exact-tag workflow success and independent verification before
+    attaching those same artifacts with `gh release create --verify-tag`.
   - Done when a clean-machine installation and operator runbook can be followed without repository knowledge, all claims have a passing test or explicit limitation, and the 1.0 changelog is complete.
 
 ## Post-1.0
