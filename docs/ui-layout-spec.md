@@ -15,9 +15,14 @@ This document is the canonical visual-layout specification for Open IP Scanner. 
 
 The Settings dialog is resizable with a minimum client size of 600 by 440 logical pixels so it remains usable on a 640-by-480 display. It prefers 720 by 520 when the active screen has room. Its category navigation is 128 pixels wide. Every page is hosted in a frameless, widget-resizable scroll area so long service, program, OUI, or toolbar content remains vertically reachable. Pages and controls must fit horizontally without a scrollbar at the 600-by-440 minimum.
 
+Appearance dropdowns expand to the available field width and remain visible at
+the minimum dialog size. Their text may clip inside the control, but the
+control itself never collapses or forces horizontal scrolling.
+
 Performance controls use one shared three-column grid:
 
-- Row labels occupy a stable 82-pixel column.
+- Row labels are right-aligned in a stable 96-pixel column so their trailing
+  colons remain visible and line up with labels on other form pages.
 - Both horizontal sliders are exactly 180 pixels long, show ticks below the track, and begin at the same horizontal position.
 - Both current-value labels occupy a stable 90-pixel column.
 - Accuracy details occupy a fixed 44-pixel-high region below the accuracy row. Changing the slider may replace and wrap the text inside that region, but it must not resize either slider, move another row, or change the dialog size.
@@ -63,7 +68,7 @@ Open Settings and switch through every category. On Performance, drag both slide
 
 Run a fixture containing conflicting Local, PTR, System, and mDNS names. Confirm the table shows only the preferred first label for non-mDNS evidence, retains `.local` when mDNS is preferred, and elides long values at the cell boundary without wrapping at a word separator. Open Details and confirm `Hostname(s):` lists every genuine distinct detected FQDN with its short source labels immediately appended, collapses matching short and FQDN forms without repeating a source, and does not change the table layout or send new traffic.
 
-Hover each service pill and confirm the pointing-hand cursor appears only over the pill, then click it and confirm the configured service action opens. Confirm About and Usage Guide links open through the desktop URL handler. During a scan, confirm the status bar contains only state, progress, and `Mode: <Accuracy>`; after completion or stopping, confirm it contains only the completion state and detected-host count. Resize Details, restart the application, and confirm its height is restored.
+Hover each service pill and confirm the pointing-hand cursor appears only over the pill, then click it and confirm the configured service action opens. Confirm About retains its compact message-box appearance with the full-size program icon on the left and that its links, along with Usage Guide links, open through the desktop URL handler. During a scan, confirm the status bar contains only state, progress, and `Mode: <Accuracy>`; after completion or stopping, confirm it contains only the completion state and detected-host count. Resize Details, restart the application, and confirm its height is restored.
 
 At 200% scale, repeat the primary workflow using only the keyboard. Confirm
 focus is visible, every control is announced with a useful name and role by the

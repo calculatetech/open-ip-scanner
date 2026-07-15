@@ -466,7 +466,7 @@ Priority matches the most severe audit finding an item closes. All items in the 
 
 #### UI-CLEANUP
 
-- [ ] **Polish compact interaction and secondary-window behavior.** `Medium`
+- [x] **Polish compact interaction and secondary-window behavior.** `Medium`
   - Give clickable service pills a pointing-hand hover affordance and make every
     Help and About hyperlink actionable through the external URL launcher.
   - Keep the status bar to scan state, host count, progress, and Accuracy mode;
@@ -486,7 +486,13 @@ Priority matches the most severe audit finding an item closes. All items in the 
     without disturbing the table. Metadata lint, normal and strict 39/39,
     ASan/UBSan 38/38, and ThreadSanitizer 37/37 pass. The first review's
     fixture-mode snapshot finding was repaired, and the final fresh adversarial
-    review found no actionable issue. Human verification remains.
+    review found no actionable issue. Human feedback then identified collapsed
+    Appearance selectors, clipped and inconsistently aligned Performance
+    labels, and an undesirable About redesign; fixes retain the compact
+    icon-led About layout with actionable links. The repaired candidate passes
+    metadata lint, normal and strict 39/39, ASan/UBSan 38/38, and
+    ThreadSanitizer 37/37. The renewed fresh adversarial review found no
+    actionable issue, and human verification passed.
 
 #### RELEASE-DOCS
 

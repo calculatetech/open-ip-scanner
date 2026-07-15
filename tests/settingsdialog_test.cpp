@@ -22,6 +22,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QMessageBox>
 #include <QMetaObject>
 #include <QPoint>
 #include <QPushButton>
@@ -1014,8 +1015,68 @@ struct ScannerWindowTestAccess {
                           Q_ARG(QUrl, url)) &&
                       invoked;
         }
+        QLabel label(window.aboutText());
+        window.configureExternalLinks(&label);
+        for (const QUrl &url : expected) {
+            invoked = QMetaObject::invokeMethod(
+                          &label,
+                          "linkActivated",
+                          Qt::DirectConnection,
+                          Q_ARG(QString, url.toString())) &&
+                      invoked;
+        }
         window.urlLauncher_ = previousLauncher;
-        return invoked && launched == expected;
+        return invoked && launched == expected + expected &&
+               !label.openExternalLinks();
+    }
+
+    static bool aboutDialogContract(ScannerWindow &window)
+    {
+        const QIcon previousIcon = window.windowIcon();
+        QPixmap fixtureIcon(64, 64);
+        fixtureIcon.fill(Qt::cyan);
+        window.setWindowIcon(QIcon(fixtureIcon));
+        QList<QUrl> launched;
+        const auto previousLauncher = window.urlLauncher_;
+        window.urlLauncher_ = [&launched](const QUrl &url) {
+            launched.append(url);
+            return true;
+        };
+        bool passed = false;
+        QTimer::singleShot(0, &window, [&window, &passed]() {
+            auto *dialog = window.findChild<QMessageBox *>("aboutDialog");
+            auto *textLabel = dialog == nullptr
+                                  ? nullptr
+                                  : dialog->findChild<QLabel *>("aboutTextLabel");
+            bool hasFullSizeIcon = false;
+            if (dialog != nullptr) {
+                for (QLabel *label : dialog->findChildren<QLabel *>()) {
+                    const QPixmap pixmap = label->pixmap(Qt::ReturnByValue);
+                    if (!pixmap.isNull() && pixmap.size() == QSize(64, 64)) {
+                        hasFullSizeIcon = true;
+                    }
+                }
+            }
+            passed = dialog != nullptr && textLabel != nullptr &&
+                     dialog->findChild<QTextBrowser *>() == nullptr &&
+                     hasFullSizeIcon && !textLabel->openExternalLinks() &&
+                     QMetaObject::invokeMethod(
+                         textLabel,
+                         "linkActivated",
+                         Qt::DirectConnection,
+                         Q_ARG(QString,
+                               QString("https://github.com/calculatetech/"
+                                       "open-ip-scanner/tree/main/docs")));
+            if (dialog != nullptr) {
+                dialog->accept();
+            }
+        });
+        window.showAboutDialog();
+        window.urlLauncher_ = previousLauncher;
+        window.setWindowIcon(previousIcon);
+        return passed &&
+               launched == QList<QUrl>{QUrl(
+                   "https://github.com/calculatetech/open-ip-scanner/tree/main/docs")};
     }
 
     static bool statusPresentationContract(ScannerWindow &window)
@@ -1916,6 +1977,7 @@ int main(int argc, char **argv)
     REQUIRE(ScannerWindowTestAccess::parsesAdapterDnsDomains());
     REQUIRE(ScannerWindowTestAccess::aboutReportsRuntimeAndVendorSource(window));
     REQUIRE(ScannerWindowTestAccess::externalLinkContract(window));
+    REQUIRE(ScannerWindowTestAccess::aboutDialogContract(window));
     REQUIRE(ScannerWindowTestAccess::statusPresentationContract(window));
     REQUIRE(ScannerWindowTestAccess::rendersConciseHostnameProvenance(window));
     REQUIRE(ScannerWindowTestAccess::rendersMergedHostnameEvidence(window));
@@ -1985,6 +2047,7 @@ int main(int argc, char **argv)
         auto *workerSlider = dialog->findChild<QSlider *>("settingsWorkerSlider");
         auto *accuracySlider = dialog->findChild<QSlider *>("settingsAccuracySlider");
         auto *targetFormat = dialog->findChild<QComboBox *>("settingsTargetFormat");
+        auto *macFormat = dialog->findChild<QComboBox *>("settingsMacFormat");
         auto *diagnosticLog = dialog->findChild<QCheckBox *>("settingsDiagnosticLog");
         auto *workerValue = dialog->findChild<QLabel *>("settingsWorkerValue");
         auto *accuracyValue = dialog->findChild<QLabel *>("settingsAccuracyValue");
@@ -1997,6 +2060,7 @@ int main(int argc, char **argv)
         REQUIRE(workerSlider != nullptr);
         REQUIRE(accuracySlider != nullptr);
         REQUIRE(targetFormat != nullptr);
+        REQUIRE(macFormat != nullptr);
         REQUIRE(diagnosticLog != nullptr);
         REQUIRE(workerValue != nullptr);
         REQUIRE(accuracyValue != nullptr);
@@ -2006,7 +2070,7 @@ int main(int argc, char **argv)
         REQUIRE(help != nullptr);
         REQUIRE(buttons != nullptr);
         if (categories == nullptr || workerSlider == nullptr || accuracySlider == nullptr ||
-            targetFormat == nullptr || diagnosticLog == nullptr ||
+            targetFormat == nullptr || macFormat == nullptr || diagnosticLog == nullptr ||
             workerValue == nullptr || accuracyValue == nullptr || workerRowLabel == nullptr ||
             accuracyRowLabel == nullptr || details == nullptr || help == nullptr ||
             buttons == nullptr) {
@@ -2072,12 +2136,21 @@ int main(int argc, char **argv)
             REQUIRE(visiblePage != nullptr &&
                     visiblePage->horizontalScrollBar()->maximum() == 0);
         }
+        categories->setCurrentRow(0);
+        QApplication::processEvents();
+        REQUIRE(macFormat->isVisibleTo(dialog));
+        REQUIRE(targetFormat->isVisibleTo(dialog));
+        REQUIRE(macFormat->width() > 0);
+        REQUIRE(targetFormat->width() > 0);
         categories->setCurrentRow(2);
         QApplication::processEvents();
         REQUIRE(workerSlider->width() == settingslayout::kSliderWidth);
         REQUIRE(accuracySlider->width() == settingslayout::kSliderWidth);
         REQUIRE(workerSlider->mapTo(dialog, QPoint(0, 0)).x() ==
                 accuracySlider->mapTo(dialog, QPoint(0, 0)).x());
+        REQUIRE(workerRowLabel->text().endsWith(':'));
+        REQUIRE(workerRowLabel->alignment().testFlag(Qt::AlignRight));
+        REQUIRE(accuracyRowLabel->alignment().testFlag(Qt::AlignRight));
         REQUIRE(details->height() == settingslayout::kDynamicDescriptionHeight);
 
         const QRect workerGeometry = workerSlider->geometry();

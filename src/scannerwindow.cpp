@@ -1943,6 +1943,7 @@ void ScannerWindow::showSettingsDialog()
     auto *vendorCheck = new QCheckBox("Show Vendor column", appearancePage);
     auto *svcCheck = new QCheckBox("Show Services column", appearancePage);
     auto *macFormatCombo = new QComboBox(appearancePage);
+    macFormatCombo->setObjectName("settingsMacFormat");
     macFormatCombo->setAccessibleName("MAC display format");
     macFormatCombo->addItem("AA:BB:CC:DD:EE:FF (upper, colon)", MacColonUpper);
     macFormatCombo->addItem("aa:bb:cc:dd:ee:ff (lower, colon)", MacColonLower);
@@ -1954,7 +1955,7 @@ void ScannerWindow::showSettingsDialog()
     macFormatCombo->setSizeAdjustPolicy(
         QComboBox::AdjustToMinimumContentsLengthWithIcon);
     macFormatCombo->setMinimumContentsLength(18);
-    macFormatCombo->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
+    macFormatCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     macFormatCombo->setCurrentIndex(std::max(0, macFormatCombo->findData(macDisplayFormat_)));
     auto *targetFormatCombo = new QComboBox(appearancePage);
     targetFormatCombo->setObjectName("settingsTargetFormat");
@@ -1967,7 +1968,7 @@ void ScannerWindow::showSettingsDialog()
     targetFormatCombo->setSizeAdjustPolicy(
         QComboBox::AdjustToMinimumContentsLengthWithIcon);
     targetFormatCombo->setMinimumContentsLength(18);
-    targetFormatCombo->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
+    targetFormatCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     targetFormatCombo->setCurrentIndex(
         targetTextFormat_ == TargetTextFormat::Cidr ? 0 : 1);
     ipCheck->setChecked(!table_->isColumnHidden(ColIp));
@@ -1984,6 +1985,7 @@ void ScannerWindow::showSettingsDialog()
     macFormatForm->setHorizontalSpacing(settingslayout::kSectionSpacing);
     macFormatForm->setVerticalSpacing(settingslayout::kControlSpacing);
     macFormatForm->setRowWrapPolicy(QFormLayout::WrapLongRows);
+    macFormatForm->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
     macFormatForm->addRow("MAC display format:", macFormatCombo);
     macFormatForm->addRow("Generated targets:", targetFormatCombo);
     appearanceLayout->addLayout(macFormatForm);
@@ -2036,6 +2038,7 @@ void ScannerWindow::showSettingsDialog()
     auto *workerRowLabel = new QLabel("Scan &workers:", performancePage);
     workerRowLabel->setObjectName("settingsWorkerRowLabel");
     workerRowLabel->setFixedWidth(settingslayout::kRowLabelWidth);
+    workerRowLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     workerRowLabel->setBuddy(workerSlider);
     performanceLayout->addWidget(workerRowLabel, 0, 0);
     performanceLayout->addWidget(workerSlider, 0, 1);
@@ -2073,6 +2076,7 @@ void ScannerWindow::showSettingsDialog()
     auto *accuracyRowLabel = new QLabel("&Accuracy:", performancePage);
     accuracyRowLabel->setObjectName("settingsAccuracyRowLabel");
     accuracyRowLabel->setFixedWidth(settingslayout::kRowLabelWidth);
+    accuracyRowLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     accuracyRowLabel->setBuddy(accuracySlider);
     performanceLayout->addWidget(accuracyRowLabel, 1, 0);
     performanceLayout->addWidget(accuracySlider, 1, 1);
@@ -2512,21 +2516,22 @@ void ScannerWindow::showSettingsDialog()
 
 void ScannerWindow::showAboutDialog()
 {
-    QDialog dialog(this);
+    QMessageBox dialog(this);
     dialog.setObjectName("aboutDialog");
     dialog.setWindowTitle("About Open IP Scanner");
-    dialog.resize(560, 360);
-    auto *layout = new QVBoxLayout(&dialog);
-    auto *browser = new QTextBrowser(&dialog);
-    browser->setObjectName("aboutBrowser");
-    browser->setAccessibleName("About Open IP Scanner");
-    browser->setHtml(aboutText());
-    configureExternalLinks(browser);
-    layout->addWidget(browser, 1);
-    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close, &dialog);
-    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
-    connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
-    layout->addWidget(buttons);
+    dialog.setIconPixmap(windowIcon().pixmap(QSize(64, 64)));
+    dialog.setTextFormat(Qt::RichText);
+    dialog.setTextInteractionFlags(Qt::TextBrowserInteraction);
+    dialog.setText(aboutText());
+    dialog.setStandardButtons(QMessageBox::Close);
+    for (QLabel *label : dialog.findChildren<QLabel *>()) {
+        if (!label->text().contains("href=")) {
+            continue;
+        }
+        label->setObjectName("aboutTextLabel");
+        label->setAccessibleName("About Open IP Scanner");
+        configureExternalLinks(label);
+    }
     dialog.exec();
 }
 
@@ -2536,14 +2541,14 @@ QString ScannerWindow::aboutText() const
                                 ? QString("Unknown")
                                 : QCoreApplication::applicationVersion();
     return QString(
-               "<h2>Open IP Scanner v%1</h2>"
-               "<p>Qt runtime: %2<br>"
-               "Running architecture: %3</p>"
-               "<p><a href='https://github.com/calculatetech/open-ip-scanner/tree/main/docs'>"
-               "Documentation</a></p>"
-               "<p>Vendor database: %4<br>"
+               "<b>Open IP Scanner v%1</b><br>"
+               "Qt runtime: %2<br>"
+               "Running architecture: %3<br><br>"
+               "<a href='https://github.com/calculatetech/open-ip-scanner/tree/main/docs'>"
+               "Documentation</a><br><br>"
+               "Vendor database: %4<br>"
                "Source: <a href='https://standards.ieee.org/products-programs/regauth/'>"
-               "IEEE Registration Authority public listings</a></p>")
+               "IEEE Registration Authority public listings</a>")
         .arg(version.toHtmlEscaped(),
              QString::fromLatin1(qVersion()).toHtmlEscaped(),
              QSysInfo::currentCpuArchitecture().toHtmlEscaped(),
@@ -2556,6 +2561,14 @@ void ScannerWindow::configureExternalLinks(QTextBrowser *browser)
     browser->setOpenExternalLinks(false);
     connect(browser, &QTextBrowser::anchorClicked, browser,
             [this](const QUrl &url) { openExternalLink(url); });
+}
+
+void ScannerWindow::configureExternalLinks(QLabel *label)
+{
+    label->setOpenExternalLinks(false);
+    label->setTextInteractionFlags(Qt::TextBrowserInteraction);
+    connect(label, &QLabel::linkActivated, label,
+            [this](const QString &url) { openExternalLink(QUrl(url)); });
 }
 
 void ScannerWindow::openExternalLink(const QUrl &url)

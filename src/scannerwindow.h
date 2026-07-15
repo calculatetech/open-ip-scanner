@@ -37,6 +37,7 @@ class QStringListModel;
 class QTableView;
 class QTextEdit;
 class QTextBrowser;
+class QLabel;
 class QTimer;
 class QAction;
 class QCloseEvent;
@@ -205,6 +206,7 @@ private:
     int defaultDetailsPaneHeight() const;
     void applyDetailsPaneHeight();
     void configureExternalLinks(QTextBrowser *browser);
+    void configureExternalLinks(QLabel *label);
     void openExternalLink(const QUrl &url);
     void rebuildMainToolbar();
     void applyToolbarDisplayMode();
