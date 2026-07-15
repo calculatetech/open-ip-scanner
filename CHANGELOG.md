@@ -6,8 +6,9 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
-- Standardize repository-local builds, quality checks, packages, and release
-  artifacts beneath `build/`, and document one stable validation binary path.
+- Standardize compilation and quality scratch data beneath `build/`, publish
+  only the single validated installable package beneath `release/`, and
+  document stable validation and package paths.
 - Stop ignoring legacy top-level output locations so future build clutter is
   visible instead of silently accumulating.
 

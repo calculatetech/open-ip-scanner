@@ -111,7 +111,8 @@ Run the normal build, metadata lint, and all CTest contracts:
 
 `full` adds warnings-as-errors, supported sanitizers, and Clang-Tidy when it is
 available. `release` runs that complete gate, then builds and tests the exact
-Debian package placed in `build/artifacts/release/`.
+Debian package placed in `release/`. That directory contains only installable
+packages; reproducibility and provenance intermediates are removed.
 
 ## Install (local)
 
@@ -143,15 +144,16 @@ removing only the known Open IP Scanner files beneath `~/.local`.
 
 Packaging metadata is included via CPack in `CMakeLists.txt`.
 
-When ready to generate a `.deb`:
+When ready to generate and fully validate a `.deb`:
 
 ```bash
-cmake --preset release
-cmake --build --preset release
-cpack --config build/release/CPackConfig.cmake -G DEB
+./scripts/build-release-artifact.sh
 ```
 
-The package is written to `build/release/packages/`.
+The installable package is written to `release/`. Rebuilding the same version
+atomically replaces only that version's package; other releases are retained
+until a human removes them. Direct CPack output is scratch data and is not a
+supported publication path.
 
 ## Notes
 

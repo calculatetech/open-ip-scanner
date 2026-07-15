@@ -1,6 +1,13 @@
 # Canonical repository-local generated output
 /build/
 
+# Validated installable packages only
+/release/
+
+# Python tooling caches
+__pycache__/
+*.py[cod]
+
 # OS/editor
 .DS_Store
 Thumbs.db
