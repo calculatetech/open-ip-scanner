@@ -372,10 +372,14 @@ Priority matches the most severe audit finding an item closes. All items in the 
     first review's shortcut, dynamic-label, finalizing-state, sanitizer, and
     test-strength findings were repaired. Direct CTest launches keep the
     application sanitizer-instrumented at 100% and 200% scaling without an
-    instrumented process-launching harness. The full Release gate passes
-    normal and strict 37/37, ASan/UBSan 36/36, ThreadSanitizer 35/35, and
-    Release 37/37 with a tested package. The final fresh adversarial review
-    found no actionable issue.
+    instrumented process-launching harness. The stable Ubuntu GCC 13 job alone
+    excludes full GUI startup from ThreadSanitizer because Qt adapter
+    enumeration triggers a sanitizer-runtime `ForkAfter` abort before
+    producing application race evidence; Debian 13 and local GCC 15 retain the
+    coverage. The full Release gate passes normal and strict 37/37, ASan/UBSan
+    36/36, local ThreadSanitizer 35/35, and Release 37/37 with a tested package.
+    The stable Ubuntu ThreadSanitizer-compatible subset passes 30/30. The final
+    fresh adversarial review found no actionable issue.
   - Done when offscreen and real-session startup are warning-free, automated accessibility inspection finds names/roles for interactive controls, and light, dark, high-contrast, 200% scale, and keyboard-only smoke tests pass.
 
 #### SEARCH-ENRICHMENT

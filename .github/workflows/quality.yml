@@ -29,7 +29,7 @@ jobs:
           QT_QPA_PLATFORM: offscreen
           ASAN_OPTIONS: detect_leaks=0
           OIS_SKIP_HARDWARE_TIMING_ASSERTIONS: "1"
-          OIS_TSAN_EXCLUDE: scan_cancellation_deadlines|linux_neighbor_probe_contract|linux_ping_probe_contract
+          OIS_TSAN_EXCLUDE: scan_cancellation_deadlines|linux_neighbor_probe_contract|linux_ping_probe_contract|^startup_accessibility_scale_[12]$
           UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
         run: ./scripts/quality-gate.sh full
 
