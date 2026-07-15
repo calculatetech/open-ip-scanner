@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.7.9] - 2026-07-15
+
+### Changed
+
+- Record the active default-branch protection and successful Kubuntu 26.04
+  desktop qualification that close the quality, platform, and accessibility
+  release gates.
+- Reconcile the release-candidate checklist and operator documentation with
+  the final pre-1.0 interface behavior.
+
 ## [0.7.8] - 2026-07-15
 
 ### Changed
