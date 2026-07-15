@@ -42,18 +42,18 @@ jobs:
         uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a
         with:
           subject-path: |
-            build/release-artifacts/*.deb
-            build/release-artifacts/*.tar.gz
-            build/release-artifacts/*.spdx.json
-            build/release-artifacts/SHA256SUMS
+            build/artifacts/release/*.deb
+            build/artifacts/release/*.tar.gz
+            build/artifacts/release/*.spdx.json
+            build/artifacts/release/SHA256SUMS
       - name: Attest package SBOM
         uses: actions/attest-sbom@4651f806c01d8637787e274ac3bdf724ef169f34
         with:
-          subject-path: build/release-artifacts/*.deb
-          sbom-path: build/release-artifacts/*.spdx.json
+          subject-path: build/artifacts/release/*.deb
+          sbom-path: build/artifacts/release/*.spdx.json
       - name: Upload verified release bundle
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: open-ip-scanner-1.0.0
-          path: build/release-artifacts/*
+          path: build/artifacts/release/*
           if-no-files-found: error

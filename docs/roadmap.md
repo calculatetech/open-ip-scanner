@@ -256,6 +256,12 @@ Priority matches the most severe audit finding an item closes. All items in the 
     corrupt/multiple package rejection, stale output, and cleanup-status
     preservation were repaired; the final fresh adversarial review found no
     actionable issue.
+  - Current branch progress on `0.7.7`: maintained presets, local quality
+    suites, metadata lint, reproducibility candidates, packages, and release
+    bundles share the single disposable `build/` root. Documentation names
+    `build/dev/open-ip-scanner` as the stable validation binary. Legacy
+    top-level build/package patterns are no longer ignored, making future
+    output drift visible before it can accumulate.
 
 #### PLATFORM-SUPPORT
 

@@ -23,11 +23,11 @@ main() {
     local source_date_epoch
     local version
     root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-    first_build_dir="$root/build/release-repro-a"
-    second_build_dir="$root/build/release-repro-b"
-    first_package_dir="$root/build/release-package-a"
-    second_package_dir="$root/build/release-package-b"
-    artifact_dir="$root/build/release-artifacts"
+    first_build_dir="$root/build/release-check/repro-a"
+    second_build_dir="$root/build/release-check/repro-b"
+    first_package_dir="$root/build/release-check/packages/a"
+    second_package_dir="$root/build/release-check/packages/b"
+    artifact_dir="$root/build/artifacts/release"
     cd "$root"
 
     trap cleanup_failed_artifacts EXIT

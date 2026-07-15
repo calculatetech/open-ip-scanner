@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.7.7] - 2026-07-15
+
+### Changed
+
+- Standardize repository-local builds, quality checks, packages, and release
+  artifacts beneath `build/`, and document one stable validation binary path.
+- Stop ignoring legacy top-level output locations so future build clutter is
+  visible instead of silently accumulating.
+
 ## [0.7.6] - 2026-07-15
 
 ### Fixed

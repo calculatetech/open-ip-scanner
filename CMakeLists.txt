@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.28)
-project(OpenIpScanner VERSION 0.7.6 LANGUAGES CXX)
+project(OpenIpScanner VERSION 0.7.7 LANGUAGES CXX)
 
 include(cmake/Hardening.cmake)
 
@@ -455,6 +455,7 @@ set(CPACK_DEBIAN_PACKAGE_DESCRIPTION
  CSV export, and privacy-preserving diagnostics in a Qt desktop interface.")
 set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
 set(CPACK_GENERATOR "DEB")
+set(CPACK_PACKAGE_DIRECTORY "${CMAKE_BINARY_DIR}/packages")
 set(CPACK_DEBIAN_FILE_NAME DEB-DEFAULT)
 set(CPACK_DEBIAN_PACKAGE_SECTION "net")
 set(CPACK_DEBIAN_PACKAGE_PRIORITY "optional")

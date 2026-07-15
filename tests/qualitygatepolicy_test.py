@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 from pathlib import Path
+import json
 import os
 import shutil
 import subprocess
@@ -181,7 +182,7 @@ def main() -> int:
                 f"artifact job must install package validator dependency: {package}")
     upload = step_with(release, "uses", "actions/upload-artifact@v4")
     upload_options = upload.get("with", {})
-    require(upload_options.get("path") == "build/release-artifacts/*",
+    require(upload_options.get("path") == "build/artifacts/release/*",
             "artifact upload path must match the validated package directory")
     require(upload_options.get("if-no-files-found") == "error",
             "artifact upload must fail closed when the package is absent")
@@ -236,16 +237,81 @@ def main() -> int:
         release_job, "uses",
         "actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a",
     )
-    require("*.deb" in provenance.get("with", {}).get("subject-path", ""),
-            "build provenance must cover the Debian package")
-    require("*.spdx.json" in provenance.get("with", {}).get("subject-path", ""),
-            "build provenance must cover the standalone SPDX file")
+    provenance_paths = provenance.get("with", {}).get("subject-path", "")
+    require(provenance_paths.splitlines() == [
+        "build/artifacts/release/*.deb",
+        "build/artifacts/release/*.tar.gz",
+        "build/artifacts/release/*.spdx.json",
+        "build/artifacts/release/SHA256SUMS",
+    ], "build provenance must cover the exact canonical release bundle")
     sbom_attestation = step_with(
         release_job, "uses",
         "actions/attest-sbom@4651f806c01d8637787e274ac3bdf724ef169f34",
     )
-    require(sbom_attestation.get("with", {}).get("sbom-path", "").endswith("*.spdx.json"),
-            "SBOM attestation must consume the generated SPDX document")
+    require(sbom_attestation.get("with", {}).get("subject-path") ==
+            "build/artifacts/release/*.deb",
+            "SBOM subject must use the exact canonical package path")
+    require(sbom_attestation.get("with", {}).get("sbom-path") ==
+            "build/artifacts/release/*.spdx.json",
+            "SBOM attestation must use the exact canonical SPDX path")
+    release_upload = step_with(release_job, "name", "Upload verified release bundle")
+    require(release_upload.get("with", {}).get("path") == "build/artifacts/release/*",
+            "verified release upload must use the canonical artifact directory")
+
+    presets = json.loads((ROOT / "CMakePresets.json").read_text(encoding="utf-8"))
+    preset_directories = {
+        preset.get("name"): preset.get("binaryDir")
+        for preset in presets.get("configurePresets", [])
+    }
+    require(preset_directories == {
+        "dev": "${sourceDir}/build/dev",
+        "release": "${sourceDir}/build/release",
+        "asan-ubsan": "${sourceDir}/build/asan-ubsan",
+        "tsan": "${sourceDir}/build/tsan",
+        "clang-tidy": "${sourceDir}/build/clang-tidy",
+    }, "configure presets must use their exact canonical build directories")
+    ignore_lines = set(shell_commands(ROOT / ".gitignore"))
+    require("/build/" in ignore_lines,
+            "the canonical build root must be ignored")
+    for legacy_ignore in ("build-*/", "cmake-build-*/", "_CPack_Packages/", "*.deb"):
+        require(legacy_ignore not in ignore_lines,
+                f"legacy top-level output must not be hidden: {legacy_ignore}")
+    docker_ignore_lines = set(shell_commands(ROOT / ".dockerignore"))
+    for generated_context in ("build", "build-*", "cmake-build-*", "_CPack_Packages", "*.deb"):
+        require(generated_context in docker_ignore_lines,
+                f"Docker context must exclude generated output: {generated_context}")
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    require("./build/dev/open-ip-scanner" in readme,
+            "README must identify the stable validation binary")
+    require("build/artifacts/release/" in readme,
+            "README must identify the canonical release artifact directory")
+    audit_plan = (ROOT / "docs/execplans/1.0-production-readiness-audit.md").read_text(
+        encoding="utf-8"
+    )
+    require("build-audit" not in audit_plan,
+            "maintained audit reproduction paths must stay beneath build/")
+    require('set(CPACK_PACKAGE_DIRECTORY "${CMAKE_BINARY_DIR}/packages")' in
+            (ROOT / "CMakeLists.txt").read_text(encoding="utf-8"),
+            "manual CPack output must remain inside its build directory")
+    maintained_paths = "\n".join(
+        (ROOT / path).read_text(encoding="utf-8")
+        for path in (
+            "scripts/quality-gate.sh",
+            "scripts/validate-metadata.sh",
+            "scripts/build-release-artifact.sh",
+            ".github/workflows/quality.yml",
+            ".github/workflows/release-artifacts.yml",
+        )
+    )
+    for legacy_path in (
+        "build/quality-",
+        "build/metadata-lint",
+        "build/release-repro-",
+        "build/release-package-",
+        "build/release-artifacts",
+    ):
+        require(legacy_path not in maintained_paths,
+                f"maintained automation still uses legacy output: {legacy_path}")
 
     metadata_commands = shell_commands(ROOT / "scripts/validate-metadata.sh")
     require(any(command.startswith("appstreamcli validate --no-net --strict")
