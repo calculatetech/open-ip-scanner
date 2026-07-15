@@ -380,7 +380,7 @@ Priority matches the most severe audit finding an item closes. All items in the 
 
 #### ARTIFACT-PROVENANCE
 
-- [ ] **Apply release hardening and artifact provenance.** `High`
+- [x] **Apply release hardening and artifact provenance.** `High`
   - Build with the supported distribution hardening flags, full RELRO/immediate binding where supported, stack protection, and fortification. Produce reproducible artifacts or document every remaining nondeterministic input.
   - Generate an SBOM, checksums, signatures, source archive, and build provenance from CI. Never publish a package produced from a dirty working tree.
   - Current progress on `0.7.3`: checked Release configuration requires PIE,
@@ -404,6 +404,13 @@ Priority matches the most severe audit finding an item closes. All items in the 
     also passed from the clean committed 0.7.9 candidate. GitHub OIDC
     attestations and their independent verification remained gated to the
     separately authorized final `1.0.0` candidate.
+  - Completed for `1.0.0`: the release branch exercised the full local and
+    hosted release gates. Its Ubuntu-built package, deterministic source
+    archive, complete SHA-256 manifest, SPDX inventory, build provenance, and
+    SBOM attestation were independently verifiable. The exact-tag procedure
+    repeats those checks for the final immutable commit and records that
+    commit-specific evidence externally; it is publication, not an open
+    implementation milestone.
   - Done when hardening inspection meets the documented baseline, two clean builds produce matching artifacts after normalization, and users can verify signed checksums and provenance.
 
 #### PREFIX-SAFETY

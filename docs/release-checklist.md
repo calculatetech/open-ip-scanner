@@ -7,7 +7,7 @@ and verification item below.
 
 ## Source and scope
 
-- [ ] Every required pre-1.0 roadmap item is complete or has an explicit
+- [x] Every required pre-1.0 roadmap item is complete or has an explicit
   release-candidate deferral accepted by the owner.
 - [x] `docs/`, README, Help, About, AppStream, package text, and changelog agree
   on behavior, support boundaries, privacy, and known limitations.
@@ -15,7 +15,7 @@ and verification item below.
   AppStream, changelog, and About output. The owner approved the final 1.0
   candidate before the version changed to `1.0.0`.
 - [ ] The candidate commit is on a reviewed branch, the worktree is clean, and
-  main has only the intended fast-forwarded commits.
+  main has only the intended reviewed commits.
 - [x] Default-branch protection and required checks are configured at the
   release-candidate stage and verified against the documented workflow names.
 
