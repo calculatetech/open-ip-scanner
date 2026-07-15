@@ -2,5 +2,6 @@ open-ip-scanner (@PROJECT_VERSION@) unstable; urgency=medium
 
   * Apply the audited Release hardening baseline.
   * Generate reproducible packages, checksums, source archives, and SPDX SBOMs.
+  * Keep the Debian 13 quality environment complete for source-bundle checks.
 
  -- Michael Beutler <mikebeutler84@gmail.com>  Wed, 15 Jul 2026 00:00:00 +0000

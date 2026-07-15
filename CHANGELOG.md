@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.7.4] - 2026-07-15
+
+### Fixed
+
+- Install Git in the Debian 13 quality container so deterministic source-bundle
+  contracts can inspect the checked-out source set.
+
 ## [0.7.3] - 2026-07-15
 
 ### Added

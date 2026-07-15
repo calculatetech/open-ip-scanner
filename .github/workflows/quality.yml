@@ -39,6 +39,10 @@ jobs:
     container: debian:13
     timeout-minutes: 30
     steps:
+      - name: Install Git for checkout
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends git
       - name: Check out source
         uses: actions/checkout@v5
       - name: Install build dependencies
