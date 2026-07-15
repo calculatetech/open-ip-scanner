@@ -12,7 +12,12 @@ class ResultTableModel final : public QAbstractTableModel {
 
 public:
     enum Column { Ip = 0, Hostname, Mac, Vendor, Services, ColumnCount };
-    enum Role { IdentityRole = Qt::UserRole + 1, SortRole, ServiceTagsRole };
+    enum Role {
+        IdentityRole = Qt::UserRole + 1,
+        SortRole,
+        ServiceTagsRole,
+        ServiceKindsRole
+    };
 
     explicit ResultTableModel(QObject *parent = nullptr);
 

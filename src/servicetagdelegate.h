@@ -1,6 +1,10 @@
 #pragma once
 
+#include <QColor>
+#include <QPalette>
 #include <QStyledItemDelegate>
+
+struct ServiceTagDelegateTestAccess;
 
 class ServiceTagDelegate final : public QStyledItemDelegate {
     Q_OBJECT
@@ -22,6 +26,19 @@ signals:
     void serviceActivated(const QModelIndex &index, int serviceIndex);
 
 private:
+    struct TagColors {
+        QColor foreground;
+        QColor background;
+        QColor border;
+    };
+
+    static TagColors tagColors(const QPalette &palette,
+                               QPalette::ColorGroup group,
+                               bool selected,
+                               bool alternate,
+                               const QString &serviceKind);
     QList<QRect> tagRects(const QStyleOptionViewItem &option,
                           const QStringList &tags) const;
+
+    friend struct ServiceTagDelegateTestAccess;
 };

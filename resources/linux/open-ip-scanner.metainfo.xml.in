@@ -26,9 +26,9 @@
     </screenshot>
   </screenshots>
   <releases>
-    <release version="@PROJECT_VERSION@" date="2026-07-14">
+    <release version="@PROJECT_VERSION@" date="2026-07-15">
       <description>
-        <p>Adopts stable desktop integration metadata and installed-tree validation.</p>
+        <p>Restores distinct palette-aware service colors while keeping unknown ports neutral.</p>
       </description>
     </release>
   </releases>

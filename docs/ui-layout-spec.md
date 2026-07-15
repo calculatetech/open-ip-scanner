@@ -28,6 +28,14 @@ The concrete constants live in `src/settingslayout.h`. `settings_layout_contract
 
 The results table is a concise inventory, not an evidence narrative. Cells display selected values only. The Hostname column omits the DNS suffix for preferred Local, PTR, System, and preliminary names; a preferred mDNS name retains `.local`. Full qualified names remain available in Details. Table cells never word-wrap. Text that exceeds the actual cell width uses right-side character elision at that boundary, rather than stopping at a whitespace, hyphen, or other word boundary. The Hostname column contains no source suffix, badge, confidence label, failure state, or documentary tooltip. Service tags remain the compact `Name:port` and `Unknown:port` forms. Provenance must not add table columns or change row height.
 
+Verified service tags use stable family colors whose luminance adapts to the
+active palette; unknown open ports remain neutral. Tag text must maintain at
+least 4.5:1 contrast against its fill, and tag fill must maintain at least 3:1
+contrast against the cell surface in representative light, dark,
+high-contrast, selected, and disabled states. Color is supplemental: the
+concise label remains the service-verification identifier, and palette changes
+must not alter tag geometry or row height.
+
 The details pane is the on-demand surface for successful per-device evidence. Hostname provenance appears under one `Hostname(s):` heading as a stable list, with the preferred name first. Source labels are short parenthesized descriptors appended immediately after the hostname: `device.example (Local, PTR, System)`. Do not place hostname sources in a detached evidence column because the resulting gap varies awkwardly with hostname length. Every genuine distinct detected name is retained; names that differ only by case or a trailing root dot share one row. If explicit PTR supplies aliases, display only the record matching the scanning adapter's assigned DNS suffix, or qualify its short record with that suffix when no matching FQDN was returned. Keep `.local` mDNS evidence as its own valid name unless `.local` is also the adapter DNS suffix. Matching short Local and System evidence groups with the selected PTR FQDN. Service evidence uses the same restrained style, normally `(Verified)` or `(Open)`.
 
 Changing selection or opening the details pane sends no network traffic. Resolver availability, timeout, malformed-response, and other operational failures belong in diagnostics, not in result cells or per-device prose. Dynamic evidence updates may replace the preferred table value and refresh details, but must preserve the existing ordering, selection, and viewport stability contracts.

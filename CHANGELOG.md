@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.6.8] - 2026-07-15
+
+### Changed
+
+- Restore distinct palette-aware colors for verified service tags while keeping
+  unknown open ports neutral and tag geometry stable.
+
 ## [0.6.7] - 2026-07-14
 
 ### Changed

@@ -284,16 +284,6 @@ ScannerWindow::ScannerWindow(QWidget *parent)
         "}"
         "QTableView::item {"
         "  border: 0px;"
-        "}"
-        "QTableView::item:selected {"
-        "  background-color: #1769d1;"
-        "  color: #ffffff;"
-        "  border: 0px;"
-        "}"
-        "QTableView::item:selected:!active {"
-        "  background-color: #2f4f7a;"
-        "  color: #ffffff;"
-        "  border: 0px;"
         "}");
 
     mainToolbar_ = addToolBar("Main");

@@ -42,6 +42,8 @@ The unchecked milestone boxes below mean their complete acceptance criteria are 
   installed-tree migration validation.
 - `0.6.7` — **SEARCH-ENRICHMENT:** searches normalized underlying evidence
   while preserving stable live-result order, selection, and viewport position.
+- `0.6.8` — **SERVICE-PILL-THEMING:** restored palette-aware service family
+  colors, neutral unknown ports, and stable tag geometry.
 
 **RESULT-SCALING** is human-verified on version `0.4.4`. DUPLICATE-IP-CONFLICTS remains Post-1.0.
 
@@ -382,9 +384,18 @@ Priority matches the most severe audit finding an item closes. All items in the 
 
 #### SERVICE-PILL-THEMING
 
-- [ ] **Restore distinct, palette-aware service pill colors.** `Medium`
+- [x] **Restore distinct, palette-aware service pill colors.** `Medium`
   - Give verified service families visually distinct pill colors while keeping `Unknown:<port>` neutral. Derive foreground, background, border, selection, and disabled colors from the active Qt palette so light, dark, and high-contrast themes remain legible.
   - Keep pill text, spacing, corner radius, and geometry stable across services, theme changes, selection, and live result updates. Do not reintroduce persistent cell widgets or encode verification solely through color.
+  - Current progress on `0.6.8`: verified tags carry their service identity to
+    the existing delegate, which selects a stable family hue and adapts
+    luminance and foreground roles to the active palette. Open-only tags remain
+    neutral, and the canonical UI specification defines the automated contrast
+    and geometry thresholds. The full Release gate passes normal and strict
+    35/35, ASan/UBSan 34/34, ThreadSanitizer 33/33, and Release 35/35 with a
+    tested package after repairing the first review's actual-surface,
+    inactive/alternate palette, delegate-test, and release-metadata findings;
+    the final fresh adversarial review found no actionable issue.
   - Done when automated delegate tests prove stable geometry and sufficient text/background contrast in representative light, dark, high-contrast, selected, and disabled palettes, and the 768-device fixture retains responsive scrolling and correct concise labels.
 
 #### RELEASE-DOCS

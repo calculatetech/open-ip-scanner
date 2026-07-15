@@ -87,6 +87,15 @@ QVariant ResultTableModel::data(const QModelIndex &index, int role) const
         }
         return tags;
     }
+    if (role == ServiceKindsRole && index.column() == Services) {
+        QStringList kinds;
+        for (const ServiceHit &service : result.services) {
+            kinds.append(service.evidence == ServiceEvidenceLevel::VerifiedProtocol
+                             ? service.id
+                             : QString());
+        }
+        return kinds;
+    }
     if (role == Qt::FontRole && (index.column() == Ip || index.column() == Mac)) {
         return QFontDatabase::systemFont(QFontDatabase::FixedFont);
     }
