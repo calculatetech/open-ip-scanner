@@ -20,6 +20,13 @@ set(_relative_files
   "@CMAKE_INSTALL_DATAROOTDIR@/doc/open-ip-scanner/copyright"
   "@CMAKE_INSTALL_DATAROOTDIR@/doc/open-ip-scanner/changelog.gz"
   "@CMAKE_INSTALL_DATAROOTDIR@/doc/open-ip-scanner/vendor-data-sources.md"
+  "@CMAKE_INSTALL_DATAROOTDIR@/doc/open-ip-scanner/user-guide.md"
+  "@CMAKE_INSTALL_DATAROOTDIR@/doc/open-ip-scanner/support.md"
+  "@CMAKE_INSTALL_DATAROOTDIR@/doc/open-ip-scanner/data-provenance.md"
+  "@CMAKE_INSTALL_DATAROOTDIR@/doc/open-ip-scanner/security.md"
+  "@CMAKE_INSTALL_DATAROOTDIR@/doc/open-ip-scanner/known-limitations.md"
+  "@CMAKE_INSTALL_DATAROOTDIR@/doc/open-ip-scanner/release-checklist.md"
+  "@CMAKE_INSTALL_DATAROOTDIR@/doc/open-ip-scanner/platform-support.md"
   "@CMAKE_INSTALL_MANDIR@/man1/open-ip-scanner.1.gz")
 
 set(_state "OIS-UNINSTALL-STATE-1\nroot=${_effective_prefix}\n")

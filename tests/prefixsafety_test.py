@@ -44,6 +44,13 @@ def installed_files(prefix: Path, app_id: str) -> tuple[Path, ...]:
         prefix / "share" / "doc" / "open-ip-scanner" / "copyright",
         prefix / "share" / "doc" / "open-ip-scanner" / "changelog.gz",
         prefix / "share" / "doc" / "open-ip-scanner" / "vendor-data-sources.md",
+        prefix / "share" / "doc" / "open-ip-scanner" / "user-guide.md",
+        prefix / "share" / "doc" / "open-ip-scanner" / "support.md",
+        prefix / "share" / "doc" / "open-ip-scanner" / "data-provenance.md",
+        prefix / "share" / "doc" / "open-ip-scanner" / "security.md",
+        prefix / "share" / "doc" / "open-ip-scanner" / "known-limitations.md",
+        prefix / "share" / "doc" / "open-ip-scanner" / "release-checklist.md",
+        prefix / "share" / "doc" / "open-ip-scanner" / "platform-support.md",
         prefix / "share" / "man" / "man1" / "open-ip-scanner.1.gz",
     )
 

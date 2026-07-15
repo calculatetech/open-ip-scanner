@@ -263,7 +263,13 @@ Priority matches the most severe audit finding an item closes. All items in the 
   - Scope 1.0 to Linux, IPv4, and a documented Qt 6 range unless another backend is implemented and tested before the release. Remove the current Windows and Qt 5 claims/fallback if they are not part of that tested matrix.
   - Build packages on the oldest supported distribution so generated Qt symbol dependencies do not accidentally narrow compatibility. Make About report the actual Qt runtime and supported platform.
   - Done when README, CMake, About, CI, package dependencies, and release notes agree, and each listed environment passes the full quality gate.
-  - Current progress on `0.6.2`: the canonical support contract, README, CMake, package summary, About, changelog, and CI agree on Linux x86-64, IPv4, and Qt 6.4 or newer. Four direct configure-policy contracts prove acceptance of Linux x86-64 with a 64-bit ABI and rejection of a wrong OS, wrong architecture, or 32-bit ABI. About reports the actual linked Qt runtime and running architecture. Ubuntu 24.04 is the compatibility floor and Debian 13 is the newer environment; both run the full gate on every push and pull request. The release package still needs to be produced on the Ubuntu floor, and the documented Kubuntu 26.04 real-desktop smoke remains required before this item can close.
+  - Current progress on `0.6.2`: the canonical support contract, README, CMake, package summary, About, changelog, and CI agree on Linux x86-64, IPv4, and Qt 6.4 or newer. Four direct configure-policy contracts prove acceptance of Linux x86-64 with a 64-bit ABI and rejection of a wrong OS, wrong architecture, or 32-bit ABI. About reports the actual linked Qt runtime and running architecture. Ubuntu 24.04 is the compatibility floor and Debian 13 is the newer environment; both run the full gate on every main push and pull request.
+  - Current progress through `0.7.2`: main workflow `29394939882` passed the
+    Ubuntu 24.04 compatibility-floor and Debian 13 newer gates, then built,
+    tested, and uploaded the package on Ubuntu 24.04. The canonical installed
+    operator/support documents repeat the same platform boundary. The
+    documented Kubuntu 26.04 real-desktop smoke remains required before this
+    item can close.
 
 #### DIAGNOSTICS
 
@@ -441,6 +447,19 @@ Priority matches the most severe audit finding an item closes. All items in the 
 - [ ] **Complete the 1.0 release documentation and support contract.** `Medium`
   - Reconcile README, Help, About, changelog, package metadata, and actual behavior. Document mDNS troubleshooting, scan limitations, permissions, privacy, data provenance, support channels, security-reporting process, compatibility, upgrade/migration behavior, and known limitations.
   - Add a 1.0 release checklist that consumes the automated gates, updates every version source, creates signed artifacts, and records validation evidence.
+  - Current progress on `0.7.2`: the canonical user guide, support process,
+    security/privacy policy, data-provenance record, known limitations, platform
+    contract, and release-candidate checklist are linked from README and
+    installed in the Debian package. They document scan traffic and accuracy,
+    the upper-bound meaning, mDNS troubleshooting, authorization, history and
+    diagnostic retention, private vulnerability reporting, upgrades,
+    prefix-safe uninstall, clean-machine operation, hardening/SBOM/attestation
+    gates, and final human qualification. Help, About, package metadata, and
+    the changelog were checked against those claims. The full Release gate
+    passes normal and strict 38/38, ASan/UBSan 37/37, ThreadSanitizer 36/36,
+    and the exact 0.7.2 package with zero Lintian errors or warnings. The final
+    1.0 changelog entry remains an intentionally release-candidate/final-review
+    action, so this roadmap item stays open.
   - Done when a clean-machine installation and operator runbook can be followed without repository knowledge, all claims have a passing test or explicit limitation, and the 1.0 changelog is complete.
 
 ## Post-1.0

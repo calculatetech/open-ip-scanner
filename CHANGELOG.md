@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.7.2] - 2026-07-15
+
+### Added
+
+- Add and package canonical user, support, security, provenance, limitations,
+  and release-candidate documentation.
+
 ## [0.7.1] - 2026-07-15
 
 ### Changed

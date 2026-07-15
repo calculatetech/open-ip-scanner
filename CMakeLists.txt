@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.28)
-project(OpenIpScanner VERSION 0.7.1 LANGUAGES CXX)
+project(OpenIpScanner VERSION 0.7.2 LANGUAGES CXX)
 
 set(OIS_APP_ID "io.github.calculatetech.OpenIpScanner")
 set(OIS_GENERATED_RESOURCE_DIR "${CMAKE_BINARY_DIR}/generated-resources")
@@ -406,6 +406,16 @@ install(FILES
     data/README.md
     DESTINATION "${OIS_PACKAGE_DOC_DIR}"
     RENAME vendor-data-sources.md
+)
+install(FILES
+    docs/user-guide.md
+    docs/support.md
+    docs/data-provenance.md
+    docs/security.md
+    docs/known-limitations.md
+    docs/release-checklist.md
+    docs/platform-support.md
+    DESTINATION "${OIS_PACKAGE_DOC_DIR}"
 )
 install(FILES
     "${OIS_GENERATED_RESOURCE_DIR}/open-ip-scanner.1.gz"

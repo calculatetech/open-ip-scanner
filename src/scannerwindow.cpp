@@ -2503,6 +2503,8 @@ QString ScannerWindow::aboutText() const
     return QString("Open IP Scanner v%1\n"
                    "Qt runtime: %2\n"
                    "Running architecture: %3\n\n"
+                   "Application scope: Linux x86-64 / IPv4\n"
+                   "Documentation: https://github.com/calculatetech/open-ip-scanner/tree/main/docs\n\n"
                    "Vendor database: %4\n"
                    "Source: IEEE Registration Authority public listings\n"
                    "https://standards.ieee.org/products-programs/regauth/")
@@ -2554,7 +2556,13 @@ void ScannerWindow::showHelpDialog()
         "<p><b>Filtering:</b> Use Find to filter by IP, hostname, MAC, vendor, services, or OUI prefix.</p>"
         "<p><b>Privacy:</b> Target history is off by default. Settings can enable local history, "
         "optionally restore its last target on launch, or clear retained targets immediately.</p>"
-        "<p><b>Safety:</b> Scan only networks you own or are authorized to test.</p>");
+        "<p><b>Safety:</b> Scan only networks you own or are authorized to test.</p>"
+        "<p><b>More help:</b> See the online "
+        "<a href='https://github.com/calculatetech/open-ip-scanner/blob/main/docs/user-guide.md'>user guide</a>, "
+        "<a href='https://github.com/calculatetech/open-ip-scanner/blob/main/docs/support.md'>support guide</a>, and "
+        "<a href='https://github.com/calculatetech/open-ip-scanner/blob/main/docs/security.md'>security policy</a>. "
+        "Installed copies are under the selected prefix's "
+        "<code>share/doc/open-ip-scanner</code> directory.</p>");
     layout->addWidget(browser, 1);
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close, &dialog);
     connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);

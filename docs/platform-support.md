@@ -9,8 +9,8 @@ neighbor, route, and mDNS discovery implementations are Linux-specific.
 
 | Environment | Role | Qualification |
 | --- | --- | --- |
-| Ubuntu 24.04, Qt 6.4, GCC 13 | Compatibility floor | Full automated quality gate on every push and pull request |
-| Debian 13, Qt 6.8, GCC 14 | Newer toolchain | Full automated quality gate on every push and pull request |
+| Ubuntu 24.04, Qt 6.4, GCC 13 | Compatibility floor and package builder | Full automated quality gate on every main push and pull request; downstream tested package is built here after both environments pass |
+| Debian 13, Qt 6.8, GCC 14 | Newer toolchain | Full automated quality gate on every main push and pull request |
 | Kubuntu 26.04 | Release-candidate desktop | Manual light/dark, scaling, keyboard, installation, scan, and uninstall smoke test remains required before 1.0 |
 
 The Qt contract is a minimum of 6.4 rather than an unbounded promise about

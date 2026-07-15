@@ -42,6 +42,18 @@ discovery backends and release qualification.
 See [the canonical platform support contract](docs/platform-support.md) for the
 tested matrix and qualification boundaries.
 
+## Documentation
+
+- [User guide](docs/user-guide.md): install, scan modes, results, troubleshooting,
+  privacy, upgrade, and uninstall
+- [Known limitations](docs/known-limitations.md): discovery and support boundaries
+- [Support](docs/support.md): non-sensitive bug reports and support bundles
+- [Security and privacy](docs/security.md): authorized use, local data, and
+  private vulnerability reporting
+- [Data provenance](docs/data-provenance.md): embedded IEEE assignment snapshot
+- [Release-candidate checklist](docs/release-checklist.md): automated, manual,
+  package, SBOM, attestation, and human approval gates
+
 ## Prerequisites
 
 ### Runtime (Linux)
@@ -137,9 +149,11 @@ cpack --config build/CPackConfig.cmake -G DEB
 
 ## Notes
 
-- Scanning accuracy depends on target behavior (ICMP, ARP visibility, firewall rules, sleeping devices).
-- Android/iOS devices may be intermittent due to power saving and private MAC behavior.
-- Use this tool only on networks you own or are authorized to test.
+- Scanning accuracy depends on target behavior, enabled probes, neighbor
+  visibility, firewalls, and power saving. Absence is not proof that an address
+  is unused.
+- Use this tool only on networks you own or are authorized to test. See the
+  [user guide](docs/user-guide.md) before scanning a production network.
 
 ## License
 

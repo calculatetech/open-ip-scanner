@@ -972,6 +972,8 @@ struct ScannerWindowTestAccess {
         return text.contains(QString("Qt runtime: %1").arg(qVersion())) &&
                text.contains(QString("Running architecture: %1")
                                  .arg(QSysInfo::currentCpuArchitecture())) &&
+               text.contains("Application scope: Linux x86-64 / IPv4") &&
+               text.contains("github.com/calculatetech/open-ip-scanner/tree/main/docs") &&
                text.contains("IEEE Registration Authority public listings") &&
                text.contains("standards.ieee.org/products-programs/regauth/") &&
                text.contains("53315 assignments") &&
