@@ -181,14 +181,11 @@ def main() -> int:
     )
 
     metadata_commands = shell_commands(ROOT / "scripts/validate-metadata.sh")
-    require(any(command.startswith("appstreamcli validate --no-net")
+    require(any(command.startswith("appstreamcli validate --no-net --strict")
                 for command in metadata_commands), "AppStream lint is missing")
-    metadata_text = "\n".join(metadata_commands)
     require(
-        "cid-desktopapp-is-not-rdns=pedantic,url-homepage-missing=pedantic,"
-        "content-rating-missing=pedantic,developer-info-missing=pedantic"
-        in metadata_text,
-        "known AppStream exceptions must remain an explicit bounded allowlist",
+        not any("--override=" in command for command in metadata_commands),
+        "release-quality AppStream metadata must not rely on validator overrides",
     )
 
     test_release_artifact_rejection()

@@ -37,6 +37,9 @@ The unchecked milestone boxes below mean their complete acceptance criteria are 
 - `0.6.5` — **QUALITY-GATE:** added semantic metadata/workflow policy checks,
   deduplicated branch/main push CI, and made one fail-closed tested Release
   package depend on both supported CI environments.
+- `0.6.6` — **DESKTOP-METADATA:** adopted a stable reverse-DNS desktop
+  identity, complete AppStream metadata, a completed-fixture screenshot, and
+  installed-tree migration validation.
 
 **RESULT-SCALING** is human-verified on version `0.4.4`. DUPLICATE-IP-CONFLICTS remains Post-1.0.
 
@@ -224,12 +227,11 @@ Priority matches the most severe audit finding an item closes. All items in the 
   - Preserve deeper regression coverage from completed correctness work: inject every `ScannerWindow` setting across consecutive scans, distinguish production ping/Avahi/system-resolver cancellation, count attempts in a virtual-clock 4,096-target scan, and prove cancellation interrupts its active budget without real network timing.
   - Enable project warning flags and warnings-as-errors for project sources. Run Clang-Tidy or an agreed equivalent, CMake/metadata lint, AddressSanitizer, UndefinedBehaviorSanitizer, and ThreadSanitizer scenarios where supported.
   - Done when a clean checkout has one documented command that builds and runs all required checks, CI protects the default branch, the strict build has zero project warnings, and the release job refuses an untested artifact.
-  - Current progress through `0.6.5`: `scripts/quality-gate.sh` provides isolated
+  - Current progress through `0.6.6`: `scripts/quality-gate.sh` provides isolated
     `fast`, `full`, and `release` modes that work from a clean checkout and
     reuse dedicated build trees on safe reruns. The gate now starts with
-    desktop-entry, AppStream, metainfo XML, and vendor-manifest lint. Existing
-    AppStream findings owned by DESKTOP-METADATA form an explicit pedantic
-    allowlist, while any new validator issue fails the gate. Its 32 direct
+    desktop-entry, AppStream, metainfo XML, and vendor-manifest lint. AppStream
+    validation is strict and uses no issue overrides. Its direct
     contracts include a workflow-policy check that requires push CI only on
     `main`, retains pull-request checks, and makes the tested Release package
     job depend on both the Ubuntu 24.04 `quality` and Debian 13
@@ -237,13 +239,13 @@ Priority matches the most severe audit finding an item closes. All items in the 
     exact Release build, produces exactly one Debian package, and validates
     its control archive and payload before upload. Normal branch pushes no
     longer repeat the same hosted checks that run after a fast-forward merge.
-    Normal and strict suites pass 32/32, ASan/UBSan passes 31/31,
-    ThreadSanitizer passes 30/30, and the exact Release build passes 32/32.
+    Normal and strict suites pass 33/33, ASan/UBSan passes 32/32,
+    ThreadSanitizer passes 31/31, and the exact Release build passes 33/33.
     Clang-Tidy is unavailable locally, so strict warnings-as-errors remain the
     documented lint equivalent. The
-    repository currently has no branch protection or ruleset for `main`, so
-    owner confirmation of the stable `quality` required check remains before
-    this item can close. Review findings covering structural workflow tests,
+    repository currently has no branch protection or ruleset for `main`; that
+    operational-maturity step is intentionally deferred until the 1.0 release
+    candidate, so QUALITY-GATE remains open. Review findings covering structural workflow tests,
     corrupt/multiple package rejection, stale output, and cleanup-status
     preservation were repaired; the final fresh adversarial review found no
     actionable issue.
@@ -315,9 +317,24 @@ Priority matches the most severe audit finding an item closes. All items in the 
 
 #### DESKTOP-METADATA
 
-- [ ] **Bring AppStream and desktop metadata to release quality.** `High`
+- [x] **Bring AppStream and desktop metadata to release quality.** `High`
   - Adopt a stable reverse-DNS component ID with a migration plan, then add homepage, developer, content rating, releases, launchable data, and representative screenshots as required by the chosen distribution channels.
   - Keep desktop ID, icon, executable, Wayland identity, AppStream version, and package version in sync from one version source.
+  - Completion evidence on `0.6.6`: the configured desktop and AppStream files use
+    `io.github.calculatetech.OpenIpScanner`; the executable and existing
+    settings identity remain stable. The desktop, icon, Wayland, launchable,
+    release, and package identities are staged and checked together, while the
+    X11 startup class remains matched to the unchanged runtime class.
+    A test-only hidden-fixture tool generates a privacy-safe 1200 by 700
+    screenshot, and the [migration contract](desktop-metadata.md) documents
+    legacy cleanup and settings continuity. The installed-tree contract seeds
+    and removes every legacy filename, runs desktop/XML/strict offline
+    AppStream validation, and checks the exact 1200 by 700 fixture screenshot
+    plus its embedded 768-row provenance. Normal and strict suites pass 33/33,
+    ASan/UBSan passes 32/32, ThreadSanitizer passes 31/31, and the exact Release
+    package build passes 33/33. Review findings covering install-time variable
+    expansion, X11 startup identity, and deterministic screenshot state were
+    repaired; final fresh review found no code issue.
   - Done when `desktop-file-validate`, XML validation, and `appstreamcli validate --no-net` all exit zero without warnings on the installed tree.
 
 #### ARTIFACT-PROVENANCE

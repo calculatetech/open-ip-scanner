@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>@OIS_APP_ID@</id>
+  <name>Open IP Scanner</name>
+  <summary>Scan local networks for active hosts and services</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <developer id="io.github.calculatetech">
+    <name>Calculate Tech</name>
+  </developer>
+  <description>
+    <p>Open IP Scanner is a desktop IPv4 scanner for authorized local-network inventory. It discovers responsive hosts, enriches names and hardware vendors, verifies supported services, and exports selected results.</p>
+  </description>
+  <launchable type="desktop-id">@OIS_APP_ID@.desktop</launchable>
+  <url type="homepage">https://github.com/calculatetech/open-ip-scanner</url>
+  <url type="bugtracker">https://github.com/calculatetech/open-ip-scanner/issues</url>
+  <url type="help">https://github.com/calculatetech/open-ip-scanner/blob/main/README.md</url>
+  <categories>
+    <category>Network</category>
+  </categories>
+  <content_rating type="oars-1.1" />
+  <screenshots>
+    <screenshot type="default">
+      <image type="source" width="1200" height="700">https://raw.githubusercontent.com/calculatetech/open-ip-scanner/main/docs/images/main-window.png</image>
+      <caption>Scanning deterministic test devices in the main result table</caption>
+    </screenshot>
+  </screenshots>
+  <releases>
+    <release version="@PROJECT_VERSION@" date="2026-07-14">
+      <description>
+        <p>Adopts stable desktop integration metadata and installed-tree validation.</p>
+      </description>
+    </release>
+  </releases>
+</component>

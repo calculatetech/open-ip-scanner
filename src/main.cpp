@@ -16,7 +16,7 @@ int main(int argc, char *argv[])
     QCoreApplication::setApplicationName("open-ip-scanner");
     QCoreApplication::setApplicationVersion(OPEN_IP_SCANNER_VERSION);
     // Must match the installed desktop file basename for Wayland app-id/icon mapping.
-    QGuiApplication::setDesktopFileName("open-ip-scanner");
+    QGuiApplication::setDesktopFileName(OPEN_IP_SCANNER_APP_ID);
 
     QApplication app(argc, argv);
     app.setQuitOnLastWindowClosed(true);

@@ -1,5 +1,17 @@
 cmake_minimum_required(VERSION 3.28)
-project(OpenIpScanner VERSION 0.6.5 LANGUAGES CXX)
+project(OpenIpScanner VERSION 0.6.6 LANGUAGES CXX)
+
+set(OIS_APP_ID "io.github.calculatetech.OpenIpScanner")
+set(OIS_GENERATED_RESOURCE_DIR "${CMAKE_BINARY_DIR}/generated-resources")
+file(MAKE_DIRECTORY "${OIS_GENERATED_RESOURCE_DIR}")
+configure_file(
+    resources/linux/open-ip-scanner.desktop.in
+    "${OIS_GENERATED_RESOURCE_DIR}/${OIS_APP_ID}.desktop"
+    @ONLY)
+configure_file(
+    resources/linux/open-ip-scanner.metainfo.xml.in
+    "${OIS_GENERATED_RESOURCE_DIR}/${OIS_APP_ID}.metainfo.xml"
+    @ONLY)
 
 include(cmake/PlatformSupport.cmake)
 ois_validate_platform("${CMAKE_SYSTEM_NAME}"
@@ -259,6 +271,12 @@ if(BUILD_TESTING)
     add_test(NAME quality_gate_policy
         COMMAND ${Python3_EXECUTABLE}
                 ${CMAKE_SOURCE_DIR}/tests/qualitygatepolicy_test.py)
+    add_test(NAME installed_metadata_contract
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_SOURCE_DIR}/tests/metadatacontract_test.py
+                --build-dir ${CMAKE_BINARY_DIR}
+                --app-id ${OIS_APP_ID}
+                --version ${PROJECT_VERSION})
 
     add_executable(neighbor_entry_test tests/neighborentry_test.cpp)
     target_link_libraries(neighbor_entry_test PRIVATE ois_core)
@@ -275,45 +293,56 @@ if(BUILD_TESTING)
     set_tests_properties(settings_dialog_stability PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
     )
+
+    add_executable(metadata_screenshot_tool
+        EXCLUDE_FROM_ALL
+        tests/metadatascreenshot.cpp resources/resources.qrc)
+    target_link_libraries(metadata_screenshot_tool PRIVATE ois_ui)
 endif()
 
 set_target_properties(open_ip_scanner PROPERTIES
     OUTPUT_NAME "open-ip-scanner"
 )
+target_compile_definitions(open_ip_scanner PRIVATE
+    OPEN_IP_SCANNER_APP_ID="${OIS_APP_ID}")
 
 install(TARGETS open_ip_scanner
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 
 install(FILES
-    resources/linux/open-ip-scanner.desktop
+    "${OIS_GENERATED_RESOURCE_DIR}/${OIS_APP_ID}.desktop"
     DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/applications
 )
 
 install(FILES
     resources/app_icon.svg
     DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/scalable/apps
-    RENAME open-ip-scanner.svg
+    RENAME ${OIS_APP_ID}.svg
 )
 
 install(FILES
     resources/app_icon.svg
     DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/pixmaps
-    RENAME open-ip-scanner.svg
+    RENAME ${OIS_APP_ID}.svg
 )
 
 install(FILES
-    resources/linux/open-ip-scanner.metainfo.xml
+    "${OIS_GENERATED_RESOURCE_DIR}/${OIS_APP_ID}.metainfo.xml"
     DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/metainfo
 )
 
-# Cleanup legacy underscore-named integration files from older installs.
-install(CODE [[
+# Cleanup legacy integration filenames from older installs in this prefix.
+install(CODE "
   file(REMOVE
-    "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_DATAROOTDIR}/applications/open_ip_scanner.desktop"
-    "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/scalable/apps/open_ip_scanner.svg"
-    "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_DATAROOTDIR}/pixmaps/open_ip_scanner.svg")
-]])
+    \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_DATAROOTDIR}/applications/open_ip_scanner.desktop\"
+    \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_DATAROOTDIR}/applications/open-ip-scanner.desktop\"
+    \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/scalable/apps/open_ip_scanner.svg\"
+    \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/scalable/apps/open-ip-scanner.svg\"
+    \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_DATAROOTDIR}/pixmaps/open_ip_scanner.svg\"
+    \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_DATAROOTDIR}/pixmaps/open-ip-scanner.svg\"
+    \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_DATAROOTDIR}/metainfo/open-ip-scanner.metainfo.xml\")
+")
 
 # Best-effort desktop cache refresh for local installs.
 install(CODE [[

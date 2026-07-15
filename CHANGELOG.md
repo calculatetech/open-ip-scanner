@@ -2,6 +2,22 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.6.6] - 2026-07-14
+
+### Added
+
+- Added stable reverse-DNS desktop and AppStream identity, complete release
+  metadata, and a representative screenshot generated from the hidden test
+  fixture.
+- Added installed-tree contracts that keep the desktop entry, icons, Wayland
+  identity, X11 window class, AppStream release, and package version coherent.
+
+### Changed
+
+- Migrated Linux desktop integration files to
+  `io.github.calculatetech.OpenIpScanner` while retaining the
+  `open-ip-scanner` executable and existing application settings identity.
+
 ## [0.6.5] - 2026-07-14
 
 ### Added

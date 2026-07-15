@@ -9,7 +9,10 @@ These rules extend the workspace-level agent instructions and apply to the entir
 - Do not create or assign a later-version implementation branch while the current version branch remains unmerged. After the current version is human-verified and merged, the next implementation branch increments the third digit.
 - If a version branch is explicitly abandoned or replaced before merge, its replacement reuses that unmerged version rather than consuming another number.
 - Documentation-only corrections to policy, plans, or roadmap progress do not increment the application version unless they change shipped application behavior.
-- Do not change the major version to `1.0.0` until every required 1.0 milestone satisfies its acceptance conditions and the roadmap records it as completed.
+- Keep the application in the `0.x` version line through roadmap completion,
+  release-candidate review, and any resulting adjustment milestones. Change to
+  `1.0.0` only after every required gate is complete and the user explicitly
+  authorizes the major-version change.
 
 ## Branches, verification, and publication
 
