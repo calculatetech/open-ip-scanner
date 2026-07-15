@@ -45,6 +45,8 @@ jobs:
           apt-get install -y --no-install-recommends ca-certificates git
       - name: Check out source
         uses: actions/checkout@v5
+      - name: Trust checked-out source
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - name: Install build dependencies
         run: |
           apt-get update

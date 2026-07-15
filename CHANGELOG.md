@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.7.6] - 2026-07-15
+
+### Fixed
+
+- Preserve Git workspace trust after checkout in the Debian 13 quality
+  container so source-bundle validation can inspect tracked files.
+
 ## [0.7.5] - 2026-07-15
 
 ### Fixed

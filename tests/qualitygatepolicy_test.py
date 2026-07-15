@@ -148,16 +148,24 @@ def main() -> int:
     newest_steps = newest.get("steps", [])
     checkout_dependencies = step_with(newest, "name", "Install checkout dependencies")
     checkout_step = step_with(newest, "name", "Check out source")
+    trust_step = step_with(newest, "name", "Trust checked-out source")
     dependency_step = step_with(newest, "name", "Install build dependencies")
+    gate_step = step_with(newest, "name", "Run full quality gate")
     checkout_command = checkout_dependencies.get("run", "")
     require("apt-get install -y --no-install-recommends ca-certificates git" in
             " ".join(checkout_command.split()),
             "Debian quality must install CA certificates and Git for checkout")
     require(checkout_step.get("uses") == "actions/checkout@v5",
             "Debian quality must use the audited checkout action")
+    require(trust_step.get("run") ==
+            'git config --global --add safe.directory "$GITHUB_WORKSPACE"',
+            "Debian quality must persist trust for the checked-out workspace")
+    require(gate_step.get("run") == "./scripts/quality-gate.sh full",
+            "Debian quality must execute the full gate")
     require(newest_steps.index(checkout_dependencies) < newest_steps.index(checkout_step) <
-            newest_steps.index(dependency_step),
-            "Debian quality must install HTTPS Git dependencies before checkout and the full gate")
+            newest_steps.index(trust_step) <
+            newest_steps.index(dependency_step) < newest_steps.index(gate_step),
+            "Debian quality must prepare Git, check out, then trust source before the full gate")
     release = jobs.get("release-artifact", {})
     require(release.get("needs") == ["quality", "quality-newest"],
             "release artifact must depend on both supported quality jobs")
