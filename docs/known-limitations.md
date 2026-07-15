@@ -7,9 +7,10 @@
 - Device absence is not proof that an address is unused. Firewalls, power
   saving, rate limiting, VLAN boundaries, wireless isolation, and devices that
   ignore the enabled probes can all hide a device.
-- The status-bar upper bound is a conservative scheduling estimate, not a
-  completion prediction. Actual duration depends on early responses,
-  concurrency, enabled ports, cancellation, and local resolver/process timing.
+- The upper bound shown in the pre-scan confirmation for a large scan is a
+  conservative scheduling estimate, not a completion prediction. Actual
+  duration depends on early responses, concurrency, enabled ports,
+  cancellation, and local resolver/process timing.
 - Fast accuracy intentionally favors a quick lay of the land and can miss slow
   or sleeping devices. Higher accuracy repeats probes and waits longer but
   increases traffic and elapsed time.
@@ -31,6 +32,6 @@
 - Duplicate-IP conflict detection, persistent subnet identity history, DNS-SD
   discovery, localization, other package formats, and additional platform
   backends are post-1.0 roadmap items.
-- Final release qualification still requires the Kubuntu 26.04 real-desktop,
-  high-contrast, keyboard-only, 200% scaling, assistive-technology, install,
-  scan/stop, export, and uninstall smoke checklist.
+- Kubuntu 26.04 passed the complete release-candidate desktop qualification.
+  Other distributions and future desktop-stack versions are not implied by
+  that result or by the Ubuntu/Debian automated matrix.

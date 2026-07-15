@@ -34,10 +34,9 @@ Yes, this project is **100% vibe coded**.
 
 The 1.0 support contract is Linux x86-64, IPv4, and Qt 6.4 or newer. Ubuntu
 24.04 is the compatibility floor and Debian 13 is the newer continuously tested
-environment. Kubuntu 26.04 is scheduled for the release-candidate desktop smoke
-test; it is not yet a completed support claim. Windows, macOS, Qt 5, ARM, and
-IPv6 scanning are not supported for 1.0 because they do not have complete
-discovery backends and release qualification.
+environment. Kubuntu 26.04 passed the complete release-candidate desktop smoke
+test. Windows, macOS, Qt 5, ARM, and IPv6 scanning are not supported for 1.0
+because they do not have complete discovery backends and release qualification.
 
 See [the canonical platform support contract](docs/platform-support.md) for the
 tested matrix and qualification boundaries.

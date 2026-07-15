@@ -65,11 +65,11 @@ the per-probe attempts and timeouts:
 | Maximum | 4 attempts, 3 s | 4 attempts, 2 s | Up to 8 s |
 
 Higher modes give intermittent, sleeping, or slow devices more opportunities
-to respond. The status-bar upper bound is a conservative scheduling estimate
-derived from target count, worker count, and the per-target deadline. It is not
-a countdown or a claim that the scan will take that long. Stop cancels active
-work cooperatively; process and socket cleanup may take a short additional
-interval.
+to respond. For a large scan, the pre-scan confirmation shows a conservative
+upper bound derived from target count, worker count, and the per-target
+deadline. It is not a countdown or a claim that the scan will take that long.
+Stop cancels active work cooperatively; process and socket cleanup may take a
+short additional interval.
 
 ## Read and use results
 

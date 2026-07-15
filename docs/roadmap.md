@@ -2,7 +2,7 @@
 
 This file is the single source of truth for unfinished product, engineering, documentation, and release work. Detailed evidence for why each 1.0 item exists is in [the production-readiness audit](production-readiness-audit.md). New ideas belong here rather than in a second backlog.
 
-The audited baseline is `0.2.0` at commit `91e0a7a`; `0.5.2` is the latest manually tested version, and versions from `0.5.3` onward are being adversarially reviewed and merged under the explicit waiver for remaining pre-1.0 work. Version 1.0 is not ready. Every unchecked item under “Required for 1.0” is a release gate; the post-1.0 section is explicitly outside the first production release.
+The audited baseline is `0.2.0` at commit `91e0a7a`; cumulative application behavior through `0.7.8` is human-verified, including the complete Kubuntu 26.04 desktop checklist. Version 1.0 is not yet authorized. Every unchecked item under “Required for 1.0” is a release gate; the post-1.0 section is explicitly outside the first production release.
 
 ## Delivered implementation increments
 
@@ -45,8 +45,13 @@ The unchecked milestone boxes below mean their complete acceptance criteria are 
 - `0.6.8` — **SERVICE-PILL-THEMING:** restored palette-aware service family
   colors, neutral unknown ports, and stable tag geometry.
 - `0.6.9` — **ACCESSIBILITY:** implemented warning-free scaled startup,
-  accessible control metadata, and conflict-free keyboard focus paths; the
-  final real-session smoke remains.
+  accessible control metadata, and conflict-free keyboard focus paths.
+- `0.7.7` — **BUILD-OUTPUT-HYGIENE:** standardized disposable build scratch
+  and one persistent installable package per version beneath `release/`.
+- `0.7.8` — **UI-CLEANUP:** completed compact status, stable Settings and
+  Details layouts, actionable service/link affordances, and human UI review.
+- `0.7.9` — **RELEASE-CANDIDATE-PREPARATION:** records enforced branch rules,
+  Kubuntu 26.04 qualification, and final pre-1.0 documentation reconciliation.
 
 **RESULT-SCALING** is human-verified on version `0.4.4`. DUPLICATE-IP-CONFLICTS remains Post-1.0.
 
@@ -229,7 +234,7 @@ Priority matches the most severe audit finding an item closes. All items in the 
 
 #### QUALITY-GATE
 
-- [ ] **Establish the automated 1.0 quality gate.** `Blocker`
+- [x] **Establish the automated 1.0 quality gate.** `Blocker`
   - Aggregate the feature-owned CTest suites specified by items such as MDNS-TESTS, SETTINGS-MIGRATIONS, and CSV-EXPORT, then add the remaining integration, GUI, cancellation, stress, and package coverage. Add CI for the oldest and newest supported compiler/Qt combinations.
   - Preserve deeper regression coverage from completed correctness work: inject every `ScannerWindow` setting across consecutive scans, distinguish production ping/Avahi/system-resolver cancellation, count attempts in a virtual-clock 4,096-target scan, and prove cancellation interrupts its active budget without real network timing.
   - Enable project warning flags and warnings-as-errors for project sources. Run Clang-Tidy or an agreed equivalent, CMake/metadata lint, AddressSanitizer, UndefinedBehaviorSanitizer, and ThreadSanitizer scenarios where supported.
@@ -249,10 +254,11 @@ Priority matches the most severe audit finding an item closes. All items in the 
     Normal and strict suites pass 33/33, ASan/UBSan passes 32/32,
     ThreadSanitizer passes 31/31, and the exact Release build passes 33/33.
     Clang-Tidy is unavailable locally, so strict warnings-as-errors remain the
-    documented lint equivalent. The
-    repository currently has no branch protection or ruleset for `main`; that
-    operational-maturity step is intentionally deferred until the 1.0 release
-    candidate, so QUALITY-GATE remains open. Review findings covering structural workflow tests,
+    documented lint equivalent. On 2026-07-15 the owner enabled the active
+    `Protect main` ruleset for the default branch. It has no bypass actor,
+    requires pull requests with resolved conversations, rejects deletion and
+    force pushes, and strictly requires the GitHub Actions `quality` and
+    `quality-newest` checks. Review findings covering structural workflow tests,
     corrupt/multiple package rejection, stale output, and cleanup-status
     preservation were repaired; the final fresh adversarial review found no
     actionable issue.
@@ -267,7 +273,7 @@ Priority matches the most severe audit finding an item closes. All items in the 
 
 #### PLATFORM-SUPPORT
 
-- [ ] **Declare and enforce a truthful 1.0 platform matrix.** `High`
+- [x] **Declare and enforce a truthful 1.0 platform matrix.** `High`
   - Scope 1.0 to Linux, IPv4, and a documented Qt 6 range unless another backend is implemented and tested before the release. Remove the current Windows and Qt 5 claims/fallback if they are not part of that tested matrix.
   - Build packages on the oldest supported distribution so generated Qt symbol dependencies do not accidentally narrow compatibility. Make About report the actual Qt runtime and supported platform.
   - Done when README, CMake, About, CI, package dependencies, and release notes agree, and each listed environment passes the full quality gate.
@@ -276,8 +282,12 @@ Priority matches the most severe audit finding an item closes. All items in the 
     Ubuntu 24.04 compatibility-floor and Debian 13 newer gates, then built,
     tested, and uploaded the package on Ubuntu 24.04. The canonical installed
     operator/support documents repeat the same platform boundary. The
-    documented Kubuntu 26.04 real-desktop smoke remains required before this
-    item can close.
+    documented Kubuntu 26.04 real-desktop smoke remained the final manual gate.
+  - Completion evidence on `0.7.9`: the owner completed the full Kubuntu 26.04
+    checklist on 2026-07-15, including clean-account package operation,
+    supported themes and scaling, keyboard/accessibility inspection, scanning,
+    mDNS, Stop/close, export, diagnostics, and prefix-safe removal. All checks
+    passed, closing the real-desktop support qualification.
 
 #### DIAGNOSTICS
 
@@ -386,6 +396,13 @@ Priority matches the most severe audit finding an item closes. All items in the 
     workflow is configured for keyless GitHub build/SBOM attestations, but its
     separately authorized 1.0 RC run and independent verification remain, so
     this item stays open.
+  - Current progress on `0.7.9`: the complete local release gate again passed
+    metadata lint, normal and strict 39/39, ASan/UBSan 38/38,
+    ThreadSanitizer 37/37, zero-warning Lintian, install/remove, hardening, and
+    two byte-identical packages. The externally staged source archive,
+    SHA-256 manifest, and SPDX inventory independently validate. GitHub OIDC
+    attestations and clean-environment verification remain gated to the
+    separately authorized final `1.0.0` candidate.
   - Done when hardening inspection meets the documented baseline, two clean builds produce matching artifacts after normalization, and users can verify signed checksums and provenance.
 
 #### PREFIX-SAFETY
@@ -407,15 +424,14 @@ Priority matches the most severe audit finding an item closes. All items in the 
 
 #### ACCESSIBILITY
 
-- [ ] **Fix startup warnings, accessibility, and theme behavior.** `Medium`
+- [x] **Fix startup warnings, accessibility, and theme behavior.** `Medium`
   - Set the Qt high-DPI rounding policy through the supported pre-application API or remove the override; clean startup must not emit the current policy-order warning.
   - Give icon-only controls explicit accessible names and keyboard paths, avoid hard-coded selection/service colors that defeat system contrast, test screen-reader labels and high scaling, and add scrolling/responsive sizing to dense settings pages.
-  - Current progress: the canonical [UI layout specification](ui-layout-spec.md) limits Settings to 600 by 440, standardizes spacing and aligned Performance controls, reserves stable geometry for dynamic descriptions, and requires internal page scrolling. An automated geometry contract protects the dimensions and row fit.
+  - Current progress: the canonical [UI layout specification](ui-layout-spec.md) makes 600 by 440 the resizable Settings minimum, standardizes spacing and aligned Performance controls, reserves stable geometry for dynamic descriptions, and requires internal vertical scrolling without horizontal overflow. Automated geometry contracts protect the minimum, preferred size, and row fit.
   - Current progress on `0.6.9`: the supported static high-DPI policy runs
     before application construction; primary and settings controls expose
     stable names/descriptions and keyboard paths even in icon-only toolbar
-    mode. Startup smoke coverage runs at 100% and 200% scaling. Real-session
-    assistive-technology and keyboard smoke remains final-review evidence. The
+    mode. Startup smoke coverage runs at 100% and 200% scaling. The
     first review's shortcut, dynamic-label, finalizing-state, sanitizer, and
     test-strength findings were repaired. Direct CTest launches keep the
     application sanitizer-instrumented at 100% and 200% scaling without an
@@ -427,6 +443,10 @@ Priority matches the most severe audit finding an item closes. All items in the 
     36/36, local ThreadSanitizer 35/35, and Release 37/37 with a tested package.
     The stable Ubuntu ThreadSanitizer-compatible subset passes 30/30. The final
     fresh adversarial review found no actionable issue.
+  - Completion evidence on `0.7.9`: the owner's 2026-07-15 Kubuntu 26.04
+    qualification passed light, dark, high-contrast, 100%, and 200% scaling;
+    keyboard-only navigation; accessible name/role inspection; stable Settings
+    geometry; and the complete clean-account operator workflow.
   - Done when offscreen and real-session startup are warning-free, automated accessibility inspection finds names/roles for interactive controls, and light, dark, high-contrast, 200% scale, and keyboard-only smoke tests pass.
 
 #### SEARCH-ENRICHMENT
@@ -512,6 +532,11 @@ Priority matches the most severe audit finding an item closes. All items in the 
     and the exact 0.7.2 package with zero Lintian errors or warnings. The final
     1.0 changelog entry remains an intentionally release-candidate/final-review
     action, so this roadmap item stays open.
+  - Current progress on `0.7.9`: branch-protection and Kubuntu qualification
+    evidence are reconciled, Settings is correctly described as resizable from
+    a 600-by-440 minimum, and the large-scan upper bound is correctly located
+    in pre-scan confirmation rather than the concise status bar. The final
+    `1.0.0` changelog/version reconciliation remains separately authorized.
   - Done when a clean-machine installation and operator runbook can be followed without repository knowledge, all claims have a passing test or explicit limitation, and the 1.0 changelog is complete.
 
 ## Post-1.0
