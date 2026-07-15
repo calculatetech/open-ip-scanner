@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.28)
-project(OpenIpScanner VERSION 0.6.4 LANGUAGES CXX)
+project(OpenIpScanner VERSION 0.6.5 LANGUAGES CXX)
 
 include(cmake/PlatformSupport.cmake)
 ois_validate_platform("${CMAKE_SYSTEM_NAME}"
@@ -256,6 +256,9 @@ if(BUILD_TESTING)
                 ${CMAKE_SOURCE_DIR}/tools/update_oui.py --offline --check)
     add_test(NAME vendor_data_generator_contract
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/ouidata_test.py)
+    add_test(NAME quality_gate_policy
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_SOURCE_DIR}/tests/qualitygatepolicy_test.py)
 
     add_executable(neighbor_entry_test tests/neighborentry_test.cpp)
     target_link_libraries(neighbor_entry_test PRIVATE ois_core)

@@ -1,0 +1,200 @@
+#!/usr/bin/env python3
+
+from pathlib import Path
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+
+import yaml
+
+sys.dont_write_bytecode = True
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def require(condition: bool, message: str) -> None:
+    if not condition:
+        raise AssertionError(message)
+
+
+def load_workflow(name: str) -> dict:
+    path = ROOT / ".github/workflows" / name
+    document = yaml.safe_load(path.read_text(encoding="utf-8"))
+    require(isinstance(document, dict), f"{name} is not a YAML mapping")
+    return document
+
+
+def step_with(job: dict, key: str, value: str) -> dict:
+    for step in job.get("steps", []):
+        if step.get(key) == value:
+            return step
+    raise AssertionError(f"job has no step with {key}={value}")
+
+
+def shell_commands(path: Path) -> list[str]:
+    return [
+        line.strip()
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+
+
+def run_validator(artifact_dir: Path) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [str(ROOT / "scripts/validate-release-artifacts.sh"), str(artifact_dir)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_release_artifact_rejection() -> None:
+    with tempfile.TemporaryDirectory(prefix="ois-quality-policy-") as temporary:
+        root = Path(temporary)
+        empty = root / "empty"
+        empty.mkdir()
+        require(run_validator(empty).returncode != 0, "empty artifact set was accepted")
+
+        corrupt = root / "corrupt"
+        corrupt.mkdir()
+        (corrupt / "corrupt.deb").write_bytes(b"not a Debian package")
+        require(run_validator(corrupt).returncode != 0, "corrupt package was accepted")
+
+        package_root = root / "package-root"
+        control = package_root / "DEBIAN"
+        control.mkdir(parents=True)
+        (control / "control").write_text(
+            "Package: open-ip-scanner-policy-fixture\n"
+            "Version: 1.0\n"
+            "Architecture: all\n"
+            "Maintainer: Test Fixture <fixture@example.invalid>\n"
+            "Description: Quality policy fixture\n",
+            encoding="utf-8",
+        )
+        valid = root / "valid"
+        valid.mkdir()
+        subprocess.run(
+            ["dpkg-deb", "--build", str(package_root), str(valid / "valid.deb")],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        require(run_validator(valid).returncode == 0, "valid package was rejected")
+
+        multiple = root / "multiple"
+        multiple.mkdir()
+        shutil.copy2(valid / "valid.deb", multiple / "first.deb")
+        shutil.copy2(valid / "valid.deb", multiple / "second.deb")
+        require(
+            run_validator(multiple).returncode != 0,
+            "multiple release packages were accepted",
+        )
+
+
+def test_cleanup_preserves_original_failure() -> None:
+    with tempfile.TemporaryDirectory(prefix="ois-cleanup-policy-") as temporary:
+        root = Path(temporary)
+        fake_bin = root / "bin"
+        fake_bin.mkdir()
+        fake_cmake = fake_bin / "cmake"
+        fake_cmake.write_text("#!/usr/bin/env bash\nexit 99\n", encoding="utf-8")
+        fake_cmake.chmod(0o755)
+        artifact_dir = root / "artifacts"
+        artifact_dir.mkdir()
+        command = (
+            f'source "{ROOT / "scripts/build-release-artifact.sh"}"\n'
+            f'artifact_dir="{artifact_dir}"\n'
+            "set +e\n"
+            "bash -c 'exit 42'\n"
+            "cleanup_failed_artifacts\n"
+        )
+        environment = os.environ.copy()
+        environment["PATH"] = f"{fake_bin}:{environment['PATH']}"
+        result = subprocess.run(
+            ["bash", "-c", command],
+            check=False,
+            capture_output=True,
+            text=True,
+            env=environment,
+        )
+        require(result.returncode == 42,
+                "artifact cleanup masked the original failure status")
+        require("failed to remove incomplete release artifacts" in result.stderr,
+                "artifact cleanup failure was not reported")
+
+
+def main() -> int:
+    quality = load_workflow("quality.yml")
+    mdns = load_workflow("mdns-compatibility.yml")
+
+    for name, workflow in (("quality", quality), ("mDNS", mdns)):
+        triggers = workflow.get("on", {})
+        require(isinstance(triggers, dict), f"{name} triggers are malformed")
+        require(set(triggers) >= {"push", "pull_request", "workflow_dispatch"},
+                f"{name} must retain push, pull-request, and manual coverage")
+        push = triggers["push"]
+        require(push.get("branches") == ["main"],
+                f"{name} push CI must be restricted to main")
+
+    jobs = quality.get("jobs", {})
+    release = jobs.get("release-artifact", {})
+    require(release.get("needs") == ["quality", "quality-newest"],
+            "release artifact must depend on both supported quality jobs")
+    require(release.get("if") == "github.event_name != 'pull_request'",
+            "pull requests must not publish release artifacts")
+    build_step = step_with(release, "name", "Build and test release artifact")
+    require(build_step.get("run") == "./scripts/build-release-artifact.sh",
+            "artifact job must execute the tested release builder")
+    upload = step_with(release, "uses", "actions/upload-artifact@v4")
+    upload_options = upload.get("with", {})
+    require(upload_options.get("path") == "build/release-artifacts/*.deb",
+            "artifact upload path must match the validated package directory")
+    require(upload_options.get("if-no-files-found") == "error",
+            "artifact upload must fail closed when the package is absent")
+
+    gate_commands = shell_commands(ROOT / "scripts/quality-gate.sh")
+    require("./scripts/validate-metadata.sh" in gate_commands,
+            "metadata lint must be an executable quality-gate command")
+    require("./scripts/build-release-artifact.sh" in gate_commands,
+            "release mode must execute the same artifact builder as CI")
+    artifact_commands = shell_commands(ROOT / "scripts/build-release-artifact.sh")
+    require(
+        artifact_commands.index("trap cleanup_failed_artifacts EXIT")
+        < artifact_commands.index('cmake -E remove_directory "$artifact_dir"')
+        < artifact_commands.index("./scripts/validate-metadata.sh"),
+        "failure cleanup must cover stale removal and every later build step",
+    )
+    require("trap cleanup_failed_artifacts EXIT" in artifact_commands,
+            "failed release builds must remove partial artifacts")
+    require("trap - EXIT" in artifact_commands,
+            "successful package validation must disarm failure cleanup")
+    require("ctest --test-dir \"$build_dir\" --output-on-failure" in artifact_commands,
+            "release artifact build must execute its CTest contracts")
+    require(any(command.startswith("cpack --config ") for command in artifact_commands),
+            "release artifact build must execute CPack")
+    require(
+        "package=$(./scripts/validate-release-artifacts.sh \"$artifact_dir\")"
+        in artifact_commands,
+        "release builder must execute the package validator",
+    )
+
+    metadata_commands = shell_commands(ROOT / "scripts/validate-metadata.sh")
+    require(any(command.startswith("appstreamcli validate --no-net")
+                for command in metadata_commands), "AppStream lint is missing")
+    metadata_text = "\n".join(metadata_commands)
+    require(
+        "cid-desktopapp-is-not-rdns=pedantic,url-homepage-missing=pedantic,"
+        "content-rating-missing=pedantic,developer-info-missing=pedantic"
+        in metadata_text,
+        "known AppStream exceptions must remain an explicit bounded allowlist",
+    )
+
+    test_release_artifact_rejection()
+    test_cleanup_preserves_original_failure()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

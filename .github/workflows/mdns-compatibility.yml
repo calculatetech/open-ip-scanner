@@ -2,6 +2,8 @@ name: mDNS compatibility
 
 "on":
   push:
+    branches:
+      - main
     paths:
       - '.github/workflows/mdns-compatibility.yml'
       - '.dockerignore'
@@ -35,7 +37,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       - name: Build isolated fixture
         run: docker build --tag open-ip-scanner-avahi-fixture --file tests/fixtures/avahi/Dockerfile .
       - name: Run controlled CTest

@@ -2,6 +2,8 @@ name: Quality
 
 "on":
   push:
+    branches:
+      - main
   pull_request:
   workflow_dispatch:
 
@@ -20,7 +22,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            ninja-build qt6-base-dev qt6-base-dev-tools qt6-qpa-plugins
+            appstream desktop-file-utils libxml2-utils ninja-build python3 python3-yaml \
+            qt6-base-dev qt6-base-dev-tools qt6-qpa-plugins
       - name: Run full quality gate
         env:
           QT_QPA_PLATFORM: offscreen
@@ -42,7 +45,8 @@ jobs:
         run: |
           apt-get update
           apt-get install -y --no-install-recommends \
-            build-essential clang-tidy cmake ninja-build \
+            appstream build-essential clang-tidy cmake desktop-file-utils \
+            libxml2-utils ninja-build python3 python3-yaml \
             qt6-base-dev qt6-base-dev-tools qt6-qpa-plugins
       - name: Run full quality gate
         env:
@@ -52,3 +56,30 @@ jobs:
           OIS_TSAN_EXCLUDE: scan_cancellation_deadlines|linux_neighbor_probe_contract|linux_ping_probe_contract
           UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
         run: ./scripts/quality-gate.sh full
+
+  release-artifact:
+    name: tested release artifact
+    needs: [quality, quality-newest]
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            appstream desktop-file-utils libxml2-utils ninja-build python3 python3-yaml \
+            qt6-base-dev qt6-base-dev-tools qt6-qpa-plugins
+      - name: Build and test release artifact
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: ./scripts/build-release-artifact.sh
+      - name: Upload tested release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: open-ip-scanner-${{ github.sha }}
+          path: build/release-artifacts/*.deb
+          if-no-files-found: error
+          retention-days: 14

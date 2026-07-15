@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.6.5] - 2026-07-14
+
+### Added
+
+- Added deterministic desktop/XML/manifest metadata linting to every quality
+  gate and direct contracts for the hosted workflow policy.
+- Added a Release package job that runs only after both supported CI
+  environments pass and tests the exact build before uploading it.
+
+### Changed
+
+- Limited branch push workflows to `main` while retaining pull-request checks,
+  avoiding duplicate CI runs for the same commit after a fast-forward merge.
+
 ## [0.6.4] - 2026-07-14
 
 ### Added

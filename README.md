@@ -54,6 +54,8 @@ tested matrix and qualification boundaries.
 
 - CMake >= 3.28
 - C++17 compiler (GCC/Clang)
+- Python 3 with PyYAML, `appstreamcli`, `desktop-file-validate`, and `xmllint`
+  for the quality gate
 - Qt 6.4 or newer development packages:
   - `Widgets`
   - `Network`
@@ -65,7 +67,8 @@ Example (Debian/Ubuntu):
 ```bash
 sudo apt update
 sudo apt install -y \
-  build-essential cmake ninja-build \
+  appstream build-essential cmake desktop-file-utils libxml2-utils ninja-build \
+  python3 python3-yaml \
   qt6-base-dev qt6-tools-dev \
   iputils-ping iproute2 avahi-daemon
 ```
@@ -82,6 +85,18 @@ Run:
 ```bash
 ./build/open-ip-scanner
 ```
+
+## Quality gates
+
+Run the normal build, metadata lint, and all CTest contracts:
+
+```bash
+./scripts/quality-gate.sh fast
+```
+
+`full` adds warnings-as-errors, supported sanitizers, and Clang-Tidy when it is
+available. `release` runs that complete gate, then builds and tests the exact
+Debian package placed in `build/release-artifacts/`.
 
 ## Install (local)
 

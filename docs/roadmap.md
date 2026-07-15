@@ -2,7 +2,7 @@
 
 This file is the single source of truth for unfinished product, engineering, documentation, and release work. Detailed evidence for why each 1.0 item exists is in [the production-readiness audit](production-readiness-audit.md). New ideas belong here rather than in a second backlog.
 
-The audited baseline is `0.2.0` at commit `91e0a7a`; `0.5.2` is the latest manually tested version, versions from `0.5.3` onward are being adversarially reviewed and merged under the explicit waiver for remaining pre-1.0 work, and `0.6.4` is the active VENDOR-DATABASE branch. Version 1.0 is not ready. Every unchecked item under “Required for 1.0” is a release gate; the post-1.0 section is explicitly outside the first production release.
+The audited baseline is `0.2.0` at commit `91e0a7a`; `0.5.2` is the latest manually tested version, versions from `0.5.3` onward are being adversarially reviewed and merged under the explicit waiver for remaining pre-1.0 work, and `0.6.5` is the active QUALITY-GATE branch. Version 1.0 is not ready. Every unchecked item under “Required for 1.0” is a release gate; the post-1.0 section is explicitly outside the first production release.
 
 ## Delivered implementation increments
 
@@ -34,6 +34,9 @@ The unchecked milestone boxes below mean their complete acceptance criteria are 
   logging with explicit health and remediation.
 - `0.6.4` — **VENDOR-DATABASE:** replaced the unexplained MA-L dump with a
   reproducible, checksummed MA-L/MA-M/MA-S snapshot and longest-prefix lookup.
+- `0.6.5` — **QUALITY-GATE:** added semantic metadata/workflow policy checks,
+  deduplicated branch/main push CI, and made one fail-closed tested Release
+  package depend on both supported CI environments.
 
 **RESULT-SCALING** is human-verified on version `0.4.4`. DUPLICATE-IP-CONFLICTS remains Post-1.0.
 
@@ -221,7 +224,29 @@ Priority matches the most severe audit finding an item closes. All items in the 
   - Preserve deeper regression coverage from completed correctness work: inject every `ScannerWindow` setting across consecutive scans, distinguish production ping/Avahi/system-resolver cancellation, count attempts in a virtual-clock 4,096-target scan, and prove cancellation interrupts its active budget without real network timing.
   - Enable project warning flags and warnings-as-errors for project sources. Run Clang-Tidy or an agreed equivalent, CMake/metadata lint, AddressSanitizer, UndefinedBehaviorSanitizer, and ThreadSanitizer scenarios where supported.
   - Done when a clean checkout has one documented command that builds and runs all required checks, CI protects the default branch, the strict build has zero project warnings, and the release job refuses an untested artifact.
-  - Current progress through `0.6.2`: `scripts/quality-gate.sh` provides isolated `fast`, `full`, and `release` modes that work from a clean checkout and reuse their dedicated build trees on safe reruns. The full gate runs all 28 contracts normally and with strict conversion/sign/shadow/format warnings as errors, 27 non-recovering AddressSanitizer/UndefinedBehaviorSanitizer-compatible contracts, and 26 ThreadSanitizer-compatible contracts; the offscreen settings rendering/timing benchmark is excluded from sanitizers and the real TLS fixture is excluded only from ThreadSanitizer. Clang-Tidy runs when installed, with the strict compiler profile as the documented equivalent when unavailable; its Qt-template false-positive suppression is limited to `clang-analyzer-cplusplus.NewDeleteLeaks`. A stable Ubuntu 24.04 `quality` check and separate Debian 13 `quality-newest` check run the full functional gate for every push and pull request while recording, but not enforcing, hardware-dependent UI wall-clock thresholds. Their ASan runs disable leak detection because system Qt proxy initialization retains process-global allocations. Their TSan runs retain the base exclusions for the settings GUI and real TLS integration contracts, then exclude three Qt child-process contracts whose sanitizer runtimes are unsupported in hosted CI. The local release gate enforces timing and LeakSanitizer and runs all 26 TSan-compatible contracts. Deterministic regressions prove every scan-affecting window option is freshly snapshotted across consecutive production launches, a virtual-clock 4,096-target run performs exactly the budget-permitted attempts, cancellation interrupts that active budget without sleeping, and unsupported OS, architecture, and 32-bit configurations are rejected. Metadata lint and the tested release-artifact dependency remain before this item can close.
+  - Current progress through `0.6.5`: `scripts/quality-gate.sh` provides isolated
+    `fast`, `full`, and `release` modes that work from a clean checkout and
+    reuse dedicated build trees on safe reruns. The gate now starts with
+    desktop-entry, AppStream, metainfo XML, and vendor-manifest lint. Existing
+    AppStream findings owned by DESKTOP-METADATA form an explicit pedantic
+    allowlist, while any new validator issue fails the gate. Its 32 direct
+    contracts include a workflow-policy check that requires push CI only on
+    `main`, retains pull-request checks, and makes the tested Release package
+    job depend on both the Ubuntu 24.04 `quality` and Debian 13
+    `quality-newest` jobs. The artifact builder runs all contracts against the
+    exact Release build, produces exactly one Debian package, and validates
+    its control archive and payload before upload. Normal branch pushes no
+    longer repeat the same hosted checks that run after a fast-forward merge.
+    Normal and strict suites pass 32/32, ASan/UBSan passes 31/31,
+    ThreadSanitizer passes 30/30, and the exact Release build passes 32/32.
+    Clang-Tidy is unavailable locally, so strict warnings-as-errors remain the
+    documented lint equivalent. The
+    repository currently has no branch protection or ruleset for `main`, so
+    owner confirmation of the stable `quality` required check remains before
+    this item can close. Review findings covering structural workflow tests,
+    corrupt/multiple package rejection, stale output, and cleanup-status
+    preservation were repaired; the final fresh adversarial review found no
+    actionable issue.
 
 #### PLATFORM-SUPPORT
 

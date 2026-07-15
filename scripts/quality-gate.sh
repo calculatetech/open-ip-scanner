@@ -8,6 +8,8 @@ root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 export UBSAN_OPTIONS=${UBSAN_OPTIONS:-halt_on_error=1:print_stacktrace=1}
 cd "$root"
 
+./scripts/validate-metadata.sh
+
 case "$mode" in
     fast|full|release) ;;
     *)
@@ -72,9 +74,7 @@ if [[ $mode == full || $mode == release ]]; then
 fi
 
 if [[ $mode == release ]]; then
-    run_suite build/quality-release -DCMAKE_BUILD_TYPE=Release \
-        -DOIS_WARNINGS_AS_ERRORS=ON
-    cpack --config build/quality-release/CPackConfig.cmake -G DEB
+    ./scripts/build-release-artifact.sh
 fi
 
 echo "quality gate ($mode): PASS"
