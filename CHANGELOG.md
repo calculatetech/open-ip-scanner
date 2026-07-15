@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.7.1] - 2026-07-15
+
+### Changed
+
+- Make manifest and explicit-prefix uninstall operations isolated and safely
+  repeatable, including staged installs and paths containing spaces.
+- Add symmetric non-root desktop-cache refresh to dedicated local install and
+  uninstall targets while leaving package and generic installs trigger-free.
+
 ## [0.7.0] - 2026-07-15
 
 ### Added

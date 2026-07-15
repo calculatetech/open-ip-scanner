@@ -101,16 +101,12 @@ Debian package placed in `build/release-artifacts/`.
 ## Install (local)
 
 ```bash
-cmake --install build --prefix ~/.local
+cmake --build build --target install-local
 ```
 
-If icon/menu updates lag on KDE:
-
-```bash
-gtk-update-icon-cache ~/.local/share/icons/hicolor
-update-desktop-database ~/.local/share/applications
-kbuildsycoca6
-```
+This target installs under `~/.local` and refreshes available desktop caches as
+the current non-root user. Generic and packaged installs do not invoke user
+session cache tools; distribution packages use their normal triggers.
 
 ## Uninstall (local)
 
@@ -118,18 +114,14 @@ kbuildsycoca6
 cmake --build build --target uninstall-local
 ```
 
-Generic uninstall target (uses install manifest):
+Generic uninstall target (uses the last atomic uninstall-state manifest):
 
 ```bash
 cmake --build build --target uninstall
 ```
 
-If desktop/icon cache entries linger:
-
-```bash
-update-desktop-database ~/.local/share/applications
-kbuildsycoca6 --noincremental
-```
+The local uninstall target refreshes the same available desktop caches after
+removing only the known Open IP Scanner files beneath `~/.local`.
 
 ## Debian Packaging
 

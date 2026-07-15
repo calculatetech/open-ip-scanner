@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.28)
-project(OpenIpScanner VERSION 0.7.0 LANGUAGES CXX)
+project(OpenIpScanner VERSION 0.7.1 LANGUAGES CXX)
 
 set(OIS_APP_ID "io.github.calculatetech.OpenIpScanner")
 set(OIS_GENERATED_RESOURCE_DIR "${CMAKE_BINARY_DIR}/generated-resources")
@@ -59,6 +59,11 @@ if(OIS_WARNINGS_AS_ERRORS AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 endif()
 
 include(GNUInstallDirs)
+
+configure_file(
+    cmake/write_uninstall_state.cmake.in
+    ${CMAKE_BINARY_DIR}/write_uninstall_state.cmake
+    @ONLY)
 
 find_package(Qt6 6.4 REQUIRED COMPONENTS
     Core Widgets Network PrintSupport DBus)
@@ -328,6 +333,15 @@ if(BUILD_TESTING)
                 --app-id ${OIS_APP_ID}
                 --version ${PROJECT_VERSION})
 
+    add_test(NAME prefix_safety_contract
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_SOURCE_DIR}/tests/prefixsafety_test.py
+                --build-dir ${CMAKE_BINARY_DIR}
+                --app-id ${OIS_APP_ID})
+    set_tests_properties(
+        installed_metadata_contract prefix_safety_contract
+        PROPERTIES RUN_SERIAL TRUE)
+
     add_executable(neighbor_entry_test tests/neighborentry_test.cpp)
     target_link_libraries(neighbor_entry_test PRIVATE ois_core)
     add_test(NAME neighbor_entry_validation COMMAND neighbor_entry_test)
@@ -410,20 +424,9 @@ install(CODE "
     \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_DATAROOTDIR}/metainfo/open-ip-scanner.metainfo.xml\")
 ")
 
-# Best-effort desktop cache refresh for local installs.
-install(CODE [[
-  if("$ENV{DESTDIR}" STREQUAL "")
-    set(_apps_dir "${CMAKE_INSTALL_FULL_DATAROOTDIR}/applications")
-    find_program(UPDATE_DESKTOP_DATABASE update-desktop-database)
-    if(UPDATE_DESKTOP_DATABASE AND EXISTS "${_apps_dir}")
-      execute_process(COMMAND "${UPDATE_DESKTOP_DATABASE}" "${_apps_dir}")
-    endif()
-    find_program(KBUILDSYCOCA6 kbuildsycoca6)
-    if(KBUILDSYCOCA6)
-      execute_process(COMMAND "${KBUILDSYCOCA6}")
-    endif()
-  endif()
-]])
+# Record the effective installed paths together in one atomically replaced
+# state manifest after all install and legacy-cleanup actions have succeeded.
+install(SCRIPT "${CMAKE_BINARY_DIR}/write_uninstall_state.cmake")
 
 set(CPACK_PACKAGE_NAME "open-ip-scanner")
 set(CPACK_PACKAGE_VENDOR "Open IP Scanner")
@@ -463,8 +466,22 @@ add_custom_target(uninstall
     COMMAND ${CMAKE_COMMAND} -P ${CMAKE_BINARY_DIR}/cmake_uninstall.cmake
 )
 
+add_custom_target(install-local
+    COMMAND ${CMAKE_COMMAND}
+            -DLOCAL_ACTION=install
+            -DBUILD_DIR=${CMAKE_BINARY_DIR}
+            -DUNINSTALL_SCRIPT=${CMAKE_BINARY_DIR}/cmake_uninstall.cmake
+            -DREFRESH_SCRIPT=${CMAKE_SOURCE_DIR}/cmake/refresh_desktop_caches.cmake
+            -P ${CMAKE_SOURCE_DIR}/cmake/local_prefix_action.cmake
+    VERBATIM
+)
+
 add_custom_target(uninstall-local
     COMMAND ${CMAKE_COMMAND}
-        -DUNINSTALL_PREFIX=$ENV{HOME}/.local
-        -P ${CMAKE_BINARY_DIR}/cmake_uninstall.cmake
+            -DLOCAL_ACTION=uninstall
+            -DBUILD_DIR=${CMAKE_BINARY_DIR}
+            -DUNINSTALL_SCRIPT=${CMAKE_BINARY_DIR}/cmake_uninstall.cmake
+            -DREFRESH_SCRIPT=${CMAKE_SOURCE_DIR}/cmake/refresh_desktop_caches.cmake
+            -P ${CMAKE_SOURCE_DIR}/cmake/local_prefix_action.cmake
+    VERBATIM
 )

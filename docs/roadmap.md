@@ -317,7 +317,7 @@ Priority matches the most severe audit finding an item closes. All items in the 
 
 #### DEBIAN-PACKAGING
 
-- [ ] **Make the Debian package policy-clean and license-complete.** `Blocker`
+- [x] **Make the Debian package policy-clean and license-complete.** `Blocker`
   - Install the MIT license/copyright file, compressed changelog, and a real extended description. Use `Name <email>` maintainer syntax, normalize directory modes to `0755`, strip the runtime binary or provide split debug symbols, and add a manual page or an intentional Lintian override with rationale.
   - Include all notices required for the OUI dataset and any new Avahi dependency. Decide whether mDNS is a required feature (`Depends`) or an optional capability with explicit UI state.
   - Current progress on `0.7.0`: the Release package installs Debian-format
@@ -327,8 +327,8 @@ Priority matches the most severe audit finding an item closes. All items in the 
     `avahi-daemon` recommendation without the test-only `avahi-utils`. The
     package validator enforces 0755 directories, a stripped runtime, complete
     notices, deterministic gzip headers, disposable `dpkg` install/remove, and
-    zero Lintian errors or warnings. The local full Release gate passes; the
-    clean hosted package job remains before closure.
+    zero Lintian errors or warnings. The local full Release gate and clean
+    hosted package job `29393011324` pass, including artifact upload.
   - Done when a Release package built in a clean container has zero Lintian errors, every remaining warning has a documented reviewed disposition, installation/removal succeeds, and the installed copyright files satisfy every bundled asset’s terms.
 
 #### DESKTOP-METADATA
@@ -362,9 +362,19 @@ Priority matches the most severe audit finding an item closes. All items in the 
 
 #### PREFIX-SAFETY
 
-- [ ] **Make install and uninstall prefix-safe.** `High`
+- [x] **Make install and uninstall prefix-safe.** `High`
   - Remove only files from the manifest or explicitly selected prefix. A system-prefix uninstall must never also delete a separate `~/.local` installation.
   - Do not run desktop-cache tools as root in a user session; use packaging triggers or clearly scoped post-install behavior. Refresh caches symmetrically after local uninstall.
+  - Completed in `0.7.1`: generic uninstall consumes only the current build's
+    atomically replaced effective-path manifest, explicit-prefix uninstall
+    removes only known application files beneath that prefix, and staged paths
+    remain contained beneath their recorded root. Dedicated local
+    install/uninstall targets refresh the same
+    available desktop caches only for non-root users. The isolated contract
+    covers coexisting system/local installs, staged packaging, missing
+    manifests, repeat removal, and paths containing spaces. The full Release
+    gate passes normal and strict 38/38, ASan/UBSan 37/37, ThreadSanitizer
+    36/36, and a tested package with zero Lintian errors or warnings.
   - Done when isolated tests cover system install, local install, staged package creation, both installs coexisting, missing manifests, repeated uninstall, and paths containing spaces without deleting the other prefix.
 
 #### ACCESSIBILITY

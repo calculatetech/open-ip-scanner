@@ -1,0 +1,45 @@
+set(_state_file "@CMAKE_BINARY_DIR@/ois_uninstall_state.txt")
+set(_destdir "$ENV{DESTDIR}")
+if(NOT _destdir STREQUAL "" AND NOT IS_ABSOLUTE "${_destdir}")
+  message(FATAL_ERROR "DESTDIR must be absolute")
+endif()
+cmake_path(SET _effective_prefix NORMALIZE "${_destdir}${CMAKE_INSTALL_PREFIX}")
+if(NOT IS_ABSOLUTE "${_effective_prefix}")
+  message(FATAL_ERROR "Effective install prefix must be absolute")
+endif()
+if("${_effective_prefix}" MATCHES "[;\n\r]")
+  message(FATAL_ERROR "Effective install prefix contains unsupported characters")
+endif()
+
+set(_relative_files
+  "@CMAKE_INSTALL_BINDIR@/open-ip-scanner"
+  "@CMAKE_INSTALL_DATAROOTDIR@/applications/@OIS_APP_ID@.desktop"
+  "@CMAKE_INSTALL_DATAROOTDIR@/icons/hicolor/scalable/apps/@OIS_APP_ID@.svg"
+  "@CMAKE_INSTALL_DATAROOTDIR@/pixmaps/@OIS_APP_ID@.svg"
+  "@CMAKE_INSTALL_DATAROOTDIR@/metainfo/@OIS_APP_ID@.metainfo.xml"
+  "@CMAKE_INSTALL_DATAROOTDIR@/doc/open-ip-scanner/copyright"
+  "@CMAKE_INSTALL_DATAROOTDIR@/doc/open-ip-scanner/changelog.gz"
+  "@CMAKE_INSTALL_DATAROOTDIR@/doc/open-ip-scanner/vendor-data-sources.md"
+  "@CMAKE_INSTALL_MANDIR@/man1/open-ip-scanner.1.gz")
+
+set(_state "OIS-UNINSTALL-STATE-1\nroot=${_effective_prefix}\n")
+foreach(_relative_file IN LISTS _relative_files)
+  if(IS_ABSOLUTE "${_relative_file}")
+    message(FATAL_ERROR "Configured install path is not prefix-relative: ${_relative_file}")
+  endif()
+  set(_candidate "${_effective_prefix}")
+  cmake_path(APPEND _candidate "${_relative_file}")
+  cmake_path(NORMAL_PATH _candidate)
+  cmake_path(IS_PREFIX _effective_prefix "${_candidate}" NORMALIZE _within_prefix)
+  if(NOT _within_prefix)
+    message(FATAL_ERROR "Configured install path escapes effective prefix: ${_relative_file}")
+  endif()
+  if("${_candidate}" MATCHES "[;\n\r]")
+    message(FATAL_ERROR "Installed path contains unsupported state-manifest characters")
+  endif()
+  string(APPEND _state "file=${_candidate}\n")
+endforeach()
+string(SHA256 _state_key "${_effective_prefix}")
+set(_temporary_state "${_state_file}.${_state_key}.tmp")
+file(WRITE "${_temporary_state}" "${_state}")
+file(RENAME "${_temporary_state}" "${_state_file}")

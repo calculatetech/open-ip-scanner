@@ -52,6 +52,15 @@ def main() -> int:
     parser.add_argument("--version", required=True)
     args = parser.parse_args()
 
+    build_dir = args.build_dir.resolve()
+    install_state_files = (
+        build_dir / "install_manifest.txt",
+        build_dir / "ois_uninstall_state.txt",
+    )
+    original_install_state = {
+        path: path.read_bytes() if path.exists() else None
+        for path in install_state_files
+    }
     source_root = Path(__file__).resolve().parents[1]
     with tempfile.TemporaryDirectory(prefix="ois-metadata-") as temporary:
         stage = Path(temporary)
@@ -67,10 +76,17 @@ def main() -> int:
             legacy.write_text("legacy fixture\n", encoding="utf-8")
         env = os.environ.copy()
         env["DESTDIR"] = str(stage)
-        run(
-            ["cmake", "--install", str(args.build_dir), "--prefix", "/usr"],
-            env=env,
-        )
+        try:
+            run(
+                ["cmake", "--install", str(build_dir), "--prefix", "/usr"],
+                env=env,
+            )
+        finally:
+            for path, contents in original_install_state.items():
+                if contents is None:
+                    path.unlink(missing_ok=True)
+                else:
+                    path.write_bytes(contents)
 
         installed = stage / "usr"
         binary = installed / "bin" / "open-ip-scanner"

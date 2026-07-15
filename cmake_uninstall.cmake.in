@@ -1,53 +1,122 @@
 set(_files_to_remove "")
-set(_manifest "@CMAKE_BINARY_DIR@/install_manifest.txt")
+set(_state_file "@CMAKE_BINARY_DIR@/ois_uninstall_state.txt")
 
-if(EXISTS "${_manifest}")
-  file(READ "${_manifest}" _manifest_files)
-  string(REPLACE "\n" ";" _manifest_files "${_manifest_files}")
-  list(APPEND _files_to_remove ${_manifest_files})
-else()
-  message(WARNING "Install manifest not found: ${_manifest}")
-endif()
-
-# Optional explicit uninstall prefix:
-#   cmake -DUNINSTALL_PREFIX=$HOME/.local -P cmake_uninstall.cmake
 if(DEFINED UNINSTALL_PREFIX AND NOT UNINSTALL_PREFIX STREQUAL "")
-  list(APPEND _files_to_remove
-    "${UNINSTALL_PREFIX}/bin/open-ip-scanner"
-    "${UNINSTALL_PREFIX}/bin/open_ip_scanner"
-    "${UNINSTALL_PREFIX}/share/applications/open-ip-scanner.desktop"
-    "${UNINSTALL_PREFIX}/share/applications/open_ip_scanner.desktop"
-    "${UNINSTALL_PREFIX}/share/icons/hicolor/scalable/apps/open-ip-scanner.svg"
-    "${UNINSTALL_PREFIX}/share/icons/hicolor/scalable/apps/open_ip_scanner.svg"
-    "${UNINSTALL_PREFIX}/share/pixmaps/open-ip-scanner.svg"
-    "${UNINSTALL_PREFIX}/share/pixmaps/open_ip_scanner.svg"
-    "${UNINSTALL_PREFIX}/share/metainfo/open-ip-scanner.metainfo.xml")
-endif()
-
-# Common local install fallback for users who installed via:
-#   cmake --install build --prefix ~/.local
-if(DEFINED ENV{HOME} AND NOT "$ENV{HOME}" STREQUAL "")
-  set(_local_prefix "$ENV{HOME}/.local")
-  list(APPEND _files_to_remove
-    "${_local_prefix}/bin/open-ip-scanner"
-    "${_local_prefix}/bin/open_ip_scanner"
-    "${_local_prefix}/share/applications/open-ip-scanner.desktop"
-    "${_local_prefix}/share/applications/open_ip_scanner.desktop"
-    "${_local_prefix}/share/icons/hicolor/scalable/apps/open-ip-scanner.svg"
-    "${_local_prefix}/share/icons/hicolor/scalable/apps/open_ip_scanner.svg"
-    "${_local_prefix}/share/pixmaps/open-ip-scanner.svg"
-    "${_local_prefix}/share/pixmaps/open_ip_scanner.svg"
-    "${_local_prefix}/share/metainfo/open-ip-scanner.metainfo.xml")
+  if(NOT IS_ABSOLUTE "${UNINSTALL_PREFIX}")
+    message(FATAL_ERROR "UNINSTALL_PREFIX must be an absolute path")
+  endif()
+  if("${UNINSTALL_PREFIX}" MATCHES "[;\n\r]")
+    message(FATAL_ERROR "UNINSTALL_PREFIX contains unsupported characters")
+  endif()
+  cmake_path(SET _selected_prefix NORMALIZE "${UNINSTALL_PREFIX}")
+  set(_known_relative_files
+    "@CMAKE_INSTALL_BINDIR@/open-ip-scanner"
+    "@CMAKE_INSTALL_BINDIR@/open_ip_scanner"
+    "@CMAKE_INSTALL_DATAROOTDIR@/applications/@OIS_APP_ID@.desktop"
+    "@CMAKE_INSTALL_DATAROOTDIR@/applications/open-ip-scanner.desktop"
+    "@CMAKE_INSTALL_DATAROOTDIR@/applications/open_ip_scanner.desktop"
+    "@CMAKE_INSTALL_DATAROOTDIR@/icons/hicolor/scalable/apps/@OIS_APP_ID@.svg"
+    "@CMAKE_INSTALL_DATAROOTDIR@/icons/hicolor/scalable/apps/open-ip-scanner.svg"
+    "@CMAKE_INSTALL_DATAROOTDIR@/icons/hicolor/scalable/apps/open_ip_scanner.svg"
+    "@CMAKE_INSTALL_DATAROOTDIR@/pixmaps/@OIS_APP_ID@.svg"
+    "@CMAKE_INSTALL_DATAROOTDIR@/pixmaps/open-ip-scanner.svg"
+    "@CMAKE_INSTALL_DATAROOTDIR@/pixmaps/open_ip_scanner.svg"
+    "@CMAKE_INSTALL_DATAROOTDIR@/metainfo/@OIS_APP_ID@.metainfo.xml"
+    "@CMAKE_INSTALL_DATAROOTDIR@/metainfo/open-ip-scanner.metainfo.xml"
+    "@CMAKE_INSTALL_DATAROOTDIR@/doc/open-ip-scanner/copyright"
+    "@CMAKE_INSTALL_DATAROOTDIR@/doc/open-ip-scanner/changelog.gz"
+    "@CMAKE_INSTALL_DATAROOTDIR@/doc/open-ip-scanner/vendor-data-sources.md"
+    "@CMAKE_INSTALL_MANDIR@/man1/open-ip-scanner.1.gz")
+  foreach(_relative_file IN LISTS _known_relative_files)
+    if(IS_ABSOLUTE "${_relative_file}")
+      message(FATAL_ERROR "Configured install path is not prefix-relative: ${_relative_file}")
+    endif()
+    set(_candidate "${_selected_prefix}")
+    cmake_path(APPEND _candidate "${_relative_file}")
+    cmake_path(NORMAL_PATH _candidate)
+    cmake_path(IS_PREFIX _selected_prefix "${_candidate}" NORMALIZE _within_prefix)
+    if(NOT _within_prefix)
+      message(FATAL_ERROR "Configured install path escapes selected prefix: ${_relative_file}")
+    endif()
+    list(APPEND _files_to_remove "${_candidate}")
+  endforeach()
+elseif(EXISTS "${_state_file}")
+  file(READ "${_state_file}" _raw_state ENCODING UTF-8)
+  if("${_raw_state}" MATCHES "[;\r]")
+    message(FATAL_ERROR "Uninstall state manifest contains unsupported characters")
+  endif()
+  file(STRINGS "${_state_file}" _state_lines ENCODING UTF-8)
+  list(LENGTH _state_lines _state_line_count)
+  if(_state_line_count LESS 3)
+    message(FATAL_ERROR "Uninstall state manifest is incomplete")
+  endif()
+  list(POP_FRONT _state_lines _state_version _root_line)
+  if(NOT _state_version STREQUAL "OIS-UNINSTALL-STATE-1"
+      OR NOT _root_line MATCHES "^root=")
+    message(FATAL_ERROR "Uninstall state manifest header is invalid")
+  endif()
+  string(SUBSTRING "${_root_line}" 5 -1 _state_root)
+  if(NOT IS_ABSOLUTE "${_state_root}")
+    message(FATAL_ERROR "Uninstall state root is not absolute")
+  endif()
+  cmake_path(SET _state_root NORMALIZE "${_state_root}")
+  set(_state_known_relative_files
+    "@CMAKE_INSTALL_BINDIR@/open-ip-scanner"
+    "@CMAKE_INSTALL_DATAROOTDIR@/applications/@OIS_APP_ID@.desktop"
+    "@CMAKE_INSTALL_DATAROOTDIR@/icons/hicolor/scalable/apps/@OIS_APP_ID@.svg"
+    "@CMAKE_INSTALL_DATAROOTDIR@/pixmaps/@OIS_APP_ID@.svg"
+    "@CMAKE_INSTALL_DATAROOTDIR@/metainfo/@OIS_APP_ID@.metainfo.xml"
+    "@CMAKE_INSTALL_DATAROOTDIR@/doc/open-ip-scanner/copyright"
+    "@CMAKE_INSTALL_DATAROOTDIR@/doc/open-ip-scanner/changelog.gz"
+    "@CMAKE_INSTALL_DATAROOTDIR@/doc/open-ip-scanner/vendor-data-sources.md"
+    "@CMAKE_INSTALL_MANDIR@/man1/open-ip-scanner.1.gz")
+  set(_expected_files "")
+  foreach(_relative_file IN LISTS _state_known_relative_files)
+    if(IS_ABSOLUTE "${_relative_file}")
+      message(FATAL_ERROR "Configured install path is not prefix-relative: ${_relative_file}")
+    endif()
+    set(_expected_candidate "${_state_root}")
+    cmake_path(APPEND _expected_candidate "${_relative_file}")
+    cmake_path(NORMAL_PATH _expected_candidate)
+    cmake_path(IS_PREFIX _state_root "${_expected_candidate}" NORMALIZE _within_root)
+    if(NOT _within_root)
+      message(FATAL_ERROR "Configured install path escapes recorded root: ${_relative_file}")
+    endif()
+    list(APPEND _expected_files "${_expected_candidate}")
+  endforeach()
+  set(_provided_files "")
+  foreach(_state_line IN LISTS _state_lines)
+    if(NOT _state_line MATCHES "^file=")
+      message(FATAL_ERROR "Uninstall state manifest entry is invalid")
+    endif()
+    string(SUBSTRING "${_state_line}" 5 -1 _candidate)
+    if(NOT IS_ABSOLUTE "${_candidate}")
+      message(FATAL_ERROR "Uninstall state path is not absolute: ${_candidate}")
+    endif()
+    cmake_path(NORMAL_PATH _candidate)
+    cmake_path(IS_PREFIX _state_root "${_candidate}" NORMALIZE _within_root)
+    if(NOT _within_root)
+      message(FATAL_ERROR "Uninstall state path escapes its recorded root: ${_candidate}")
+    endif()
+    list(APPEND _provided_files "${_candidate}")
+  endforeach()
+  list(SORT _expected_files)
+  list(SORT _provided_files)
+  if(NOT "${_provided_files}" STREQUAL "${_expected_files}")
+    message(FATAL_ERROR "Uninstall state manifest does not match the application allowlist")
+  endif()
+  set(_files_to_remove "${_provided_files}")
+else()
+  message(WARNING "Uninstall state manifest not found: ${_state_file}")
 endif()
 
 list(REMOVE_DUPLICATES _files_to_remove)
-
-foreach(file ${_files_to_remove})
-  if(file STREQUAL "")
+foreach(_file IN LISTS _files_to_remove)
+  if(_file STREQUAL "")
     continue()
   endif()
-  if(EXISTS "${file}" OR IS_SYMLINK "${file}")
-    message(STATUS "Removing ${file}")
-    file(REMOVE "${file}")
+  if(EXISTS "${_file}" OR IS_SYMLINK "${_file}")
+    message(STATUS "Removing ${_file}")
+    file(REMOVE "${_file}")
   endif()
 endforeach()
