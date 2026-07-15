@@ -3,7 +3,7 @@
 set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-build_dir="$root/build/metadata-lint"
+build_dir="$root/build/quality/metadata"
 cd "$root"
 
 for command_name in appstreamcli cmake desktop-file-validate ninja xmllint python3; do

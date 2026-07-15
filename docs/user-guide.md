@@ -18,11 +18,15 @@ open-ip-scanner
 A source build can be installed for the current user with:
 
 ```bash
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build build
-cmake --build build --target install-local
+cmake --preset release
+cmake --build --preset release
+cmake --build --preset release --target install-local
 ~/.local/bin/open-ip-scanner
 ```
+
+All generated source-build output stays beneath the disposable `build/`
+directory. The directly runnable developer binary is always
+`build/dev/open-ip-scanner` after building the `dev` preset.
 
 The runtime requires `ping` from `iputils-ping` and `ip` from `iproute2`.
 Install and start `avahi-daemon` for mDNS hostname enrichment.
@@ -129,7 +133,7 @@ schema migration at startup. Package upgrades use the distribution package
 manager. A local source install can be removed with:
 
 ```bash
-cmake --build build --target uninstall-local
+cmake --build --preset release --target uninstall-local
 ```
 
 That target removes only known Open IP Scanner files under `~/.local` and

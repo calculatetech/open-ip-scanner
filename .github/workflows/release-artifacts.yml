@@ -33,6 +33,7 @@ jobs:
       - name: Run full release gate
         env:
           ASAN_OPTIONS: detect_leaks=0
+          OIS_PROVENANCE_DIR: ${{ runner.temp }}/open-ip-scanner-provenance
           OIS_SKIP_HARDWARE_TIMING_ASSERTIONS: "1"
           OIS_TSAN_EXCLUDE: scan_cancellation_deadlines|linux_neighbor_probe_contract|linux_ping_probe_contract|^startup_accessibility_scale_[12]$
           QT_QPA_PLATFORM: offscreen
@@ -42,18 +43,24 @@ jobs:
         uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a
         with:
           subject-path: |
-            build/release-artifacts/*.deb
-            build/release-artifacts/*.tar.gz
-            build/release-artifacts/*.spdx.json
-            build/release-artifacts/SHA256SUMS
+            release/*.deb
+            ${{ runner.temp }}/open-ip-scanner-provenance/*.tar.gz
+            ${{ runner.temp }}/open-ip-scanner-provenance/*.spdx.json
+            ${{ runner.temp }}/open-ip-scanner-provenance/SHA256SUMS
       - name: Attest package SBOM
         uses: actions/attest-sbom@4651f806c01d8637787e274ac3bdf724ef169f34
         with:
-          subject-path: build/release-artifacts/*.deb
-          sbom-path: build/release-artifacts/*.spdx.json
-      - name: Upload verified release bundle
+          subject-path: release/*.deb
+          sbom-path: ${{ runner.temp }}/open-ip-scanner-provenance/*.spdx.json
+      - name: Upload verified installable package
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: open-ip-scanner-1.0.0
-          path: build/release-artifacts/*
+          path: release/*.deb
+          if-no-files-found: error
+      - name: Upload verification material
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: open-ip-scanner-1.0.0-verification
+          path: ${{ runner.temp }}/open-ip-scanner-provenance/*
           if-no-files-found: error

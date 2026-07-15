@@ -88,15 +88,18 @@ sudo apt install -y \
 ## Build
 
 ```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j$(nproc)
+cmake --preset dev
+cmake --build --preset dev
 ```
 
-Run:
+Run the stable developer validation binary:
 
 ```bash
-./build/open-ip-scanner
+./build/dev/open-ip-scanner
 ```
+
+All repository-local generated output lives beneath `build/`. Remove that one
+directory at any time to return to a source-only working tree.
 
 ## Quality gates
 
@@ -108,12 +111,14 @@ Run the normal build, metadata lint, and all CTest contracts:
 
 `full` adds warnings-as-errors, supported sanitizers, and Clang-Tidy when it is
 available. `release` runs that complete gate, then builds and tests the exact
-Debian package placed in `build/release-artifacts/`.
+Debian package placed in `release/`. That directory contains only installable
+packages; reproducibility and provenance intermediates are removed.
 
 ## Install (local)
 
 ```bash
-cmake --build build --target install-local
+cmake --preset release
+cmake --build --preset release --target install-local
 ```
 
 This target installs under `~/.local` and refreshes available desktop caches as
@@ -123,13 +128,13 @@ session cache tools; distribution packages use their normal triggers.
 ## Uninstall (local)
 
 ```bash
-cmake --build build --target uninstall-local
+cmake --build --preset release --target uninstall-local
 ```
 
 Generic uninstall target (uses the last atomic uninstall-state manifest):
 
 ```bash
-cmake --build build --target uninstall
+cmake --build --preset release --target uninstall
 ```
 
 The local uninstall target refreshes the same available desktop caches after
@@ -139,13 +144,16 @@ removing only the known Open IP Scanner files beneath `~/.local`.
 
 Packaging metadata is included via CPack in `CMakeLists.txt`.
 
-When ready to generate a `.deb`:
+When ready to generate and fully validate a `.deb`:
 
 ```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j$(nproc)
-cpack --config build/CPackConfig.cmake -G DEB
+./scripts/build-release-artifact.sh
 ```
+
+The installable package is written to `release/`. Rebuilding the same version
+atomically replaces only that version's package; other releases are retained
+until a human removes them. Direct CPack output is scratch data and is not a
+supported publication path.
 
 ## Notes
 

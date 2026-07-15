@@ -256,6 +256,14 @@ Priority matches the most severe audit finding an item closes. All items in the 
     corrupt/multiple package rejection, stale output, and cleanup-status
     preservation were repaired; the final fresh adversarial review found no
     actionable issue.
+  - Current branch progress on `0.7.7`: maintained presets, local quality
+    suites, metadata lint, reproducibility candidates, CPack staging, and
+    bundle checks use disposable `build/` scratch. Documentation names
+    `build/dev/open-ip-scanner` as the stable validation binary. Successful
+    release validation removes every package candidate and unpacked staging
+    tree, then publishes one installable package per version beneath `release/`;
+    CI provenance material stays separate. Legacy top-level build/package
+    patterns are no longer ignored, making future drift visible.
 
 #### PLATFORM-SUPPORT
 

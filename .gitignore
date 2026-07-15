@@ -1,63 +1,18 @@
-# Build directories
-build/
-build-*/
-cmake-build-*/
+# Canonical repository-local generated output
+/build/
 
-# CMake
-CMakeCache.txt
-CMakeFiles/
-CMakeScripts/
-CTestTestfile.cmake
-cmake_install.cmake
-install_manifest.txt
-compile_commands.json
-Makefile
-_CPack_Packages/
+# Validated installable packages only
+/release/
 
-# Ninja
-.ninja_deps
-.ninja_log
-build.ninja
-
-# Qt autogen
-*_autogen/
-moc_*.cpp
-qrc_*.cpp
-ui_*.h
-
-# Objects and binaries
-*.d
-*.o
-*.obj
-*.slo
-*.lo
-*.a
-*.lib
-*.la
-*.lai
-*.so
-*.dylib
-*.dll
-*.exe
-*.app
-*.out
-*.pdb
-*.ilk
-*.dwo
-*.gch
-*.pch
-*.mod
-*.smod
+# Python tooling caches
+__pycache__/
+*.py[cod]
 
 # OS/editor
 .DS_Store
 Thumbs.db
 .vscode/
 .idea/
-
-# Packaging artifacts
-_CPack_Packages/
-*.deb
 
 # Local agent validation evidence
 .agent/test-results/

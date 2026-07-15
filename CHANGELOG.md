@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.7.7] - 2026-07-15
+
+### Changed
+
+- Standardize compilation and quality scratch data beneath `build/`, publish
+  only the single validated installable package beneath `release/`, and
+  document stable validation and package paths.
+- Stop ignoring legacy top-level output locations so future build clutter is
+  visible instead of silently accumulating.
+
 ## [0.7.6] - 2026-07-15
 
 ### Fixed

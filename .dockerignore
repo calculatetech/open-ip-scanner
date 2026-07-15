@@ -1,6 +1,7 @@
 .git
 .agent
 build
+release
 build-*
 cmake-build-*
 _CPack_Packages

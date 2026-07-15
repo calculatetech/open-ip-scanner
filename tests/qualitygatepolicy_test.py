@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 from pathlib import Path
+import json
 import os
 import shutil
 import subprocess
@@ -54,6 +55,33 @@ def run_validator(artifact_dir: Path) -> subprocess.CompletedProcess[str]:
     )
 
 
+def build_test_package(
+    output: Path, version: str, marker: str, architecture: str = "amd64"
+) -> None:
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="ois-deb-root-", dir=output.parent) as temporary:
+        package_root = Path(temporary)
+        control = package_root / "DEBIAN"
+        control.mkdir()
+        (control / "control").write_text(
+            "Package: open-ip-scanner\n"
+            f"Version: {version}\n"
+            f"Architecture: {architecture}\n"
+            "Maintainer: Test Fixture <fixture@example.invalid>\n"
+            "Description: Publication policy fixture\n",
+            encoding="utf-8",
+        )
+        payload = package_root / "usr/share/open-ip-scanner"
+        payload.mkdir(parents=True)
+        (payload / "marker").write_text(marker, encoding="utf-8")
+        subprocess.run(
+            ["dpkg-deb", "--build", str(package_root), str(output)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+
 def test_release_artifact_rejection() -> None:
     with tempfile.TemporaryDirectory(prefix="ois-quality-policy-") as temporary:
         root = Path(temporary)
@@ -105,14 +133,14 @@ def test_cleanup_preserves_original_failure() -> None:
         fake_cmake = fake_bin / "cmake"
         fake_cmake.write_text("#!/usr/bin/env bash\nexit 99\n", encoding="utf-8")
         fake_cmake.chmod(0o755)
-        artifact_dir = root / "artifacts"
-        artifact_dir.mkdir()
+        package_root = root / "package-scratch"
+        package_root.mkdir()
         command = (
             f'source "{ROOT / "scripts/build-release-artifact.sh"}"\n'
-            f'artifact_dir="{artifact_dir}"\n'
+            f'package_root="{package_root}"\n'
             "set +e\n"
             "bash -c 'exit 42'\n"
-            "cleanup_failed_artifacts\n"
+            "cleanup_transient_output\n"
         )
         environment = os.environ.copy()
         environment["PATH"] = f"{fake_bin}:{environment['PATH']}"
@@ -125,8 +153,195 @@ def test_cleanup_preserves_original_failure() -> None:
         )
         require(result.returncode == 42,
                 "artifact cleanup masked the original failure status")
-        require("failed to remove incomplete release artifacts" in result.stderr,
-                "artifact cleanup failure was not reported")
+        require("failed to remove transient release output" in result.stderr,
+                "transient cleanup failure was not reported")
+
+
+def test_provenance_destination_safety() -> None:
+    with tempfile.TemporaryDirectory(prefix="ois-provenance-policy-") as temporary:
+        temporary_root = Path(temporary)
+        existing = temporary_root / "existing"
+        existing.mkdir()
+        sentinel = existing / "keep"
+        sentinel.write_text("keep", encoding="utf-8")
+        real_parent = temporary_root / "real-parent"
+        real_parent.mkdir()
+        linked_parent = temporary_root / "linked-parent"
+        linked_parent.symlink_to(real_parent, target_is_directory=True)
+
+        for destination, expected_error in (
+            ("relative-output", "must be an absolute path"),
+            (str(existing), "must not already exist"),
+            (str(linked_parent / "output"), "parent must not traverse symlinks"),
+            (str(ROOT / "nested-output"), "must be outside the repository"),
+        ):
+            command = (
+                f'source "{ROOT / "scripts/build-release-artifact.sh"}"\n'
+                f'root="{ROOT}"\n'
+                f'provenance_dir="{destination}"\n'
+                "prepare_provenance_directory\n"
+            )
+            result = subprocess.run(
+                ["bash", "-c", command],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            require(result.returncode != 0,
+                    f"unsafe provenance destination was accepted: {destination}")
+            require(expected_error in result.stderr,
+                    f"unsafe provenance rejection was unclear: {destination}")
+        require(sentinel.read_text(encoding="utf-8") == "keep",
+                "existing provenance destination was modified")
+
+        safe = temporary_root / "new-provenance"
+        command = (
+            f'source "{ROOT / "scripts/build-release-artifact.sh"}"\n'
+            f'root="{ROOT}"\n'
+            f'provenance_dir="{safe}"\n'
+            "prepare_provenance_directory\n"
+            "test \"$provenance_owned\" -eq 1\n"
+            "set +e\n"
+            "bash -c 'exit 42'\n"
+            "cleanup_transient_output\n"
+        )
+        result = subprocess.run(
+            ["bash", "-c", command],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        require(result.returncode == 42,
+                "owned provenance cleanup masked the original failure")
+        require(not safe.exists(),
+                "owned provenance output survived a failed build")
+
+        raced = temporary_root / "raced-provenance"
+        fake_bin = temporary_root / "race-bin"
+        fake_bin.mkdir()
+        fake_mkdir = fake_bin / "mkdir"
+        fake_mkdir.write_text(
+            "#!/usr/bin/env bash\n"
+            "/usr/bin/mkdir -- \"$2\"\n"
+            "touch \"$2/keep\"\n"
+            "exit 1\n",
+            encoding="utf-8",
+        )
+        fake_mkdir.chmod(0o755)
+        command = (
+            f'source "{ROOT / "scripts/build-release-artifact.sh"}"\n'
+            f'root="{ROOT}"\n'
+            f'provenance_dir="{raced}"\n'
+            "set +e\n"
+            "prepare_provenance_directory\n"
+            "status=$?\n"
+            "test \"$provenance_owned\" -eq 0\n"
+            "exit \"$status\"\n"
+        )
+        environment = os.environ.copy()
+        environment["PATH"] = f"{fake_bin}:{environment['PATH']}"
+        result = subprocess.run(
+            ["bash", "-c", command], cwd=ROOT,
+            capture_output=True, text=True, check=False, env=environment,
+        )
+        require(result.returncode != 0,
+                "losing provenance directory race was accepted")
+        require((raced / "keep").exists(),
+                "directory created by a competing process was deleted")
+
+
+def test_failed_publish_preserves_existing_package() -> None:
+    with tempfile.TemporaryDirectory(prefix="ois-publish-policy-") as temporary:
+        temporary_root = Path(temporary)
+        release = temporary_root / "release"
+        release.mkdir()
+        existing = release / "open-ip-scanner_0.7.7_amd64.deb"
+        build_test_package(existing, "0.7.7", "previous validated package")
+        existing_bytes = existing.read_bytes()
+        candidate = temporary_root / "candidate" / existing.name
+        build_test_package(candidate, "0.7.7", "replacement package")
+
+        staged_failure = (
+            f'source "{ROOT / "scripts/build-release-artifact.sh"}"\n'
+            f'release_dir="{release}"\n'
+            "trap cleanup_transient_output EXIT\n"
+            f'stage_release_package "{candidate}"\n'
+            "false\n"
+        )
+        result = subprocess.run(
+            ["bash", "-c", staged_failure],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        require(result.returncode != 0,
+                "injected post-staging failure unexpectedly succeeded")
+        require(existing.read_bytes() == existing_bytes,
+                "post-staging failure replaced the previous package")
+        require(not list(release.glob(".open-ip-scanner-package.*.tmp")),
+                "post-staging failure left its temporary package behind")
+
+        fake_bin = temporary_root / "bin"
+        fake_bin.mkdir()
+        fake_mv = fake_bin / "mv"
+        fake_mv.write_text("#!/usr/bin/env bash\nexit 73\n", encoding="utf-8")
+        fake_mv.chmod(0o755)
+        command = (
+            f'source "{ROOT / "scripts/build-release-artifact.sh"}"\n'
+            f'release_dir="{release}"\n'
+            f'stage_release_package "{candidate}"\n'
+            "publish_staged_release\n"
+        )
+        environment = os.environ.copy()
+        environment["PATH"] = f"{fake_bin}:{environment['PATH']}"
+        result = subprocess.run(
+            ["bash", "-c", command],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+            env=environment,
+        )
+        require(result.returncode == 73,
+                "publish failure did not preserve the rename status")
+        require("publishing installable package" not in result.stdout and
+                "installable package:" not in result.stdout,
+                "failed publication reported a package as installed")
+        require(existing.read_bytes() == existing_bytes,
+                "failed publication destroyed the previous validated package")
+
+
+def test_publish_retains_other_versions() -> None:
+    with tempfile.TemporaryDirectory(prefix="ois-publish-retention-") as temporary:
+        temporary_root = Path(temporary)
+        release = temporary_root / "release"
+        release.mkdir()
+        previous = release / "open-ip-scanner_0.7.6_amd64.deb"
+        build_test_package(previous, "0.7.6", "previous version")
+        previous_bytes = previous.read_bytes()
+        sentinel = release / ".open-ip-scanner-package.tmp"
+        sentinel.write_text("human-controlled sentinel", encoding="utf-8")
+        same_version = release / "open-ip-scanner_0.7.7_amd64.deb"
+        build_test_package(same_version, "0.7.7", "previous same-version build")
+        candidate = temporary_root / "candidate" / same_version.name
+        build_test_package(candidate, "0.7.7", "replacement package")
+        candidate_bytes = candidate.read_bytes()
+        command = (
+            f'source "{ROOT / "scripts/build-release-artifact.sh"}"\n'
+            f'release_dir="{release}"\n'
+            f'stage_release_package "{candidate}"\n'
+            "publish_staged_release\n"
+        )
+        subprocess.run(["bash", "-c", command], cwd=ROOT, check=True)
+        require(previous.read_bytes() == previous_bytes,
+                "publishing removed a human-controlled previous release")
+        require(sentinel.read_text(encoding="utf-8") == "human-controlled sentinel",
+                "publishing modified a noncanonical release entry")
+        require(same_version.read_bytes() == candidate_bytes,
+                "publishing did not replace the same-version package")
 
 
 def main() -> int:
@@ -181,7 +396,7 @@ def main() -> int:
                 f"artifact job must install package validator dependency: {package}")
     upload = step_with(release, "uses", "actions/upload-artifact@v4")
     upload_options = upload.get("with", {})
-    require(upload_options.get("path") == "build/release-artifacts/*",
+    require(upload_options.get("path") == "release/*.deb",
             "artifact upload path must match the validated package directory")
     require(upload_options.get("if-no-files-found") == "error",
             "artifact upload must fail closed when the package is absent")
@@ -193,13 +408,13 @@ def main() -> int:
             "release mode must execute the same artifact builder as CI")
     artifact_commands = shell_commands(ROOT / "scripts/build-release-artifact.sh")
     require(
-        artifact_commands.index("trap cleanup_failed_artifacts EXIT")
-        < artifact_commands.index('cmake -E remove_directory "$artifact_dir"')
+        artifact_commands.index("trap cleanup_transient_output EXIT")
+        < artifact_commands.index('cmake -E remove_directory "$package_root"')
         < artifact_commands.index("./scripts/validate-metadata.sh"),
-        "failure cleanup must cover stale removal and every later build step",
+        "transient cleanup must cover stale removal and every later build step",
     )
-    require("trap cleanup_failed_artifacts EXIT" in artifact_commands,
-            "failed release builds must remove partial artifacts")
+    require("trap cleanup_transient_output EXIT" in artifact_commands,
+            "release builds must remove transient output on failure")
     require("trap - EXIT" in artifact_commands,
             "successful package validation must disarm failure cleanup")
     require("ctest --test-dir \"$build_dir\" --output-on-failure" in artifact_commands,
@@ -207,12 +422,33 @@ def main() -> int:
     require(any(command.startswith("cpack --config ") for command in artifact_commands),
             "release artifact build must execute CPack")
     for required_command in (
-        'package=$(./scripts/validate-release-artifacts.sh "$artifact_dir")',
+        'package=$(./scripts/validate-release-artifacts.sh "$bundle_dir")',
         './scripts/validate-hardening.sh "$package" "$first_build_dir"',
-        './scripts/validate-release-bundle.sh "$artifact_dir" "$version"',
+        './scripts/validate-release-bundle.sh "$bundle_dir" "$version"',
+        'cmake -E remove_directory "$package_root"',
+        'cmake -E remove_directory "$bundle_dir"',
+        'stage_release_package "$package"',
+        "publish_staged_release",
     ):
         require(required_command in artifact_commands,
                 f"release builder is missing: {required_command}")
+    stage_index = artifact_commands.index('stage_release_package "$package"')
+    package_cleanup_index = artifact_commands.index(
+        'cmake -E remove_directory "$package_root"', stage_index
+    )
+    bundle_cleanup_index = artifact_commands.index(
+        'cmake -E remove_directory "$bundle_dir"', package_cleanup_index
+    )
+    publish_index = artifact_commands.index("publish_staged_release", bundle_cleanup_index)
+    require(
+        stage_index < package_cleanup_index < bundle_cleanup_index < publish_index,
+        "same-version replacement must be the terminal fallible release operation",
+    )
+    require('echo "publishing installable package: $release_dir/$(basename "$package")"' in
+            artifact_commands and
+            not any(command.startswith('echo "installable package:')
+                    for command in artifact_commands),
+            "pre-publication output must be prospective rather than claim success")
     require(sum(command.startswith("cpack --config ") for command in artifact_commands) == 1,
             "the reusable two-candidate builder must contain one CPack command")
 
@@ -232,20 +468,105 @@ def main() -> int:
     release_gate = step_with(release_job, "name", "Run full release gate")
     require(release_gate.get("run") == "./scripts/quality-gate.sh release",
             "attested artifacts must pass the exact full Release gate")
+    require(release_gate.get("env", {}).get("OIS_PROVENANCE_DIR") ==
+            "${{ runner.temp }}/open-ip-scanner-provenance",
+            "release provenance must use the runner temporary directory")
     provenance = step_with(
         release_job, "uses",
         "actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a",
     )
-    require("*.deb" in provenance.get("with", {}).get("subject-path", ""),
-            "build provenance must cover the Debian package")
-    require("*.spdx.json" in provenance.get("with", {}).get("subject-path", ""),
-            "build provenance must cover the standalone SPDX file")
+    provenance_paths = provenance.get("with", {}).get("subject-path", "")
+    require(provenance_paths.splitlines() == [
+        "release/*.deb",
+        "${{ runner.temp }}/open-ip-scanner-provenance/*.tar.gz",
+        "${{ runner.temp }}/open-ip-scanner-provenance/*.spdx.json",
+        "${{ runner.temp }}/open-ip-scanner-provenance/SHA256SUMS",
+    ], "build provenance must cover the exact canonical release bundle")
     sbom_attestation = step_with(
         release_job, "uses",
         "actions/attest-sbom@4651f806c01d8637787e274ac3bdf724ef169f34",
     )
-    require(sbom_attestation.get("with", {}).get("sbom-path", "").endswith("*.spdx.json"),
-            "SBOM attestation must consume the generated SPDX document")
+    require(sbom_attestation.get("with", {}).get("subject-path") ==
+            "release/*.deb",
+            "SBOM subject must use the exact canonical package path")
+    require(sbom_attestation.get("with", {}).get("sbom-path") ==
+            "${{ runner.temp }}/open-ip-scanner-provenance/*.spdx.json",
+            "SBOM attestation must use the exact canonical SPDX path")
+    package_upload = step_with(release_job, "name", "Upload verified installable package")
+    require(package_upload.get("with", {}).get("path") == "release/*.deb",
+            "verified release upload must contain only installable packages")
+    provenance_upload = step_with(release_job, "name", "Upload verification material")
+    require(provenance_upload.get("with", {}).get("path") ==
+            "${{ runner.temp }}/open-ip-scanner-provenance/*",
+            "verification material must remain separate from installable packages")
+    require("prepare_provenance_directory" in artifact_commands,
+            "release builder must validate and own its provenance destination")
+    require(any('"open-ip-scanner-$version.tar.gz"' in command
+                for command in artifact_commands) and
+            any('"open-ip-scanner_${version}_amd64.spdx.json"' in command
+                for command in artifact_commands) and
+            any("> SHA256SUMS" in command for command in artifact_commands),
+            "verification material must carry checksums for its own contents")
+
+    presets = json.loads((ROOT / "CMakePresets.json").read_text(encoding="utf-8"))
+    preset_directories = {
+        preset.get("name"): preset.get("binaryDir")
+        for preset in presets.get("configurePresets", [])
+    }
+    require(preset_directories == {
+        "dev": "${sourceDir}/build/dev",
+        "release": "${sourceDir}/build/release",
+        "asan-ubsan": "${sourceDir}/build/asan-ubsan",
+        "tsan": "${sourceDir}/build/tsan",
+        "clang-tidy": "${sourceDir}/build/clang-tidy",
+    }, "configure presets must use their exact canonical build directories")
+    ignore_lines = set(shell_commands(ROOT / ".gitignore"))
+    require("/build/" in ignore_lines,
+            "the canonical build root must be ignored")
+    require("/release/" in ignore_lines,
+            "the installable package directory must be ignored")
+    for legacy_ignore in ("build-*/", "cmake-build-*/", "_CPack_Packages/", "*.deb"):
+        require(legacy_ignore not in ignore_lines,
+                f"legacy top-level output must not be hidden: {legacy_ignore}")
+    docker_ignore_lines = set(shell_commands(ROOT / ".dockerignore"))
+    for generated_context in (
+        "build", "release", "build-*", "cmake-build-*", "_CPack_Packages", "*.deb"
+    ):
+        require(generated_context in docker_ignore_lines,
+                f"Docker context must exclude generated output: {generated_context}")
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    require("./build/dev/open-ip-scanner" in readme,
+            "README must identify the stable validation binary")
+    require("other releases are retained" in readme,
+            "README must document human-controlled release retention")
+    audit_plan = (ROOT / "docs/execplans/1.0-production-readiness-audit.md").read_text(
+        encoding="utf-8"
+    )
+    require("build-audit" not in audit_plan,
+            "maintained audit reproduction paths must stay beneath build/")
+    require('set(CPACK_PACKAGE_DIRECTORY "${CMAKE_BINARY_DIR}/package-scratch")' in
+            (ROOT / "CMakeLists.txt").read_text(encoding="utf-8"),
+            "direct CPack scratch output must remain inside its build directory")
+    maintained_paths = "\n".join(
+        (ROOT / path).read_text(encoding="utf-8")
+        for path in (
+            "scripts/quality-gate.sh",
+            "scripts/validate-metadata.sh",
+            "scripts/build-release-artifact.sh",
+            ".github/workflows/quality.yml",
+            ".github/workflows/release-artifacts.yml",
+        )
+    )
+    for legacy_path in (
+        "build/quality-",
+        "build/metadata-lint",
+        "build/release-repro-",
+        "build/release-package-",
+        "build/release-artifacts",
+        "build/artifacts/release",
+    ):
+        require(legacy_path not in maintained_paths,
+                f"maintained automation still uses legacy output: {legacy_path}")
 
     metadata_commands = shell_commands(ROOT / "scripts/validate-metadata.sh")
     require(any(command.startswith("appstreamcli validate --no-net --strict")
@@ -257,6 +578,9 @@ def main() -> int:
 
     test_release_artifact_rejection()
     test_cleanup_preserves_original_failure()
+    test_provenance_destination_safety()
+    test_failed_publish_preserves_existing_package()
+    test_publish_retains_other_versions()
     return 0
 
 
