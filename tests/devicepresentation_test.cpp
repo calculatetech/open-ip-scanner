@@ -61,6 +61,10 @@ int main(int argc, char **argv)
     REQUIRE(html.contains("(Verified)"));
     REQUIRE(html.contains("Unknown:9000"));
     REQUIRE(html.contains("(Open)"));
+    REQUIRE(html.contains("SSH:22 (Verified)"));
+    REQUIRE(html.contains("Unknown:9000 (Open)"));
+    REQUIRE(!html.contains("</td><td>(Verified)"));
+    REQUIRE(!html.contains("</td><td>(Open)"));
 
     ScanResult hostile;
     hostile.ip = "<ip&>";

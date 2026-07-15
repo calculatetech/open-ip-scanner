@@ -25,15 +25,20 @@
 #include <QMetaObject>
 #include <QPoint>
 #include <QPushButton>
+#include <QScrollArea>
+#include <QScrollBar>
 #include <QSettings>
 #include <QShortcut>
 #include <QSlider>
 #include <QStandardPaths>
+#include <QSplitter>
 #include <QSysInfo>
 #include <QTableView>
 #include <QTemporaryDir>
 #include <QTextEdit>
+#include <QTextBrowser>
 #include <QTimer>
+#include <QUrl>
 #include <QValidator>
 
 #include <arpa/inet.h>
@@ -329,8 +334,9 @@ struct ScannerWindowTestAccess {
         window.completedScanWasCanceled_ = false;
         window.completeScanPresentation();
         const bool summaryIsComplete =
-            window.statusTextLabel_->text().contains("Discovery: ping 1") &&
-            window.statusTextLabel_->text().contains("Failures: export 700");
+            window.statusTextLabel_->text() ==
+                "Scan complete. 1 host detected." &&
+            store.failureCountsByStage().value("export") == 700;
         window.refreshAdapters();
         return summaryIsComplete;
     }
@@ -490,9 +496,7 @@ struct ScannerWindowTestAccess {
         window.enabledServiceIds_ = {"http", "ssh", "smtp587"};
         const QString concise = window.activeProbeSummary(false);
         const QString detailed = window.activeProbeSummary(true);
-        if (!concise.contains("Fast") ||
-            !concise.contains("TCP 80,22,587") ||
-            !concise.contains("history off") ||
+        if (concise != "Mode: Fast" ||
             !detailed.contains("1 echo attempt") ||
             !detailed.contains("80, 22, 587") ||
             !detailed.contains("HTTP HEAD") ||
@@ -517,10 +521,7 @@ struct ScannerWindowTestAccess {
         window.scanInProgress_ = false;
         window.hasActiveScanOptions_ = false;
         const QString nextScan = window.activeProbeSummary(false);
-        if (!pinned.contains("Fast") || !pinned.contains("TCP 80") ||
-            pinned.contains("TCP 22") || !pinned.contains("history off") ||
-            !nextScan.contains("Maximum") || !nextScan.contains("TCP 22") ||
-            !nextScan.contains("history on")) {
+        if (pinned != "Mode: Fast" || nextScan != "Mode: Maximum") {
             return false;
         }
 
@@ -972,7 +973,7 @@ struct ScannerWindowTestAccess {
         return text.contains(QString("Qt runtime: %1").arg(qVersion())) &&
                text.contains(QString("Running architecture: %1")
                                  .arg(QSysInfo::currentCpuArchitecture())) &&
-               text.contains("Application scope: Linux x86-64 / IPv4") &&
+               !text.contains("Application scope") &&
                text.contains("github.com/calculatetech/open-ip-scanner/tree/main/docs") &&
                text.contains("IEEE Registration Authority public listings") &&
                text.contains("standards.ieee.org/products-programs/regauth/") &&
@@ -987,6 +988,138 @@ struct ScannerWindowTestAccess {
                    "Converging Systems Inc." &&
                !text.contains("Supported for 1.0") &&
                !text.contains("Tested on");
+    }
+
+    static bool externalLinkContract(ScannerWindow &window)
+    {
+        QList<QUrl> launched;
+        const auto previousLauncher = window.urlLauncher_;
+        window.urlLauncher_ = [&launched](const QUrl &url) {
+            launched.append(url);
+            return true;
+        };
+        QTextBrowser browser;
+        browser.setHtml(window.aboutText());
+        window.configureExternalLinks(&browser);
+        const QList<QUrl> expected = {
+            QUrl("https://github.com/calculatetech/open-ip-scanner/tree/main/docs"),
+            QUrl("https://standards.ieee.org/products-programs/regauth/"),
+        };
+        bool invoked = !browser.openLinks() && !browser.openExternalLinks();
+        for (const QUrl &url : expected) {
+            invoked = QMetaObject::invokeMethod(
+                          &browser,
+                          "anchorClicked",
+                          Qt::DirectConnection,
+                          Q_ARG(QUrl, url)) &&
+                      invoked;
+        }
+        window.urlLauncher_ = previousLauncher;
+        return invoked && launched == expected;
+    }
+
+    static bool statusPresentationContract(ScannerWindow &window)
+    {
+        const int originalAccuracy = window.accuracyLevel_;
+        window.accuracyLevel_ = 0;
+        window.scanInProgress_ = false;
+        window.hasActiveScanOptions_ = false;
+        window.updateProbeSummary();
+        if (window.probeSummaryLabel_->text() != "Mode: Fast" ||
+            !window.probeSummaryLabel_->toolTip().isEmpty()) {
+            return false;
+        }
+
+        window.resultModel_->clear();
+        window.completedScanWasCanceled_ = false;
+        window.completeScanPresentation();
+        if (window.statusTextLabel_->text() !=
+            "Scan complete. 0 hosts detected.") {
+            return false;
+        }
+        ScanResult result;
+        result.ip = "192.0.2.200";
+        window.resultModel_->upsertResult(result);
+        window.completeScanPresentation();
+        if (window.statusTextLabel_->text() !=
+            "Scan complete. 1 host detected.") {
+            return false;
+        }
+        window.completedScanWasCanceled_ = true;
+        window.completeScanPresentation();
+        const bool stopped = window.statusTextLabel_->text() ==
+                             "Scan stopped. 1 host detected.";
+        window.accuracyLevel_ = originalAccuracy;
+        window.updateProbeSummary();
+        return stopped;
+    }
+
+    static bool detailsPanePersistenceContract(ScannerWindow &window)
+    {
+        QSettings settings("OpenIPScanner", "OpenIPScanner");
+        settings.remove("appearance/details_pane_height");
+        settings.remove("appearance/show_details_pane");
+        settings.sync();
+
+        window.resize(900, 650);
+        window.show();
+        ScanResult result;
+        result.ip = "192.0.2.210";
+        result.hostnameEvidence = {
+            {"fixture.example", HostnameSource::DnsPtr}};
+        result.mac = "02:00:00:00:00:D2";
+        result.vendor = "Fixture vendor";
+        result.services = {{"ssh", "SSH", 22, false,
+                            ServiceEvidenceLevel::VerifiedProtocol}};
+        window.resultModel_->clear();
+        window.resultModel_->upsertResult(result);
+        window.table_->setCurrentIndex(window.resultModel_->index(0, 0));
+        window.detailsPaneHeight_ = 0;
+        window.setDetailsPaneVisible(true);
+        QApplication::processEvents();
+        QApplication::processEvents();
+        const QList<int> defaultSizes = window.resultsSplitter_->sizes();
+        const bool usefulDefault = defaultSizes.size() == 2 &&
+                                   defaultSizes.at(1) >=
+                                       window.defaultDetailsPaneHeight() &&
+                                   window.detailsPane_->verticalScrollBar()->maximum() == 0;
+
+        const int total = defaultSizes.at(0) + defaultSizes.at(1);
+        const int requestedHeight = std::min(190, total / 2);
+        window.resultsSplitter_->setSizes(
+            {total - requestedHeight, requestedHeight});
+        QApplication::processEvents();
+        const int savedHeight = window.resultsSplitter_->sizes().at(1);
+        window.saveSettings();
+        window.setDetailsPaneVisible(false);
+        window.detailsPaneHeight_ = 0;
+        window.loadSettings();
+        QApplication::processEvents();
+        QApplication::processEvents();
+        const QList<int> restoredSizes = window.resultsSplitter_->sizes();
+        const bool restored = window.detailsPane_->isVisible() &&
+                              window.detailsPaneHeight_ == savedHeight &&
+                              restoredSizes.size() == 2 &&
+                              std::abs(restoredSizes.at(1) - savedHeight) <= 2;
+
+        if (!usefulDefault || !restored) {
+            qWarning() << "details persistence"
+                       << "default sizes" << defaultSizes
+                       << "default required" << window.defaultDetailsPaneHeight()
+                       << "scroll maximum"
+                       << window.detailsPane_->verticalScrollBar()->maximum()
+                       << "saved" << savedHeight
+                       << "member" << window.detailsPaneHeight_
+                       << "restored sizes" << restoredSizes
+                       << "visible" << window.detailsPane_->isVisible();
+        }
+
+        window.setDetailsPaneVisible(false);
+        window.detailsPaneHeight_ = 0;
+        settings.setValue("appearance/show_details_pane", false);
+        settings.remove("appearance/details_pane_height");
+        settings.sync();
+        return usefulDefault && restored;
     }
 
     static bool rendersConciseHostnameProvenance(ScannerWindow &window)
@@ -1470,6 +1603,12 @@ struct ScannerWindowTestAccess {
 
         window.accuracyLevel_ = 3;
         window.startScan();
+        const bool fixtureStartedInMaximumMode =
+            window.probeSummaryLabel_->text() == "Mode: Maximum";
+        window.accuracyLevel_ = 0;
+        window.updateProbeSummary();
+        const bool fixtureModePinned =
+            window.probeSummaryLabel_->text() == "Mode: Maximum";
         QElapsedTimer publicationTimer;
         publicationTimer.start();
         while (window.resultModel_->rowCount() < 3 &&
@@ -1497,7 +1636,9 @@ struct ScannerWindowTestAccess {
         window.adapters_ = originalAdapters;
         window.scanButton_->setEnabled(!window.adapters_.isEmpty());
         return availableWithoutAdapter && observedIncrementalPublication &&
-               completedFixture && endpointsPresent && canceledPromptly;
+               completedFixture && endpointsPresent &&
+               fixtureStartedInMaximumMode && fixtureModePinned &&
+               canceledPromptly;
     }
 
     static bool confirmsDelayedNeighbor(ScannerWindow &window)
@@ -1774,6 +1915,8 @@ int main(int argc, char **argv)
     REQUIRE(ScannerWindowTestAccess::consecutiveProductionScanOptions(window));
     REQUIRE(ScannerWindowTestAccess::parsesAdapterDnsDomains());
     REQUIRE(ScannerWindowTestAccess::aboutReportsRuntimeAndVendorSource(window));
+    REQUIRE(ScannerWindowTestAccess::externalLinkContract(window));
+    REQUIRE(ScannerWindowTestAccess::statusPresentationContract(window));
     REQUIRE(ScannerWindowTestAccess::rendersConciseHostnameProvenance(window));
     REQUIRE(ScannerWindowTestAccess::rendersMergedHostnameEvidence(window));
     REQUIRE(ScannerWindowTestAccess::tableHostnamePresentation(window));
@@ -1782,6 +1925,7 @@ int main(int argc, char **argv)
     REQUIRE(ScannerWindowTestAccess::debugScanContract(window));
     REQUIRE(ScannerWindowTestAccess::confirmsDelayedNeighbor(window));
     REQUIRE(ScannerWindowTestAccess::externalDiagnosticsContract(window));
+    REQUIRE(ScannerWindowTestAccess::detailsPanePersistenceContract(window));
 
     const auto verifiedSsh = probeMockEndpoint(window, "ssh", "SSH-2.0-fixture\r\n");
     REQUIRE(verifiedSsh.first);
@@ -1897,8 +2041,39 @@ int main(int argc, char **argv)
 
         categories->setCurrentRow(2);
         QApplication::processEvents();
-        REQUIRE(dialog->size() == QSize(settingslayout::kDialogWidth,
-                                        settingslayout::kDialogHeight));
+        REQUIRE(dialog->minimumSize() ==
+                QSize(settingslayout::kMinimumDialogWidth,
+                      settingslayout::kMinimumDialogHeight));
+        REQUIRE(dialog->width() >= settingslayout::kMinimumDialogWidth);
+        REQUIRE(dialog->height() >= settingslayout::kMinimumDialogHeight);
+        REQUIRE(dialog->width() <= settingslayout::kPreferredDialogWidth);
+        REQUIRE(dialog->height() <= settingslayout::kPreferredDialogHeight);
+        dialog->resize(settingslayout::kMinimumDialogWidth,
+                       settingslayout::kMinimumDialogHeight);
+        QApplication::processEvents();
+        REQUIRE(dialog->size() ==
+                QSize(settingslayout::kMinimumDialogWidth,
+                      settingslayout::kMinimumDialogHeight));
+        for (int category = 0; category < categories->count(); ++category) {
+            categories->setCurrentRow(category);
+            QApplication::processEvents();
+            QScrollArea *visiblePage = nullptr;
+            for (QScrollArea *scroll :
+                 dialog->findChildren<QScrollArea *>("settingsPageScroll")) {
+                if (scroll->isVisibleTo(dialog)) {
+                    visiblePage = scroll;
+                    break;
+                }
+            }
+            REQUIRE(visiblePage != nullptr);
+            REQUIRE(visiblePage != nullptr &&
+                    visiblePage->horizontalScrollBarPolicy() ==
+                        Qt::ScrollBarAlwaysOff);
+            REQUIRE(visiblePage != nullptr &&
+                    visiblePage->horizontalScrollBar()->maximum() == 0);
+        }
+        categories->setCurrentRow(2);
+        QApplication::processEvents();
         REQUIRE(workerSlider->width() == settingslayout::kSliderWidth);
         REQUIRE(accuracySlider->width() == settingslayout::kSliderWidth);
         REQUIRE(workerSlider->mapTo(dialog, QPoint(0, 0)).x() ==

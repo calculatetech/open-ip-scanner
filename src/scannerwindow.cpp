@@ -63,6 +63,7 @@
 #include <QRegularExpressionValidator>
 #include <QRadioButton>
 #include <QSaveFile>
+#include <QScreen>
 #include <QScrollArea>
 #include <QSet>
 #include <QSettings>
@@ -384,6 +385,17 @@ ScannerWindow::ScannerWindow(QWidget *parent)
     resultsSplitter_->addWidget(detailsPane_);
     resultsSplitter_->setStretchFactor(0, 1);
     resultsSplitter_->setStretchFactor(1, 0);
+    connect(resultsSplitter_, &QSplitter::splitterMoved, this,
+            [this](int, int) {
+        if (!detailsPane_->isVisible()) {
+            return;
+        }
+        const QList<int> sizes = resultsSplitter_->sizes();
+        if (sizes.size() == 2 && sizes.at(1) > 0) {
+            detailsPaneHeight_ = sizes.at(1);
+            scheduleSettingsSave();
+        }
+    });
 
     layout->addWidget(resultsSplitter_, 1);
 
@@ -394,7 +406,7 @@ ScannerWindow::ScannerWindow(QWidget *parent)
     probeSummaryLabel_ = new QLabel(this);
     probeSummaryLabel_->setObjectName("probeSummaryLabel");
     probeSummaryLabel_->setAccessibleDescription(
-        "Probe families and retention policy for the next or active scan");
+        "Accuracy mode for the next or active scan");
     statusProgressBar_ = new QProgressBar(this);
     statusProgressBar_->setAccessibleName("Scan progress");
     statusProgressBar_->setMinimumWidth(240);
@@ -1141,9 +1153,7 @@ void ScannerWindow::startScan()
     adapterCombo_->setEnabled(false);
     targetInput_->setEnabled(false);
 
-    showStatusMessage(QString("Scanning %1 host(s) via %2...")
-                          .arg(hosts.size())
-                          .arg(adapter.interfaceLabel));
+    showStatusMessage("Scanning...");
     statusProgressBar_->setRange(0, static_cast<int>(hosts.size()));
     statusProgressBar_->setValue(0);
     statusProgressBar_->setVisible(true);
@@ -1171,7 +1181,13 @@ void ScannerWindow::startDebugScan()
     scanCompletionPending_ = false;
     resultModel_->clear();
 
+    const int fixtureAccuracy = std::clamp(accuracyLevel_, 0, 3);
     scanInProgress_ = true;
+    activeScanOptions_ = ScanOptions{};
+    activeScanOptions_.accuracyLevel = fixtureAccuracy;
+    hasActiveScanOptions_ = true;
+    activeScanTargetRetained_ = false;
+    updateProbeSummary();
     scanButton_->setToolTip("Stop scan");
     applyToolbarDisplayMode();
     refreshAdaptersButton_->setEnabled(false);
@@ -1180,12 +1196,11 @@ void ScannerWindow::startDebugScan()
     targetInput_->setEnabled(false);
 
     const int total = debugScanFixtureResultCount();
-    showStatusMessage(QString("Running hidden test fixture (%1 devices)...").arg(total));
+    showStatusMessage("Scanning...");
     statusProgressBar_->setRange(0, total);
     statusProgressBar_->setValue(0);
     statusProgressBar_->setVisible(true);
 
-    const int fixtureAccuracy = std::clamp(accuracyLevel_, 0, 3);
     const bool launched = scanSession_->start(
         [fixtureAccuracy](const ScanSession::Cancellation &cancellation,
                           const ScanSession::ProgressCallback &progress,
@@ -1442,39 +1457,13 @@ void ScannerWindow::completeScanPresentation()
 
     statusProgressBar_->setVisible(false);
 
-    QMap<QString, int> discoveryCounts;
-    for (int row = 0; row < resultModel_->rowCount(); ++row) {
-        const QString label = discoveryMethodLabel(
-            resultModel_->resultAt(row).discoveryMethod);
-        discoveryCounts[label] = discoveryCounts.value(label) + 1;
-    }
-    QStringList discoveryParts;
-    for (auto it = discoveryCounts.cbegin(); it != discoveryCounts.cend(); ++it) {
-        discoveryParts << QString("%1 %2").arg(it.key()).arg(it.value());
-    }
-    const QMap<QString, int> failureCounts =
-        DiagnosticsStore::instance().failureCountsByStage();
-    QStringList failureParts;
-    for (auto it = failureCounts.cbegin(); it != failureCounts.cend(); ++it) {
-        failureParts << QString("%1 %2").arg(it.key()).arg(it.value());
-    }
-    const QString failureSummary = failureParts.isEmpty()
-                                       ? QStringLiteral("none")
-                                       : failureParts.join(", ");
-    const QString summarySuffix = discoveryParts.isEmpty()
-                                      ? QString(" Failures: %1.").arg(failureSummary)
-                                      : QString(" Discovery: %1. Failures: %2.")
-                                            .arg(discoveryParts.join(", "))
-                                            .arg(failureSummary);
-    if (resultModel_->rowCount() == 0) {
-        showStatusMessage(completedScanWasCanceled_
-                              ? "Scan stopped. No responding hosts detected." + summarySuffix
-                              : "Scan complete. No responding hosts detected." + summarySuffix);
-    } else {
-        showStatusMessage(completedScanWasCanceled_
-                              ? QString("Scan stopped. %1 host(s) detected.").arg(resultModel_->rowCount()) + summarySuffix
-                              : QString("Scan complete. %1 host(s) detected.").arg(resultModel_->rowCount()) + summarySuffix);
-    }
+    const int hostCount = resultModel_->rowCount();
+    const QString detected = hostCount == 1
+                                 ? QStringLiteral("1 host detected.")
+                                 : QString("%1 hosts detected.").arg(hostCount);
+    showStatusMessage(QString("Scan %1. %2")
+                          .arg(completedScanWasCanceled_ ? "stopped" : "complete",
+                               detected));
 
 }
 
@@ -1886,7 +1875,25 @@ void ScannerWindow::showSettingsDialog()
     QDialog dialog(this);
     dialog.setObjectName("settingsDialog");
     dialog.setWindowTitle("Settings");
-    dialog.setFixedSize(settingslayout::kDialogWidth, settingslayout::kDialogHeight);
+    dialog.setMinimumSize(settingslayout::kMinimumDialogWidth,
+                          settingslayout::kMinimumDialogHeight);
+    QScreen *settingsScreen = QGuiApplication::screenAt(frameGeometry().center());
+    if (settingsScreen == nullptr) {
+        settingsScreen = QGuiApplication::primaryScreen();
+    }
+    const QSize available = settingsScreen == nullptr
+                                ? QSize(settingslayout::kPreferredDialogWidth,
+                                        settingslayout::kPreferredDialogHeight)
+                                : settingsScreen->availableGeometry().size();
+    dialog.resize(
+        settingslayout::initialDialogDimension(
+            available.width(),
+            settingslayout::kMinimumDialogWidth,
+            settingslayout::kPreferredDialogWidth),
+        settingslayout::initialDialogDimension(
+            available.height(),
+            settingslayout::kMinimumDialogHeight,
+            settingslayout::kPreferredDialogHeight));
     dialog.setModal(true);
 
     auto *layout = new QVBoxLayout(&dialog);
@@ -1911,8 +1918,11 @@ void ScannerWindow::showSettingsDialog()
     auto *pages = new QStackedWidget(body);
     const auto addSettingsPage = [pages](QWidget *page) {
         auto *scroll = new QScrollArea(pages);
+        scroll->setObjectName("settingsPageScroll");
         scroll->setFrameShape(QFrame::NoFrame);
         scroll->setWidgetResizable(true);
+        scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        page->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
         scroll->setWidget(page);
         pages->addWidget(scroll);
     };
@@ -1941,6 +1951,10 @@ void ScannerWindow::showSettingsDialog()
     macFormatCombo->addItem("aabb.ccdd.eeff (Cisco)", MacCiscoDot);
     macFormatCombo->addItem("AABBCCDDEEFF (plain upper)", MacPlainUpper);
     macFormatCombo->addItem("aabbccddeeff (plain lower)", MacPlainLower);
+    macFormatCombo->setSizeAdjustPolicy(
+        QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    macFormatCombo->setMinimumContentsLength(18);
+    macFormatCombo->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
     macFormatCombo->setCurrentIndex(std::max(0, macFormatCombo->findData(macDisplayFormat_)));
     auto *targetFormatCombo = new QComboBox(appearancePage);
     targetFormatCombo->setObjectName("settingsTargetFormat");
@@ -1950,6 +1964,10 @@ void ScannerWindow::showSettingsDialog()
     targetFormatCombo->addItem("CIDR (192.168.1.0/24)", "cidr");
     targetFormatCombo->addItem(
         "Begin/end range (192.168.1.1-192.168.1.254)", "range");
+    targetFormatCombo->setSizeAdjustPolicy(
+        QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    targetFormatCombo->setMinimumContentsLength(18);
+    targetFormatCombo->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
     targetFormatCombo->setCurrentIndex(
         targetTextFormat_ == TargetTextFormat::Cidr ? 0 : 1);
     ipCheck->setChecked(!table_->isColumnHidden(ColIp));
@@ -1965,6 +1983,7 @@ void ScannerWindow::showSettingsDialog()
     auto *macFormatForm = new QFormLayout();
     macFormatForm->setHorizontalSpacing(settingslayout::kSectionSpacing);
     macFormatForm->setVerticalSpacing(settingslayout::kControlSpacing);
+    macFormatForm->setRowWrapPolicy(QFormLayout::WrapLongRows);
     macFormatForm->addRow("MAC display format:", macFormatCombo);
     macFormatForm->addRow("Generated targets:", targetFormatCombo);
     appearanceLayout->addLayout(macFormatForm);
@@ -2156,6 +2175,7 @@ void ScannerWindow::showSettingsDialog()
     auto *styleForm = new QFormLayout();
     styleForm->setHorizontalSpacing(settingslayout::kSectionSpacing);
     styleForm->setVerticalSpacing(settingslayout::kControlSpacing);
+    styleForm->setRowWrapPolicy(QFormLayout::WrapLongRows);
     auto *displayModeCombo = new QComboBox(toolbarPage);
     displayModeCombo->setAccessibleName("Default toolbar display style");
     displayModeCombo->addItem("Icon only", 0);
@@ -2492,7 +2512,22 @@ void ScannerWindow::showSettingsDialog()
 
 void ScannerWindow::showAboutDialog()
 {
-    QMessageBox::about(this, "About Open IP Scanner", aboutText());
+    QDialog dialog(this);
+    dialog.setObjectName("aboutDialog");
+    dialog.setWindowTitle("About Open IP Scanner");
+    dialog.resize(560, 360);
+    auto *layout = new QVBoxLayout(&dialog);
+    auto *browser = new QTextBrowser(&dialog);
+    browser->setObjectName("aboutBrowser");
+    browser->setAccessibleName("About Open IP Scanner");
+    browser->setHtml(aboutText());
+    configureExternalLinks(browser);
+    layout->addWidget(browser, 1);
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close, &dialog);
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    layout->addWidget(buttons);
+    dialog.exec();
 }
 
 QString ScannerWindow::aboutText() const
@@ -2500,18 +2535,43 @@ QString ScannerWindow::aboutText() const
     const QString version = QCoreApplication::applicationVersion().isEmpty()
                                 ? QString("Unknown")
                                 : QCoreApplication::applicationVersion();
-    return QString("Open IP Scanner v%1\n"
-                   "Qt runtime: %2\n"
-                   "Running architecture: %3\n\n"
-                   "Application scope: Linux x86-64 / IPv4\n"
-                   "Documentation: https://github.com/calculatetech/open-ip-scanner/tree/main/docs\n\n"
-                   "Vendor database: %4\n"
-                   "Source: IEEE Registration Authority public listings\n"
-                   "https://standards.ieee.org/products-programs/regauth/")
-        .arg(version,
-             QString::fromLatin1(qVersion()),
-             QSysInfo::currentCpuArchitecture(),
-             ouiDatabaseVersion_);
+    return QString(
+               "<h2>Open IP Scanner v%1</h2>"
+               "<p>Qt runtime: %2<br>"
+               "Running architecture: %3</p>"
+               "<p><a href='https://github.com/calculatetech/open-ip-scanner/tree/main/docs'>"
+               "Documentation</a></p>"
+               "<p>Vendor database: %4<br>"
+               "Source: <a href='https://standards.ieee.org/products-programs/regauth/'>"
+               "IEEE Registration Authority public listings</a></p>")
+        .arg(version.toHtmlEscaped(),
+             QString::fromLatin1(qVersion()).toHtmlEscaped(),
+             QSysInfo::currentCpuArchitecture().toHtmlEscaped(),
+             ouiDatabaseVersion_.toHtmlEscaped());
+}
+
+void ScannerWindow::configureExternalLinks(QTextBrowser *browser)
+{
+    browser->setOpenLinks(false);
+    browser->setOpenExternalLinks(false);
+    connect(browser, &QTextBrowser::anchorClicked, browser,
+            [this](const QUrl &url) { openExternalLink(url); });
+}
+
+void ScannerWindow::openExternalLink(const QUrl &url)
+{
+    if (urlLauncher_(url)) {
+        return;
+    }
+    const QString message = QString("Failed to open link: %1").arg(url.toString());
+    QMessageBox::warning(this, "Open Link", message);
+    showStatusMessage(message);
+    DiagnosticsStore::instance().record(diagnosticEvent(
+        DiagnosticSeverity::Error,
+        "launcher.url_failed",
+        "launcher",
+        "Configure a desktop web browser or URL handler.",
+        "The desktop URL handler rejected the request."));
 }
 
 void ScannerWindow::showHelpDialog()
@@ -2521,7 +2581,8 @@ void ScannerWindow::showHelpDialog()
     dialog.resize(760, 520);
     auto *layout = new QVBoxLayout(&dialog);
     auto *browser = new QTextBrowser(&dialog);
-    browser->setOpenExternalLinks(true);
+    browser->setObjectName("helpBrowser");
+    configureExternalLinks(browser);
     browser->setHtml(
         "<h2>Open IP Scanner Usage</h2>"
         "<p><b>Targets:</b> Enter CIDR, ranges, or single IPs. Examples:<br>"
@@ -2538,8 +2599,8 @@ void ScannerWindow::showHelpDialog()
         "Balanced through Maximum progressively repeat ping and port probes and allow cached "
         "neighbor evidence time to become actively confirmed for intermittent, sleeping, or "
         "slower devices.</p>"
-        "<p><b>Scan traffic:</b> The status bar summarizes the active mode before launch; hover "
-        "it for exact attempts and enabled ports. Scans send ICMP echo requests, open TCP "
+        "<p><b>Scan traffic:</b> The status bar identifies the active Accuracy mode. Scans send "
+        "ICMP echo requests, open TCP "
         "connections only to enabled service ports, may send HTTP HEAD, TLS handshakes, or "
         "SMTP EHLO and read bounded banners when those services are enabled, inspect the local "
         "adapter neighbor cache, and perform PTR, system-resolver, and interface-scoped mDNS "
@@ -2629,18 +2690,13 @@ QString ScannerWindow::probeSummary(const ScanOptions &options,
                        definition.id == "smtps465" || definition.id == "smtp587";
     }
 
-    const QString history = targetRetained ? "history on" : "history off";
     if (!detailed) {
         static const std::array<const char *, 4> labels = {
             "Fast", "Balanced", "High", "Maximum"};
         const QString mode = QString::fromLatin1(
             labels[static_cast<std::size_t>(
                 std::clamp(options.accuracyLevel, 0, 3))]);
-        const QString tcp = ports.isEmpty()
-                                ? "no TCP service ports"
-                                : QString("TCP %1").arg(ports.join(','));
-        return QString("%1 · ICMP + %2 + PTR/System/mDNS · %3")
-            .arg(mode, tcp, history);
+        return QString("Mode: %1").arg(mode);
     }
 
     QStringList details;
@@ -2710,7 +2766,7 @@ void ScannerWindow::updateProbeSummary()
         return;
     }
     probeSummaryLabel_->setText(activeProbeSummary(false));
-    probeSummaryLabel_->setToolTip(activeProbeSummary(true));
+    probeSummaryLabel_->setToolTip({});
 }
 
 ScanOptions ScannerWindow::captureScanOptions(const AdapterInfo &adapter) const
@@ -2843,6 +2899,10 @@ void ScannerWindow::loadSettings()
     table_->setColumnHidden(ColMac, !settings.value("appearance/show_mac", true).toBool());
     table_->setColumnHidden(ColVendor, !settings.value("appearance/show_vendor", true).toBool());
     table_->setColumnHidden(ColServices, !settings.value("appearance/show_services", true).toBool());
+    detailsPaneHeight_ = settings.value("appearance/details_pane_height", 0).toInt();
+    if (detailsPaneHeight_ < 0) {
+        detailsPaneHeight_ = 0;
+    }
     const bool showDetails = settings.value("appearance/show_details_pane", false).toBool();
     setDetailsPaneVisible(showDetails);
     if (showDetailsPaneAction_ != nullptr) {
@@ -2970,6 +3030,18 @@ void ScannerWindow::saveSettings() const
     settings.setValue("appearance/show_vendor", !table_->isColumnHidden(ColVendor));
     settings.setValue("appearance/show_services", !table_->isColumnHidden(ColServices));
     settings.setValue("appearance/show_details_pane", detailsPane_->isVisible());
+    int persistedDetailsHeight = detailsPaneHeight_;
+    if (detailsPane_->isVisible()) {
+        const QList<int> sizes = resultsSplitter_->sizes();
+        if (sizes.size() == 2 && sizes.at(1) > 0) {
+            persistedDetailsHeight = sizes.at(1);
+        }
+    }
+    if (persistedDetailsHeight > 0) {
+        settings.setValue("appearance/details_pane_height", persistedDetailsHeight);
+    } else {
+        settings.remove("appearance/details_pane_height");
+    }
     settings.setValue("services/enabled_ids", QStringList(enabledServiceIds_.begin(), enabledServiceIds_.end()));
 
     for (auto it = customCommands_.begin(); it != customCommands_.end(); ++it) {
@@ -3335,15 +3407,55 @@ void ScannerWindow::restoreViewportAnchor(const ViewportAnchor &anchor)
 
 void ScannerWindow::setDetailsPaneVisible(bool visible)
 {
-    detailsPane_->setVisible(visible);
-    if (visible) {
-        updateDetailsPaneForCurrentSelection();
-        QList<int> sizes = resultsSplitter_->sizes();
-        if (sizes.size() == 2 && sizes[1] < 80) {
-            const int total = std::max(1, sizes[0] + sizes[1]);
-            resultsSplitter_->setSizes({static_cast<int>(total * 0.72), static_cast<int>(total * 0.28)});
-        }
+    const int requestedHeight = detailsPaneHeight_;
+    {
+        const QSignalBlocker blocker(resultsSplitter_);
+        detailsPane_->setVisible(visible);
     }
+    if (visible) {
+        if (requestedHeight > 0) {
+            detailsPaneHeight_ = requestedHeight;
+        }
+        updateDetailsPaneForCurrentSelection();
+        QTimer::singleShot(0, this, [this]() {
+            if (detailsPane_->isVisible()) {
+                applyDetailsPaneHeight();
+            }
+        });
+    }
+}
+
+int ScannerWindow::defaultDetailsPaneHeight() const
+{
+    constexpr int recordRows = 5;
+    const int rowHeight = detailsPane_->fontMetrics().lineSpacing() + 8;
+    const int documentMargins = static_cast<int>(
+        detailsPane_->document()->documentMargin() * 2.0 + 0.5);
+    return recordRows * rowHeight + documentMargins +
+           (2 * detailsPane_->frameWidth()) + 8;
+}
+
+void ScannerWindow::applyDetailsPaneHeight()
+{
+    const QList<int> sizes = resultsSplitter_->sizes();
+    if (sizes.size() != 2) {
+        return;
+    }
+    const int total = sizes.at(0) + sizes.at(1);
+    if (total <= 0) {
+        return;
+    }
+    const int minimumTableHeight = table_->horizontalHeader()->height() +
+                                   table_->verticalHeader()->defaultSectionSize() + 8;
+    const int maximumDetailsHeight = std::max(1, total - minimumTableHeight);
+    const int requestedHeight = detailsPaneHeight_ > 0
+                                    ? detailsPaneHeight_
+                                    : defaultDetailsPaneHeight();
+    const int appliedHeight = std::clamp(requestedHeight,
+                                         std::min(60, maximumDetailsHeight),
+                                         maximumDetailsHeight);
+    resultsSplitter_->setSizes({total - appliedHeight, appliedHeight});
+    detailsPaneHeight_ = appliedHeight;
 }
 
 void ScannerWindow::updateDetailsPaneForCurrentSelection()

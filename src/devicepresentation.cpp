@@ -98,7 +98,7 @@ QString deviceDetailsHtml(const ScanResult &result, int macDisplayFormat)
                                              ServiceEvidenceLevel::VerifiedProtocol
                                          ? "Verified"
                                          : "Open";
-            html += QString("<tr><td>%1</td><td>%2</td><td>(%3)</td></tr>")
+            html += QString("<tr><td>%1</td><td>%2 (%3)</td><td></td></tr>")
                         .arg(heading,
                              escaped(serviceEvidenceText(service.label,
                                                          service.port,
