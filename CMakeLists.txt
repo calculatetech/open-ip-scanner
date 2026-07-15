@@ -1,9 +1,22 @@
 cmake_minimum_required(VERSION 3.28)
-project(OpenIpScanner VERSION 0.6.9 LANGUAGES CXX)
+project(OpenIpScanner VERSION 0.7.0 LANGUAGES CXX)
 
 set(OIS_APP_ID "io.github.calculatetech.OpenIpScanner")
 set(OIS_GENERATED_RESOURCE_DIR "${CMAKE_BINARY_DIR}/generated-resources")
 file(MAKE_DIRECTORY "${OIS_GENERATED_RESOURCE_DIR}")
+find_program(GZIP_EXECUTABLE gzip REQUIRED)
+
+function(ois_generate_deterministic_gzip input output)
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${input}")
+    execute_process(
+        COMMAND "${GZIP_EXECUTABLE}" -9 -n -c "${input}"
+        OUTPUT_FILE "${output}"
+        RESULT_VARIABLE gzip_result)
+    if(NOT gzip_result EQUAL 0)
+        message(FATAL_ERROR "Failed to compress ${input}")
+    endif()
+endfunction()
+
 configure_file(
     resources/linux/open-ip-scanner.desktop.in
     "${OIS_GENERATED_RESOURCE_DIR}/${OIS_APP_ID}.desktop"
@@ -12,6 +25,20 @@ configure_file(
     resources/linux/open-ip-scanner.metainfo.xml.in
     "${OIS_GENERATED_RESOURCE_DIR}/${OIS_APP_ID}.metainfo.xml"
     @ONLY)
+configure_file(
+    packaging/open-ip-scanner.1.in
+    "${OIS_GENERATED_RESOURCE_DIR}/open-ip-scanner.1"
+    @ONLY)
+configure_file(
+    packaging/debian/changelog.in
+    "${OIS_GENERATED_RESOURCE_DIR}/changelog"
+    @ONLY)
+ois_generate_deterministic_gzip(
+    "${OIS_GENERATED_RESOURCE_DIR}/changelog"
+    "${OIS_GENERATED_RESOURCE_DIR}/changelog.gz")
+ois_generate_deterministic_gzip(
+    "${OIS_GENERATED_RESOURCE_DIR}/open-ip-scanner.1"
+    "${OIS_GENERATED_RESOURCE_DIR}/open-ip-scanner.1.gz")
 
 include(cmake/PlatformSupport.cmake)
 ois_validate_platform("${CMAKE_SYSTEM_NAME}"
@@ -355,6 +382,22 @@ install(FILES
     DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/metainfo
 )
 
+set(OIS_PACKAGE_DOC_DIR "${CMAKE_INSTALL_DATAROOTDIR}/doc/open-ip-scanner")
+install(FILES
+    packaging/debian/copyright
+    "${OIS_GENERATED_RESOURCE_DIR}/changelog.gz"
+    DESTINATION "${OIS_PACKAGE_DOC_DIR}"
+)
+install(FILES
+    data/README.md
+    DESTINATION "${OIS_PACKAGE_DOC_DIR}"
+    RENAME vendor-data-sources.md
+)
+install(FILES
+    "${OIS_GENERATED_RESOURCE_DIR}/open-ip-scanner.1.gz"
+    DESTINATION "${CMAKE_INSTALL_MANDIR}/man1"
+)
+
 # Cleanup legacy integration filenames from older installs in this prefix.
 install(CODE "
   file(REMOVE
@@ -384,17 +427,29 @@ install(CODE [[
 
 set(CPACK_PACKAGE_NAME "open-ip-scanner")
 set(CPACK_PACKAGE_VENDOR "Open IP Scanner")
-set(CPACK_PACKAGE_CONTACT "mikebeutler84@gmail.com")
+set(CPACK_PACKAGE_CONTACT "Michael Beutler <mikebeutler84@gmail.com>")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY
     "Linux x86-64 IPv4 network scanner using Qt 6.4+")
+set(CPACK_DEBIAN_PACKAGE_DESCRIPTION
+    "Open IP Scanner discovers devices on authorized IPv4 networks and enriches
+ results with interface-scoped neighbor, hostname, vendor, and bounded service
+ evidence. It provides progressive results, cancellable accuracy profiles,
+ CSV export, and privacy-preserving diagnostics in a Qt desktop interface.")
 set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
 set(CPACK_GENERATOR "DEB")
 set(CPACK_DEBIAN_FILE_NAME DEB-DEFAULT)
 set(CPACK_DEBIAN_PACKAGE_SECTION "net")
 set(CPACK_DEBIAN_PACKAGE_PRIORITY "optional")
+set(CPACK_DEBIAN_PACKAGE_HOMEPAGE
+    "https://github.com/calculatetech/open-ip-scanner")
 set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
 set(CPACK_DEBIAN_PACKAGE_DEPENDS "iputils-ping, iproute2")
 set(CPACK_DEBIAN_PACKAGE_RECOMMENDS "avahi-daemon")
+set(CPACK_INSTALL_DEFAULT_DIRECTORY_PERMISSIONS
+    OWNER_READ OWNER_WRITE OWNER_EXECUTE
+    GROUP_READ GROUP_EXECUTE
+    WORLD_READ WORLD_EXECUTE)
+set(CPACK_STRIP_FILES "bin/open-ip-scanner")
 
 include(CPack)
 

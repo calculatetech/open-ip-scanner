@@ -2,6 +2,22 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.7.0] - 2026-07-15
+
+### Added
+
+- Install a Debian-format copyright file, vendor-data source notice,
+  deterministic compressed changelog, and manual page.
+- Validate package metadata, dependencies, directory permissions, stripped
+  binaries, documentation, Lintian results, and disposable installation and
+  removal as part of the Release artifact build.
+
+### Changed
+
+- Use a complete Debian maintainer identity and extended description, retain
+  `avahi-daemon` as an optional recommendation, and keep `avahi-utils`
+  test-only.
+
 ## [0.6.9] - 2026-07-15
 
 ### Changed

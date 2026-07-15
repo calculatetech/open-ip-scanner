@@ -1,0 +1,40 @@
+.TH OPEN-IP-SCANNER 1 "July 2026" "Open IP Scanner @PROJECT_VERSION@" "User Commands"
+.SH NAME
+open-ip-scanner \- scan authorized IPv4 networks from a Qt desktop interface
+.SH SYNOPSIS
+.B open-ip-scanner
+.SH DESCRIPTION
+.B Open IP Scanner
+discovers devices on an IPv4 network selected by the user.
+It presents results progressively and can enrich them with neighbor-cache,
+hostname, vendor, and bounded service evidence.
+.PP
+Only scan networks and devices you are authorized to test.
+.SH TARGETS
+The Targets field accepts a single IPv4 address, an inclusive begin/end range,
+CIDR notation, a shortened final-octet range, or a comma-separated combination.
+At most 4096 distinct targets are accepted in one scan.
+.PP
+The Accuracy setting trades scan speed for retry depth and per-probe timeouts.
+Stop requests cancel active work and preserve results already received.
+.SH FILES
+.TP
+.I $XDG_CONFIG_HOME/OpenIPScanner/OpenIPScanner.conf
+Per-user settings when an XDG configuration directory is configured.
+.TP
+.I $XDG_DATA_HOME/OpenIPScanner/open-ip-scanner/diagnostics/
+Optional diagnostic logs when local logging is enabled.
+.SH NETWORK SERVICES
+ICMP echo and the Linux neighbor table are used for discovery.
+Enabled TCP service probes run only within the selected accuracy budget.
+Hostname enrichment can use system DNS and the local Avahi mDNS daemon.
+.SH SEE ALSO
+.BR ping (8),
+.BR ip-neighbour (8),
+.BR avahi-daemon (8)
+.SH REPORTING BUGS
+Report issues at
+.UR https://github.com/calculatetech/open-ip-scanner/issues
+.UE .
+.SH COPYRIGHT
+Copyright 2026 Calculate Tech. Licensed under the MIT License.

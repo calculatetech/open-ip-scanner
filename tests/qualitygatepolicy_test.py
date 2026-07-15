@@ -43,7 +43,11 @@ def shell_commands(path: Path) -> list[str]:
 
 def run_validator(artifact_dir: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        [str(ROOT / "scripts/validate-release-artifacts.sh"), str(artifact_dir)],
+        [
+            str(ROOT / "scripts/validate-release-artifacts.sh"),
+            "--basic",
+            str(artifact_dir),
+        ],
         check=False,
         capture_output=True,
         text=True,
@@ -147,6 +151,11 @@ def main() -> int:
     build_step = step_with(release, "name", "Build and test release artifact")
     require(build_step.get("run") == "./scripts/build-release-artifact.sh",
             "artifact job must execute the tested release builder")
+    dependency_step = step_with(release, "name", "Install build dependencies")
+    dependency_command = dependency_step.get("run", "")
+    for package in ("binutils", "file", "gzip", "lintian"):
+        require(package in dependency_command.split(),
+                f"artifact job must install package validator dependency: {package}")
     upload = step_with(release, "uses", "actions/upload-artifact@v4")
     upload_options = upload.get("with", {})
     require(upload_options.get("path") == "build/release-artifacts/*.deb",

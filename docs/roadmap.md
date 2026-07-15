@@ -320,6 +320,15 @@ Priority matches the most severe audit finding an item closes. All items in the 
 - [ ] **Make the Debian package policy-clean and license-complete.** `Blocker`
   - Install the MIT license/copyright file, compressed changelog, and a real extended description. Use `Name <email>` maintainer syntax, normalize directory modes to `0755`, strip the runtime binary or provide split debug symbols, and add a manual page or an intentional Lintian override with rationale.
   - Include all notices required for the OUI dataset and any new Avahi dependency. Decide whether mDNS is a required feature (`Depends`) or an optional capability with explicit UI state.
+  - Current progress on `0.7.0`: the Release package installs Debian-format
+    copyright and source notices, a timestamp-free compressed changelog, and a
+    compressed manual page. Its control data uses the complete maintainer,
+    homepage, multi-line description, generated Qt DBus dependencies, and an
+    `avahi-daemon` recommendation without the test-only `avahi-utils`. The
+    package validator enforces 0755 directories, a stripped runtime, complete
+    notices, deterministic gzip headers, disposable `dpkg` install/remove, and
+    zero Lintian errors or warnings. The local full Release gate passes; the
+    clean hosted package job remains before closure.
   - Done when a Release package built in a clean container has zero Lintian errors, every remaining warning has a documented reviewed disposition, installation/removal succeeds, and the installed copyright files satisfy every bundled asset’s terms.
 
 #### DESKTOP-METADATA

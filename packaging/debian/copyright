@@ -1,0 +1,46 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: Open IP Scanner
+Upstream-Contact: Michael Beutler <mikebeutler84@gmail.com>
+Source: https://github.com/calculatetech/open-ip-scanner
+
+Files: *
+Copyright: 2026 Calculate Tech
+License: MIT
+ Permission is hereby granted, free of charge, to any person obtaining a copy
+ of this software and associated documentation files (the "Software"), to deal
+ in the Software without restriction, including without limitation the rights
+ to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ copies of the Software, and to permit persons to whom the Software is
+ furnished to do so, subject to the following conditions:
+ .
+ The above copyright notice and this permission notice shall be included in all
+ copies or substantial portions of the Software.
+ .
+ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ SOFTWARE.
+
+Files: data/ieee/* data/oui.tsv data/oui-manifest.json
+Copyright: IEEE Registration Authority and the organizations identified in the public listings
+License: public-registry-listing
+ The source data is published by the IEEE Registration Authority as public
+ MA-L, MA-M, and MA-S listings at:
+ .
+ https://standards-oui.ieee.org/oui/oui.csv
+ https://standards-oui.ieee.org/oui28/mam.csv
+ https://standards-oui.ieee.org/oui36/oui36.csv
+ .
+ Open IP Scanner is not affiliated with or endorsed by IEEE. The application
+ embeds assignment prefixes and organization names for local vendor lookup;
+ organization addresses are not included in the generated lookup table.
+
+Files: src/mdnsresolver.*
+Copyright: 2026 Calculate Tech
+License: MIT
+Comment: Open IP Scanner communicates with the separately packaged Avahi daemon
+ over D-Bus. It does not bundle or link Avahi source or libraries; the
+ recommended avahi-daemon package provides its own copyright notices.
