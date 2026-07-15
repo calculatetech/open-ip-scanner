@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.28)
-project(OpenIpScanner VERSION 0.7.9 LANGUAGES CXX)
+project(OpenIpScanner VERSION 1.0.0 LANGUAGES CXX)
 
 include(cmake/Hardening.cmake)
 

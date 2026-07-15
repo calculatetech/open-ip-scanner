@@ -24,3 +24,15 @@ These rules extend the workspace-level agent instructions and apply to the entir
 - After a successful required review, automatically create an intentional commit containing only the verified task scope and push the task branch to its upstream remote. No separate prompt is required for that commit or push.
 - Never merge a task branch into `main` until a human has verified the branch and explicitly authorized the merge. A successful automated review, push, or CI run is not human verification and does not authorize merging.
 - Pushing a task branch does not authorize opening a pull request, tagging a release, publishing packages, or merging.
+- Release evidence must describe the exact committed tree that produced it. If
+  packaged or source-archived files change after a release gate, rerun that gate
+  from the new clean commit before treating it as the candidate. Record the
+  final commit identity and post-commit result in the pull request, release
+  record, or ignored `.agent/test-results/` file; do not create a tracked
+  evidence-only commit that would invalidate the evidence it records.
+- Post-commit release validation is not an adversarial review. If it fails,
+  make the correction on the same version branch, repeat the applicable
+  pre-commit validation and review rules, then validate the new exact commit.
+- A release tag and its GitHub release must identify the same commit whose
+  release workflow produced the published package, checksum material, SBOM,
+  and attestations.

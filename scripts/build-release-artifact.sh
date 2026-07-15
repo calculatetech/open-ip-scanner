@@ -192,14 +192,8 @@ main() {
         cmake -E copy \
             "$bundle_dir/open-ip-scanner-$version.tar.gz" \
             "$bundle_dir/open-ip-scanner_${version}_amd64.spdx.json" \
+            "$bundle_dir/SHA256SUMS" \
             "$provenance_dir/"
-        (
-            cd "$provenance_dir"
-            sha256sum \
-                "open-ip-scanner-$version.tar.gz" \
-                "open-ip-scanner_${version}_amd64.spdx.json" \
-                > SHA256SUMS
-        )
     fi
 
     stage_release_package "$package"
