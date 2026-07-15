@@ -30,6 +30,21 @@ QString OuiDatabase::normalizePrefix(const QString &prefix)
     return normalized.left(6);
 }
 
+QString OuiDatabase::normalizeAssignmentPrefix(const QString &prefix)
+{
+    QString normalized = prefix.trimmed().toUpper();
+    normalized.remove(':');
+    normalized.remove('-');
+    normalized.remove('.');
+    static const QRegularExpression hexPattern("^[0-9A-F]+$");
+    if ((normalized.size() != 6 && normalized.size() != 7 &&
+         normalized.size() != 9) ||
+        !hexPattern.match(normalized).hasMatch()) {
+        return {};
+    }
+    return normalized;
+}
+
 bool OuiDatabase::parseOverrides(const QString &text,
                                  QHash<QString, QString> *vendors,
                                  QString *error)
@@ -54,18 +69,11 @@ bool OuiDatabase::parseOverrides(const QString &text,
             }
             return false;
         }
-        QString rawPrefix = line.left(separator).trimmed().toUpper();
-        rawPrefix.remove(':');
-        rawPrefix.remove('-');
-        rawPrefix.remove('.');
-        static const QRegularExpression exactPrefixPattern("^[0-9A-F]{6}$");
-        const QString prefix = exactPrefixPattern.match(rawPrefix).hasMatch()
-                                   ? rawPrefix
-                                   : QString{};
+        const QString prefix = normalizeAssignmentPrefix(line.left(separator));
         const QString vendor = line.mid(separator + 1).trimmed();
         if (prefix.isEmpty()) {
             if (error != nullptr) {
-                *error = QString("Line %1 has an invalid 24-bit hexadecimal OUI prefix.")
+                *error = QString("Line %1 must have a 24-, 28-, or 36-bit hexadecimal prefix.")
                              .arg(index + 1);
             }
             return false;
@@ -90,12 +98,91 @@ QString OuiDatabase::lookup(const QString &mac,
                             const QHash<QString, QString> &customVendors,
                             const QHash<QString, QString> &builtInVendors)
 {
-    const QString prefix = normalizePrefix(mac);
-    if (prefix.isEmpty()) {
+    QString normalized = mac.trimmed().toUpper();
+    normalized.remove(':');
+    normalized.remove('-');
+    normalized.remove('.');
+    static const QRegularExpression macPattern("^[0-9A-F]{12}$");
+    if (!macPattern.match(normalized).hasMatch() ||
+        normalized == "000000000000" || normalized == "FFFFFFFFFFFF") {
         return "Unknown";
     }
-    if (customVendors.contains(prefix)) {
-        return customVendors.value(prefix);
+    bool firstByteOk = false;
+    const int firstByte = normalized.left(2).toInt(&firstByteOk, 16);
+    if (!firstByteOk || (firstByte & 0x01) != 0) {
+        return "Unknown";
     }
-    return builtInVendors.value(prefix, "Unknown");
+    if ((firstByte & 0x02) != 0) {
+        return "Private / randomized";
+    }
+    for (const int digits : {9, 7, 6}) {
+        const QString prefix = normalized.left(digits);
+        if (customVendors.contains(prefix)) {
+            return customVendors.value(prefix);
+        }
+    }
+    for (const int digits : {9, 7, 6}) {
+        const QString prefix = normalized.left(digits);
+        if (builtInVendors.contains(prefix)) {
+            return builtInVendors.value(prefix);
+        }
+    }
+    return "Unknown";
+}
+
+bool OuiDatabase::loadTsv(QIODevice &input,
+                          QHash<QString, QString> *vendors,
+                          QString *error)
+{
+    if (vendors == nullptr) {
+        if (error != nullptr) {
+            *error = "No destination was provided for vendor assignments.";
+        }
+        return false;
+    }
+    QHash<QString, QString> parsed;
+    int lineNumber = 0;
+    while (!input.atEnd()) {
+        ++lineNumber;
+        const QString line = QString::fromUtf8(input.readLine()).trimmed();
+        if (lineNumber == 1 && line == "prefix_bits\tprefix\torganization") {
+            continue;
+        }
+        if (line.isEmpty()) {
+            continue;
+        }
+        const QStringList fields = line.split('\t');
+        if (fields.size() != 3) {
+            if (error != nullptr) {
+                *error = QString("Vendor data line %1 has an invalid field count.")
+                             .arg(lineNumber);
+            }
+            return false;
+        }
+        const QString prefix = normalizeAssignmentPrefix(fields[1]);
+        const int expectedBits = static_cast<int>(prefix.size()) * 4;
+        bool bitsOk = false;
+        const int declaredBits = fields[0].toInt(&bitsOk);
+        const QString vendor = fields[2].trimmed();
+        if (prefix.isEmpty() || !bitsOk || declaredBits != expectedBits ||
+            vendor.isEmpty() || !safeVendorName(vendor) || parsed.contains(prefix)) {
+            if (error != nullptr) {
+                *error = QString("Vendor data line %1 is invalid or duplicated.")
+                             .arg(lineNumber);
+            }
+            return false;
+        }
+        parsed.insert(prefix, vendor);
+    }
+    if (parsed.isEmpty()) {
+        if (error != nullptr) {
+            *error = "Vendor data contains no assignments.";
+        }
+        return false;
+    }
+    *vendors = parsed;
+    if (error != nullptr) {
+        error->clear();
+    }
+    return true;
 }

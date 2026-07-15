@@ -2,7 +2,7 @@
 
 This file is the single source of truth for unfinished product, engineering, documentation, and release work. Detailed evidence for why each 1.0 item exists is in [the production-readiness audit](production-readiness-audit.md). New ideas belong here rather than in a second backlog.
 
-The audited baseline is `0.2.0` at commit `91e0a7a`; `0.5.2` is the latest manually tested version, and versions from `0.5.3` onward are being adversarially reviewed and merged under the explicit waiver for remaining pre-1.0 work. Version 1.0 is not ready. Every unchecked item under “Required for 1.0” is a release gate; the post-1.0 section is explicitly outside the first production release.
+The audited baseline is `0.2.0` at commit `91e0a7a`; `0.5.2` is the latest manually tested version, versions from `0.5.3` onward are being adversarially reviewed and merged under the explicit waiver for remaining pre-1.0 work, and `0.6.4` is the active VENDOR-DATABASE branch. Version 1.0 is not ready. Every unchecked item under “Required for 1.0” is a release gate; the post-1.0 section is explicitly outside the first production release.
 
 ## Delivered implementation increments
 
@@ -32,6 +32,8 @@ The unchecked milestone boxes below mean their complete acceptance criteria are 
 - `0.6.3` — **DIAGNOSTICS:** added privacy-preserving structured failures,
   truthful scan summaries, redacted support export, and opt-in bounded local
   logging with explicit health and remediation.
+- `0.6.4` — **VENDOR-DATABASE:** replaced the unexplained MA-L dump with a
+  reproducible, checksummed MA-L/MA-M/MA-S snapshot and longest-prefix lookup.
 
 **RESULT-SCALING** is human-verified on version `0.4.4`. DUPLICATE-IP-CONFLICTS remains Post-1.0.
 
@@ -256,10 +258,26 @@ Priority matches the most severe audit finding an item closes. All items in the 
 
 #### VENDOR-DATABASE
 
-- [ ] **Curate, license, and update the vendor database reproducibly.** `High`
+- [x] **Curate, license, and update the vendor database reproducibly.** `High`
   - Record the exact IEEE source, retrieval date, license/redistribution terms, and checksum. Generate the embedded database with a reviewed script and cover MA-L, MA-M, and MA-S assignments as allowed by the source terms.
   - Detect locally administered or randomized MAC addresses before assigning a vendor, validate every prefix as hexadecimal, and expose the database version.
   - Done when legal review approves redistribution, regeneration is deterministic, parser fixtures cover all assignment widths and private addresses, and stale data can be updated without hand-editing a 6.3 MB file.
+  - Completion evidence for `0.6.4`: the human source-use review found no stated
+    restriction on the IEEE Registration Authority's downloadable public
+    listings and required direct attribution in About. The exact MA-L, MA-M,
+    and MA-S URLs, retrieval UTC time, row counts, ignored duplicate counts,
+    and raw/compressed/generated SHA-256 values are recorded in a manifest.
+    `tools/update_oui.py` atomically downloads or deterministically regenerates
+    53,315 assignments from timestamp-zero compressed inputs, and CI verifies
+    the offline result. Core contracts cover 24-, 28-, and 36-bit parsing,
+    longest-prefix and custom precedence, malformed/zero/broadcast/multicast
+    rejection, private/randomized addresses, duplicate/header validation, and
+    atomic parse failure. About exposes the snapshot date/count and cites the
+    IEEE public-listing page while omitting support-matrix qualification.
+    Normal and strict suites pass 31/31, ASan/UBSan passes 30/30, and
+    ThreadSanitizer passes 29/29. The final fresh adversarial review found no
+    code or data issue; its planning-text finding was reconciled before
+    publication.
 
 ### Packaging and release operations
 

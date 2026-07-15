@@ -1,6 +1,7 @@
 <RCC>
   <qresource prefix="/data">
-    <file alias="oui.txt">../data/oui.txt</file>
+    <file alias="oui.tsv">../data/oui.tsv</file>
+    <file alias="oui-manifest.json">../data/oui-manifest.json</file>
   </qresource>
   <qresource prefix="/icons">
     <file alias="app.svg">app_icon.svg</file>

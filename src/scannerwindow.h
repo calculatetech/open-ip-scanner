@@ -265,6 +265,7 @@ private:
     QHash<QString, QString> customCommands_;
     QHash<QString, QString> builtInOuiVendors_;
     QHash<QString, QString> customOuiVendors_;
+    QString ouiDatabaseVersion_ = "Unavailable";
 
     ScanSession *scanSession_ = nullptr;
     ProductionScanRunner productionScanRunner_;

@@ -1,0 +1,39 @@
+{
+  "generated": {
+    "path": "data/oui.tsv",
+    "records": 53315,
+    "sha256": "095c4c602269ab50850d89455304e79435c9f624ceb192e4ac1ed10c975db78c"
+  },
+  "retrieved_at_utc": "2026-07-15T02:20:57+00:00",
+  "schema": 1,
+  "source": "IEEE Registration Authority public listings",
+  "sources": [
+    {
+      "compressed_sha256": "4f9326b578b0091c9566f7b6126d546bd828fb7092c0179c5545ff0950254581",
+      "duplicate_rows_ignored": 3,
+      "prefix_bits": 24,
+      "raw_sha256": "ed6a5e244c08e836f89d8abc2e0612bd5493a7cb1717ef182687b442cabc0866",
+      "registry": "MA-L",
+      "rows": 39745,
+      "url": "https://standards-oui.ieee.org/oui/oui.csv"
+    },
+    {
+      "compressed_sha256": "dab5dd4b234cda6a9d67cb0900dfaa06da7838971cde2ce06206181892a65b60",
+      "duplicate_rows_ignored": 0,
+      "prefix_bits": 28,
+      "raw_sha256": "3936a68d5f772c118b50cbef7580fe8ad7397e9878d8937a128330087110c752",
+      "registry": "MA-M",
+      "rows": 6483,
+      "url": "https://standards-oui.ieee.org/oui28/mam.csv"
+    },
+    {
+      "compressed_sha256": "d81d6ca4d07d5e47122a13129f68a7268a92c6dc1672cec31bed203f5034ace6",
+      "duplicate_rows_ignored": 0,
+      "prefix_bits": 36,
+      "raw_sha256": "24ac6d132f6a3bb202b5b4c921b61f2813b58bfbd628b338bf9ca6585a310543",
+      "registry": "MA-S",
+      "rows": 7087,
+      "url": "https://standards-oui.ieee.org/oui36/oui36.csv"
+    }
+  ]
+}

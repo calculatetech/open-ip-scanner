@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.28)
-project(OpenIpScanner VERSION 0.6.3 LANGUAGES CXX)
+project(OpenIpScanner VERSION 0.6.4 LANGUAGES CXX)
 
 include(cmake/PlatformSupport.cmake)
 ois_validate_platform("${CMAKE_SYSTEM_NAME}"
@@ -122,6 +122,7 @@ option(OIS_MDNS_CONTROLLED_FIXTURE
 
 if(BUILD_TESTING)
     find_package(Qt6 6.4 REQUIRED COMPONENTS Test)
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
     add_test(
         NAME platform_supported_contract
         COMMAND ${CMAKE_COMMAND}
@@ -250,6 +251,11 @@ if(BUILD_TESTING)
     add_executable(core_policy_test tests/corepolicy_test.cpp)
     target_link_libraries(core_policy_test PRIVATE ois_core)
     add_test(NAME core_policy_contract COMMAND core_policy_test)
+    add_test(NAME vendor_data_reproducibility
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_SOURCE_DIR}/tools/update_oui.py --offline --check)
+    add_test(NAME vendor_data_generator_contract
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/ouidata_test.py)
 
     add_executable(neighbor_entry_test tests/neighborentry_test.cpp)
     target_link_libraries(neighbor_entry_test PRIVATE ois_core)

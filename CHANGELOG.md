@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.6.4] - 2026-07-14
+
+### Added
+
+- Added a reproducible, checksummed vendor database derived from the IEEE
+  Registration Authority MA-L, MA-M, and MA-S public listings.
+- Added longest-prefix vendor lookup across 24-, 28-, and 36-bit assignments,
+  with private/randomized MAC detection and deterministic update checks.
+
+### Changed
+
+- About now cites the IEEE public-listing source and database version without
+  including platform support-matrix or "tested on" text.
+
 ## [0.6.3] - 2026-07-14
 
 ### Added

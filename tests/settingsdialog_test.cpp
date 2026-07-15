@@ -438,17 +438,19 @@ struct ScannerWindowTestAccess {
         QHash<QString, QString> vendors;
         QString error;
         if (!ScannerWindow::parseCustomOuiOverrides(
-                "00:16:3E=Lab vendor\n# comment\nAABBCC=Camera vendor",
+                "00:16:3E=Lab vendor\n# comment\nAABBCC1=Camera range\n"
+                "AABBCC112=Camera device",
                 &vendors,
                 &error) ||
-            !error.isEmpty() || vendors.size() != 2 ||
+            !error.isEmpty() || vendors.size() != 3 ||
             vendors.value("00163E") != "Lab vendor" ||
-            vendors.value("AABBCC") != "Camera vendor") {
+            vendors.value("AABBCC1") != "Camera range" ||
+            vendors.value("AABBCC112") != "Camera device") {
             return false;
         }
         if (ScannerWindow::parseCustomOuiOverrides(
                 "00163E=Valid\nGG1122=Invalid", &vendors, &error) ||
-            vendors.size() != 2 || vendors.value("00163E") != "Lab vendor" ||
+            vendors.size() != 3 || vendors.value("00163E") != "Lab vendor" ||
             !error.startsWith("Line 2")) {
             return false;
         }
@@ -812,14 +814,25 @@ struct ScannerWindowTestAccess {
                ScannerWindow::parseAdapterDnsDomains("not json").isEmpty();
     }
 
-    static bool aboutReportsRuntimeAndSupport(const ScannerWindow &window)
+    static bool aboutReportsRuntimeAndVendorSource(const ScannerWindow &window)
     {
         const QString text = window.aboutText();
         return text.contains(QString("Qt runtime: %1").arg(qVersion())) &&
                text.contains(QString("Running architecture: %1")
                                  .arg(QSysInfo::currentCpuArchitecture())) &&
-               text.contains("Linux x86-64, IPv4, Qt 6.4 or newer") &&
-               text.contains("Ubuntu 24.04 and Debian 13");
+               text.contains("IEEE Registration Authority public listings") &&
+               text.contains("standards.ieee.org/products-programs/regauth/") &&
+               text.contains("53315 assignments") &&
+               !text.contains("Unavailable") &&
+               window.builtInOuiVendors_.size() == 53315 &&
+               window.builtInOuiVendors_.value("000000") ==
+                   "XEROX CORPORATION" &&
+               window.builtInOuiVendors_.value("0055DA0") ==
+                   "Shinko Technos co.,ltd." &&
+               window.builtInOuiVendors_.value("001BC5000") ==
+                   "Converging Systems Inc." &&
+               !text.contains("Supported for 1.0") &&
+               !text.contains("Tested on");
     }
 
     static bool rendersConciseHostnameProvenance(ScannerWindow &window)
@@ -1485,7 +1498,7 @@ int main(int argc, char **argv)
     REQUIRE(ScannerWindowTestAccess::capturesAllScanOptions(window));
     REQUIRE(ScannerWindowTestAccess::consecutiveProductionScanOptions(window));
     REQUIRE(ScannerWindowTestAccess::parsesAdapterDnsDomains());
-    REQUIRE(ScannerWindowTestAccess::aboutReportsRuntimeAndSupport(window));
+    REQUIRE(ScannerWindowTestAccess::aboutReportsRuntimeAndVendorSource(window));
     REQUIRE(ScannerWindowTestAccess::rendersConciseHostnameProvenance(window));
     REQUIRE(ScannerWindowTestAccess::rendersMergedHostnameEvidence(window));
     REQUIRE(ScannerWindowTestAccess::tableHostnamePresentation(window));

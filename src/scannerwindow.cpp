@@ -538,9 +538,8 @@ void ScannerWindow::setupMenuBar()
 void ScannerWindow::loadOuiDatabase()
 {
     QStringList candidatePaths;
-    candidatePaths << ":/data/oui.txt";
-    candidatePaths << ":/data/../data/oui.txt"; // compatibility with older resource paths
-    candidatePaths << (QCoreApplication::applicationDirPath() + "/oui.txt"); // fallback for dev/test
+    candidatePaths << ":/data/oui.tsv";
+    candidatePaths << (QCoreApplication::applicationDirPath() + "/oui.tsv");
 
     QFile file;
     for (const QString &path : candidatePaths) {
@@ -554,27 +553,30 @@ void ScannerWindow::loadOuiDatabase()
         return;
     }
 
-    const QRegularExpression reHex("^\\s*([0-9A-Fa-f]{2}[-:][0-9A-Fa-f]{2}[-:][0-9A-Fa-f]{2})\\s+\\(hex\\)\\s+(.+)$");
-    const QRegularExpression reBase16("^\\s*([0-9A-Fa-f]{6})\\s+\\(base 16\\)\\s+(.+)$");
+    QHash<QString, QString> parsed;
+    QString error;
+    if (OuiDatabase::loadTsv(file, &parsed, &error)) {
+        builtInOuiVendors_ = parsed;
+    }
 
-    while (!file.atEnd()) {
-        const QString line = QString::fromUtf8(file.readLine()).trimmed();
-        if (line.isEmpty()) {
-            continue;
+    QFile manifest(":/data/oui-manifest.json");
+    if (!manifest.open(QIODevice::ReadOnly)) {
+        manifest.setFileName(
+            QCoreApplication::applicationDirPath() + "/oui-manifest.json");
+        if (!manifest.open(QIODevice::ReadOnly)) {
+            return;
         }
-
-        QRegularExpressionMatch match = reHex.match(line);
-        if (!match.hasMatch()) {
-            match = reBase16.match(line);
-        }
-        if (!match.hasMatch()) {
-            continue;
-        }
-
-        const QString prefix = normalizeOuiPrefix(match.captured(1));
-        const QString vendor = match.captured(2).trimmed();
-        if (!prefix.isEmpty() && !vendor.isEmpty()) {
-            builtInOuiVendors_.insert(prefix, vendor);
+    }
+    if (manifest.isOpen()) {
+        const QJsonObject object =
+            QJsonDocument::fromJson(manifest.readAll()).object();
+        const QString retrieved = object.value("retrieved_at_utc").toString();
+        const int records = object.value("generated").toObject()
+                                .value("records").toInt();
+        if (!retrieved.isEmpty() && records > 0) {
+            ouiDatabaseVersion_ = QString("%1 (%2 assignments)")
+                                      .arg(retrieved.left(10))
+                                      .arg(records);
         }
     }
 }
@@ -2084,7 +2086,10 @@ void ScannerWindow::showSettingsDialog()
                                   settingslayout::kOuterMargin,
                                   settingslayout::kOuterMargin);
     ouiLayout->setSpacing(settingslayout::kControlSpacing);
-    auto *ouiHelp = new QLabel("Custom OUI overrides (one per line): PREFIX=Vendor\nExamples: 00163E=My Lab Vendor, 00:11:22=VendorX", ouiPage);
+    auto *ouiHelp = new QLabel(
+        "Custom vendor overrides (one per line): PREFIX=Vendor\n"
+        "Prefixes may contain 6, 7, or 9 hexadecimal digits.",
+        ouiPage);
     ouiHelp->setWordWrap(true);
     auto *ouiEdit = new QPlainTextEdit(ouiPage);
     QStringList customLines;
@@ -2447,11 +2452,13 @@ QString ScannerWindow::aboutText() const
     return QString("Open IP Scanner v%1\n"
                    "Qt runtime: %2\n"
                    "Running architecture: %3\n\n"
-                   "Supported for 1.0: Linux x86-64, IPv4, Qt 6.4 or newer.\n"
-                   "Tested on Ubuntu 24.04 and Debian 13.")
+                   "Vendor database: %4\n"
+                   "Source: IEEE Registration Authority public listings\n"
+                   "https://standards.ieee.org/products-programs/regauth/")
         .arg(version,
              QString::fromLatin1(qVersion()),
-             QSysInfo::currentCpuArchitecture());
+             QSysInfo::currentCpuArchitecture(),
+             ouiDatabaseVersion_);
 }
 
 void ScannerWindow::showHelpDialog()
@@ -2872,7 +2879,8 @@ void ScannerWindow::loadSettings()
     const int count = settings.beginReadArray("oui/custom_entries");
     for (int i = 0; i < count; ++i) {
         settings.setArrayIndex(i);
-        const QString prefix = normalizeOuiPrefix(settings.value("prefix").toString());
+        const QString prefix = OuiDatabase::normalizeAssignmentPrefix(
+            settings.value("prefix").toString());
         const QString vendor = settings.value("vendor").toString().trimmed();
         if (!prefix.isEmpty() && !vendor.isEmpty() && isSafeTextInput(vendor, 120)) {
             customOuiVendors_.insert(prefix, vendor);
