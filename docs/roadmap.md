@@ -364,6 +364,19 @@ Priority matches the most severe audit finding an item closes. All items in the 
 - [ ] **Apply release hardening and artifact provenance.** `High`
   - Build with the supported distribution hardening flags, full RELRO/immediate binding where supported, stack protection, and fortification. Produce reproducible artifacts or document every remaining nondeterministic input.
   - Generate an SBOM, checksums, signatures, source archive, and build provenance from CI. Never publish a package produced from a dirty working tree.
+  - Current progress on `0.7.3`: checked Release configuration requires PIE,
+    strong stack protection, fortification level 3, stack-clash protection,
+    x86-64 control-flow protection, full RELRO, and immediate binding. The
+    release builder tests two isolated builds and requires byte-identical
+    Debian packages before producing a deterministic source archive,
+    `SHA256SUMS`, and SPDX 2.3 JSON inventory of every installed file. Direct
+    contracts validate bundle determinism, package/file relationships,
+    checksums, workflow permissions, immutable action revisions, and the clean
+    `1.0.0` source refusal. The local 0.7.3 candidates match exactly and pass
+    the hardening baseline, package audit, and bundle audit. The dormant
+    workflow is configured for keyless GitHub build/SBOM attestations, but its
+    separately authorized 1.0 RC run and independent verification remain, so
+    this item stays open.
   - Done when hardening inspection meets the documented baseline, two clean builds produce matching artifacts after normalization, and users can verify signed checksums and provenance.
 
 #### PREFIX-SAFETY

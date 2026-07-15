@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.28)
-project(OpenIpScanner VERSION 0.7.2 LANGUAGES CXX)
+project(OpenIpScanner VERSION 0.7.3 LANGUAGES CXX)
+
+include(cmake/Hardening.cmake)
 
 set(OIS_APP_ID "io.github.calculatetech.OpenIpScanner")
 set(OIS_GENERATED_RESOURCE_DIR "${CMAKE_BINARY_DIR}/generated-resources")
@@ -326,6 +328,9 @@ if(BUILD_TESTING)
     add_test(NAME quality_gate_policy
         COMMAND ${Python3_EXECUTABLE}
                 ${CMAKE_SOURCE_DIR}/tests/qualitygatepolicy_test.py)
+    add_test(NAME release_bundle_contract
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_SOURCE_DIR}/tests/releasebundle_test.py)
     add_test(NAME installed_metadata_contract
         COMMAND ${Python3_EXECUTABLE}
                 ${CMAKE_SOURCE_DIR}/tests/metadatacontract_test.py

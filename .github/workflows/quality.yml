@@ -70,7 +70,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            appstream binutils desktop-file-utils file gzip lintian libxml2-utils \
+            appstream binutils desktop-file-utils devscripts file gzip lintian libxml2-utils \
             ninja-build python3 python3-yaml \
             qt6-base-dev qt6-base-dev-tools qt6-qpa-plugins
       - name: Build and test release artifact
@@ -81,6 +81,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: open-ip-scanner-${{ github.sha }}
-          path: build/release-artifacts/*.deb
+          path: build/release-artifacts/*
           if-no-files-found: error
           retention-days: 14

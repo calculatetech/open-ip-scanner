@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.7.3] - 2026-07-15
+
+### Added
+
+- Add an audited Release hardening baseline, reproducible two-build package
+  comparison, deterministic source archive, SPDX JSON SBOM, and checksums.
+- Add a dormant 1.0-only workflow for keyless GitHub build-provenance and SBOM
+  attestations; creating or running a release remains a separate action.
+
 ## [0.7.2] - 2026-07-15
 
 ### Added

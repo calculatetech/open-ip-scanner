@@ -59,8 +59,10 @@ non-identifying conclusions:
   SPDX JSON SBOM from the clean candidate commit.
 - [ ] Generate keyless GitHub build-provenance and SBOM attestations with the
   least required OIDC permissions and the immutable candidate commit identity.
-- [ ] Verify checksums and run `gh attestation verify` for both package and SBOM
-  against `calculatetech/open-ip-scanner` from a separate clean environment.
+- [ ] Verify checksums and run `gh attestation verify` for the package and SPDX
+  file against `calculatetech/open-ip-scanner` from a separate clean
+  environment. Confirm that the package also has the SPDX document as its SBOM
+  attestation predicate.
 - [ ] Confirm artifact names, versions, architecture, license/notices, manual
   page, support documents, dependencies, and retention policy.
 

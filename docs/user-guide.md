@@ -7,10 +7,11 @@ appear through another supported discovery method.
 
 ## Install and start
 
-On Debian-family systems, install the tested package with:
+On Debian-family systems, change to the directory containing the single
+downloaded package and install it with:
 
 ```bash
-sudo apt install ./open-ip-scanner_0.7.2_amd64.deb
+sudo apt install ./open-ip-scanner_*_amd64.deb
 open-ip-scanner
 ```
 

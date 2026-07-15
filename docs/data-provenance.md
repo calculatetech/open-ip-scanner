@@ -33,3 +33,24 @@ being assigned a public vendor.
 The installed Debian copyright file records the application license, IEEE
 source URLs and usage, and the external Avahi relationship. The current
 snapshot date is visible in Help > About.
+
+## Release artifacts
+
+The Release gate builds the Debian package twice in separate clean build
+directories with one audited `SOURCE_DATE_EPOCH` and requires identical
+SHA-256 hashes. It checks the installed binary for position independence,
+stack protection, fortified library calls, read-only relocations, immediate
+binding, and x86-64 control-flow protection. Configure-time checks reject a
+toolchain that cannot apply the required stack-clash and hardening flags.
+
+The same gate creates a deterministic source archive, `SHA256SUMS`, and an
+SPDX 2.3 JSON document. The SBOM identifies the Debian package by SHA-256 and
+lists every installed regular file with SHA-1 and SHA-256 checksums. License
+fields remain `NOASSERTION` where one expression cannot truthfully cover the
+application, IEEE-derived vendor data, and external runtime components.
+
+The dormant 1.0 workflow in `.github/workflows/release-artifacts.yml` accepts
+only version `1.0.0` from a clean checkout. When separately authorized at the
+release candidate, it uses GitHub's keyless OIDC identity to attest the package,
+source archive, checksums, and SBOM. The ordinary pre-1.0 CI artifact is a test
+bundle, not a signed release.

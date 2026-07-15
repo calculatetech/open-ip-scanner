@@ -8,6 +8,7 @@ import argparse
 import configparser
 import os
 from pathlib import Path
+import re
 import struct
 import subprocess
 import sys
@@ -102,9 +103,17 @@ def main() -> int:
             / f"{args.app_id}.svg"
         )
         pixmap_icon = installed / "share" / "pixmaps" / f"{args.app_id}.svg"
+        user_guide = installed / "share" / "doc" / "open-ip-scanner" / "user-guide.md"
 
-        for required in (binary, desktop, metainfo, hicolor_icon, pixmap_icon):
+        for required in (binary, desktop, metainfo, hicolor_icon, pixmap_icon, user_guide):
             require(required.is_file(), f"installed metadata asset is missing: {required}")
+
+        guide_text = user_guide.read_text(encoding="utf-8")
+        require("./open-ip-scanner_*_amd64.deb" in guide_text,
+                "user guide lacks a shell-safe version-neutral package command")
+        require(not re.search(r"open-ip-scanner_[0-9]+\.[0-9]+\.[0-9]+_amd64\.deb",
+                              guide_text),
+                "user guide contains a stale-prone concrete package version")
 
         require(not any(path.exists() for path in legacy_paths),
                 "a legacy desktop-integration filename remains installed")
