@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.28)
-project(OpenIpScanner VERSION 0.6.2 LANGUAGES CXX)
+project(OpenIpScanner VERSION 0.6.3 LANGUAGES CXX)
 
 include(cmake/PlatformSupport.cmake)
 ois_validate_platform("${CMAKE_SYSTEM_NAME}"
@@ -25,6 +25,8 @@ find_package(Qt6 6.4 REQUIRED COMPONENTS
     Core Widgets Network PrintSupport DBus)
 
 add_library(ois_core STATIC
+    src/diagnostics.h
+    src/diagnostics.cpp
     src/csvexporter.h
     src/csvexporter.cpp
     src/hostnameevidence.h
@@ -155,6 +157,10 @@ if(BUILD_TESTING)
     add_executable(csv_exporter_test tests/csvexporter_test.cpp)
     target_link_libraries(csv_exporter_test PRIVATE ois_core)
     add_test(NAME csv_exporter_contract COMMAND csv_exporter_test)
+
+    add_executable(diagnostics_test tests/diagnostics_test.cpp)
+    target_link_libraries(diagnostics_test PRIVATE ois_core)
+    add_test(NAME diagnostics_privacy_contract COMMAND diagnostics_test)
 
     add_executable(mdns_resolver_test tests/mdnsresolver_test.cpp)
     target_link_libraries(mdns_resolver_test PRIVATE ois_linux Qt6::DBus)

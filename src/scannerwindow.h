@@ -16,6 +16,7 @@
 #include <memory>
 
 #include "scanoptions.h"
+#include "diagnostics.h"
 #include "devicepresentation.h"
 #include "scanresult.h"
 #include "serviceevidence.h"
@@ -39,7 +40,9 @@ class QTimer;
 class QAction;
 class QCloseEvent;
 class QWidget;
+class QUrl;
 struct ScannerWindowTestAccess;
+struct CsvExportData;
 class ResultTableModel;
 class ServiceTagDelegate;
 class ScanSession;
@@ -146,6 +149,7 @@ private:
     void updateDetailsPaneForCurrentSelection();
     QList<ResolverEvent> resolverEventsForDisplayedResults() const;
     QByteArray resolverSupportBundle() const;
+    QMap<QString, bool> diagnosticCapabilities() const;
     QString serviceText(const QList<ServiceHit> &services) const;
     QString formatMacForDisplay(const QString &mac) const;
     QString formatMacForDisplay(const QString &mac, int displayFormat) const;
@@ -153,6 +157,8 @@ private:
     void applyTableFilters();
     bool rowMatchesFilters(int row) const;
     void openService(const QString &ip, const ServiceHit &service);
+    bool exportCsvToPath(const QString &path, const CsvExportData &data);
+    bool saveSupportBundleToPath(const QString &path);
 
     // UI wiring/persistence helpers.
     void setupMenuBar();
@@ -245,6 +251,7 @@ private:
     bool targetLimitWarningActive_ = false;
     bool rememberLastTargetOnLaunch_ = false;
     bool saveTargetHistory_ = false;
+    bool diagnosticLoggingEnabled_ = false;
     QString pendingLastTarget_;
     TargetTextFormat targetTextFormat_ = TargetTextFormat::Cidr;
 
@@ -261,6 +268,8 @@ private:
 
     ScanSession *scanSession_ = nullptr;
     ProductionScanRunner productionScanRunner_;
+    std::function<bool(const QUrl &)> urlLauncher_;
+    std::function<bool(const QString &, const QStringList &)> detachedLauncher_;
     QList<ScanResult> pendingDisplayResults_;
     QTimer *resultFlushTimer_ = nullptr;
     QTimer *settingsSaveTimer_ = nullptr;

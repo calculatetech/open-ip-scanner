@@ -1,4 +1,5 @@
 #include "debugscanfixture.h"
+#include "csvexporter.h"
 #include "mdnsresolver.h"
 #include "settingslayout.h"
 #include "scannerwindow.h"
@@ -8,6 +9,7 @@
 #include "resulttablemodel.h"
 
 #include <QApplication>
+#include <QCheckBox>
 #include <QComboBox>
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -60,6 +62,127 @@ bool writeFailingSettings(QIODevice &, const QSettings::SettingsMap &)
 } // namespace
 
 struct ScannerWindowTestAccess {
+    static bool externalDiagnosticsContract(ScannerWindow &window)
+    {
+        DiagnosticsStore &store = DiagnosticsStore::instance();
+        store.setLoggingEnabled(false);
+        store.clear();
+
+        const QByteArray previousPath = qgetenv("PATH");
+        const QByteArray previousTerminal = qgetenv("TERMINAL");
+        const QByteArray previousKdeTerminal = qgetenv("KDE_TERMINAL_APPLICATION");
+        qputenv("PATH", QByteArray());
+        qputenv("TERMINAL", "missing-terminal-fixture");
+        qputenv("KDE_TERMINAL_APPLICATION", "missing-kde-terminal-fixture");
+        window.buildAdapters();
+        QString terminalError;
+        const bool terminalOpened = window.openPreferredTerminal({}, &terminalError);
+        qputenv("PATH", previousPath);
+        if (previousTerminal.isNull()) {
+            qunsetenv("TERMINAL");
+        } else {
+            qputenv("TERMINAL", previousTerminal);
+        }
+        if (previousKdeTerminal.isNull()) {
+            qunsetenv("KDE_TERMINAL_APPLICATION");
+        } else {
+            qputenv("KDE_TERMINAL_APPLICATION", previousKdeTerminal);
+        }
+        if (terminalOpened || terminalError.isEmpty() ||
+            store.counts().value("dns_suffix.query_failed") != 1 ||
+            store.counts().value("launcher.terminal_failed") != 1) {
+            return false;
+        }
+
+        ScannerWindow::AdapterInfo unavailableAdapter;
+        unavailableAdapter.interfaceName = "fixture-missing";
+        unavailableAdapter.interfaceLabel = "Unavailable fixture";
+        unavailableAdapter.localIp = "192.0.2.123";
+        unavailableAdapter.localMac = "02:00:00:00:00:7B";
+        window.adapters_ = {unavailableAdapter};
+        window.adapterCombo_->clear();
+        window.adapterCombo_->addItem(unavailableAdapter.interfaceLabel, 0);
+        window.adapterCombo_->setCurrentIndex(0);
+        window.targetInput_->setText("192.0.2.124");
+        window.startScan();
+        if (window.scanInProgress_ ||
+            store.counts().value("socket.bind_failed") != 1 ||
+            store.counts().value("dns_suffix.query_failed") != 1) {
+            return false;
+        }
+
+        CsvExportData exportData;
+        exportData.headers = {"IP Address"};
+        exportData.rows = {{"192.0.2.124"}};
+        if (window.exportCsvToPath("/dev/null/scan.csv", exportData) ||
+            window.saveSupportBundleToPath("/dev/null/support.json") ||
+            store.counts().value("export.csv_failed") != 1 ||
+            store.counts().value("export.support_bundle_failed") != 1) {
+            return false;
+        }
+
+        const auto dismissNextDialog = []() {
+            QTimer::singleShot(0, []() {
+                if (auto *dialog = qobject_cast<QDialog *>(
+                        QApplication::activeModalWidget())) {
+                    dialog->reject();
+                }
+            });
+        };
+        const auto previousUrlLauncher = window.urlLauncher_;
+        const auto previousDetachedLauncher = window.detachedLauncher_;
+        window.urlLauncher_ = [](const QUrl &) { return false; };
+        ServiceHit webService;
+        webService.id = "http";
+        webService.label = "HTTP";
+        webService.port = 80;
+        webService.isWeb = true;
+        dismissNextDialog();
+        window.openService("192.0.2.124", webService);
+
+        ServiceHit commandService;
+        commandService.id = "fixture-command";
+        commandService.label = "Fixture";
+        commandService.port = 22;
+        window.customCommands_[commandService.id] =
+            "definitely-missing-executable {host}";
+        dismissNextDialog();
+        window.openService("192.0.2.124", commandService);
+        window.customCommands_[commandService.id] = "/bin/true";
+        window.detachedLauncher_ = [](const QString &, const QStringList &) {
+            return false;
+        };
+        dismissNextDialog();
+        window.openService("192.0.2.124", commandService);
+        window.urlLauncher_ = previousUrlLauncher;
+        window.detachedLauncher_ = previousDetachedLauncher;
+        if (store.counts().value("launcher.url_failed") != 1 ||
+            store.counts().value("launcher.executable_missing") != 1 ||
+            store.counts().value("launcher.start_failed") != 1) {
+            return false;
+        }
+
+        store.clear();
+        for (int index = 0; index < 700; ++index) {
+            store.record(diagnosticEvent(DiagnosticSeverity::Error,
+                                         "export.csv_failed",
+                                         "export",
+                                         "Choose a writable destination."));
+        }
+        ScanResult result;
+        result.ip = "192.0.2.124";
+        result.discoveryMethod = DiscoveryMethod::Ping;
+        window.resultModel_->clear();
+        window.resultModel_->upsertResult(result);
+        window.completedScanWasCanceled_ = false;
+        window.completeScanPresentation();
+        const bool summaryIsComplete =
+            window.statusTextLabel_->text().contains("Discovery: ping 1") &&
+            window.statusTextLabel_->text().contains("Failures: export 700");
+        window.refreshAdapters();
+        return summaryIsComplete;
+    }
+
     static QList<QHostAddress> parseTargets(const ScannerWindow &window,
                                             const QString &text,
                                             QString *error)
@@ -807,20 +930,19 @@ struct ScannerWindowTestAccess {
 
     static bool resolverSupportBundleIsRedacted(ScannerWindow &window)
     {
-        ScanResult result;
-        result.ip = "192.0.2.44";
-        result.interfaceName = "fixture0";
-        result.hostname = "private-device.local";
-        result.resolverEvents = {
-            {ResolverKind::Mdns, ResolverOutcome::Resolved},
-            {ResolverKind::DnsPtr, ResolverOutcome::NoRecord}};
-        window.resultModel_->clear();
-        window.resultModel_->upsertResult(result);
+        DiagnosticsStore::instance().clear();
+        DiagnosticsStore::instance().record(diagnosticEvent(
+            DiagnosticSeverity::Warning,
+            "mdns.daemon_unavailable",
+            "hostname",
+            "Start avahi-daemon.",
+            "192.0.2.44 private-device.local SSH-2.0-secret"));
         const QByteArray bundle = window.resolverSupportBundle();
         return !bundle.contains("192.0.2.44") &&
                !bundle.contains("private-device.local") &&
-               bundle.contains("mdns.resolved") &&
-               bundle.contains("ptr.no_record");
+               !bundle.contains("SSH-2.0-secret") &&
+               bundle.contains("mdns.daemon_unavailable") &&
+               bundle.contains("Start avahi-daemon");
     }
 
     static bool resultScalingContract(ScannerWindow &window)
@@ -1371,6 +1493,7 @@ int main(int argc, char **argv)
     REQUIRE(ScannerWindowTestAccess::resultScalingContract(window));
     REQUIRE(ScannerWindowTestAccess::debugScanContract(window));
     REQUIRE(ScannerWindowTestAccess::confirmsDelayedNeighbor(window));
+    REQUIRE(ScannerWindowTestAccess::externalDiagnosticsContract(window));
 
     const auto verifiedSsh = probeMockEndpoint(window, "ssh", "SSH-2.0-fixture\r\n");
     REQUIRE(verifiedSsh.first);
@@ -1430,6 +1553,7 @@ int main(int argc, char **argv)
         auto *workerSlider = dialog->findChild<QSlider *>("settingsWorkerSlider");
         auto *accuracySlider = dialog->findChild<QSlider *>("settingsAccuracySlider");
         auto *targetFormat = dialog->findChild<QComboBox *>("settingsTargetFormat");
+        auto *diagnosticLog = dialog->findChild<QCheckBox *>("settingsDiagnosticLog");
         auto *workerValue = dialog->findChild<QLabel *>("settingsWorkerValue");
         auto *accuracyValue = dialog->findChild<QLabel *>("settingsAccuracyValue");
         auto *workerRowLabel = dialog->findChild<QLabel *>("settingsWorkerRowLabel");
@@ -1441,6 +1565,7 @@ int main(int argc, char **argv)
         REQUIRE(workerSlider != nullptr);
         REQUIRE(accuracySlider != nullptr);
         REQUIRE(targetFormat != nullptr);
+        REQUIRE(diagnosticLog != nullptr);
         REQUIRE(workerValue != nullptr);
         REQUIRE(accuracyValue != nullptr);
         REQUIRE(workerRowLabel != nullptr);
@@ -1449,7 +1574,7 @@ int main(int argc, char **argv)
         REQUIRE(help != nullptr);
         REQUIRE(buttons != nullptr);
         if (categories == nullptr || workerSlider == nullptr || accuracySlider == nullptr ||
-            targetFormat == nullptr ||
+            targetFormat == nullptr || diagnosticLog == nullptr ||
             workerValue == nullptr || accuracyValue == nullptr || workerRowLabel == nullptr ||
             accuracyRowLabel == nullptr || details == nullptr || help == nullptr ||
             buttons == nullptr) {
@@ -1492,6 +1617,7 @@ int main(int argc, char **argv)
         }
 
         REQUIRE(targetFormat->currentData().toString() == "cidr");
+        diagnosticLog->setChecked(true);
         targetFormat->setCurrentIndex(
             targetFormat->findData(QStringLiteral("range")));
         QPushButton *okButton = buttons->button(QDialogButtonBox::Ok);
@@ -1569,6 +1695,11 @@ int main(int argc, char **argv)
                         REQUIRE(explicitCidrError.isEmpty());
                         REQUIRE(explicitCidrHosts == explicitRangeHosts);
                         REQUIRE(explicitCidrText != explicitRangeText);
+                        QSettings diagnosticSettings(
+                            "OpenIPScanner", "OpenIPScanner");
+                        REQUIRE(DiagnosticsStore::instance().loggingEnabled());
+                        REQUIRE(diagnosticSettings.value(
+                            "diagnostics/log_enabled", false).toBool());
                         app.exit(ok ? EXIT_SUCCESS : EXIT_FAILURE);
                     });
                 });

@@ -1,4 +1,5 @@
 #include "hostnameresolver.h"
+#include "diagnostics.h"
 
 #include <QDnsLookup>
 
@@ -53,6 +54,45 @@ HostnameScanResolution HostnameResolver::resolve(
                                         ResolverOutcome outcome) {
         resolution.resolverEvents = mergeResolverEvents(
             resolution.resolverEvents, {resolver, outcome});
+        if (outcome == ResolverOutcome::Resolved ||
+            outcome == ResolverOutcome::NoRecord ||
+            outcome == ResolverOutcome::Cancelled) {
+            return;
+        }
+        QString resolverName;
+        QString remediation;
+        switch (resolver) {
+        case ResolverKind::Mdns:
+            resolverName = "mdns";
+            remediation = outcome == ResolverOutcome::DaemonUnavailable
+                              ? "Start or install avahi-daemon."
+                              : "Check Avahi, adapter multicast support, and firewall rules.";
+            break;
+        case ResolverKind::DnsPtr:
+            resolverName = "dns_ptr";
+            remediation = "Check DNS configuration and try again.";
+            break;
+        case ResolverKind::System:
+            resolverName = "system_resolver";
+            remediation = "Check the system name-service configuration.";
+            break;
+        }
+        QString outcomeName;
+        switch (outcome) {
+        case ResolverOutcome::TimedOut: outcomeName = "timeout"; break;
+        case ResolverOutcome::BackendUnavailable: outcomeName = "backend_unavailable"; break;
+        case ResolverOutcome::DaemonUnavailable: outcomeName = "daemon_unavailable"; break;
+        case ResolverOutcome::MulticastUnavailable: outcomeName = "multicast_unavailable"; break;
+        case ResolverOutcome::InvalidResponse: outcomeName = "invalid_response"; break;
+        case ResolverOutcome::Resolved:
+        case ResolverOutcome::NoRecord:
+        case ResolverOutcome::Cancelled: return;
+        }
+        DiagnosticsStore::instance().record(diagnosticEvent(
+            DiagnosticSeverity::Warning,
+            resolverName + "." + outcomeName,
+            "hostname",
+            remediation));
     };
 
     const cancellable::DnsPtrLookupResult ptr = ptrLookup_(

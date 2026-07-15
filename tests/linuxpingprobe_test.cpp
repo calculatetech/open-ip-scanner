@@ -1,4 +1,5 @@
 #include "linuxpingprobe.h"
+#include "diagnostics.h"
 
 #include <QCoreApplication>
 #include <QElapsedTimer>
@@ -73,6 +74,7 @@ int main(int argc, char **argv)
         "case \"$OIS_PING_MODE\" in\n"
         "  success) exit 0 ;;\n"
         "  fail) exit 1 ;;\n"
+        "  error) printf '%s\\n' 'ping dependency error' >&2; exit 2 ;;\n"
         "  second) count=0; test -f \"$OIS_PING_COUNTER\" && count=$(cat \"$OIS_PING_COUNTER\"); count=$((count + 1)); printf '%s' \"$count\" > \"$OIS_PING_COUNTER\"; test \"$count\" -ge 2 ;;\n"
         "  slow) exec sleep 5 ;;\n"
         "esac\n");
@@ -91,6 +93,7 @@ int main(int argc, char **argv)
     qputenv("OIS_PING_COUNTER", counterPath.toUtf8());
 
     const LinuxPingProbe probe;
+    DiagnosticsStore::instance().clear();
     const QHostAddress address("192.0.2.55");
     qputenv("OIS_PING_MODE", "success");
     if (!probe.ping(address, "fixture0", 3, 2, TargetBudget(4000), {})) {
@@ -117,6 +120,18 @@ int main(int argc, char **argv)
     if (probe.ping(address, {}, 3, 1, TargetBudget(4000), {}) ||
         invocationCount(callsPath) != 3) {
         std::cerr << "attempt limit contract failed\n";
+        return 1;
+    }
+    if (DiagnosticsStore::instance().counts().contains("ping.failed")) {
+        std::cerr << "ordinary no-response was misclassified as a dependency failure\n";
+        return 1;
+    }
+
+    qputenv("OIS_PING_MODE", "error");
+    if (probe.ping(address, {}, 1, 1, TargetBudget(2000), {}) ||
+        DiagnosticsStore::instance().counts().value("ping.failed") != 1 ||
+        DiagnosticsStore::instance().latestEvents().last().exitStatus != 2) {
+        std::cerr << "ping command failure diagnostics contract failed\n";
         return 1;
     }
 

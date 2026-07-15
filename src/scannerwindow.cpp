@@ -1,6 +1,7 @@
 #include "scannerwindow.h"
 #include "csvexporter.h"
 #include "debugscanfixture.h"
+#include "diagnostics.h"
 #include "devicepresentation.h"
 #include "ouidatabase.h"
 #include "resulttablemodel.h"
@@ -22,6 +23,9 @@
 #include <QCompleter>
 #include <QCoreApplication>
 #include <QDesktopServices>
+#include <QDBusConnection>
+#include <QDBusConnectionInterface>
+#include <QDBusReply>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QFile>
@@ -165,6 +169,12 @@ bool isLikelyVirtualInterface(const QNetworkInterface &iface)
 ScannerWindow::ScannerWindow(QWidget *parent)
     : QMainWindow(parent)
 {
+    urlLauncher_ = [](const QUrl &url) {
+        return QDesktopServices::openUrl(url);
+    };
+    detachedLauncher_ = [](const QString &program, const QStringList &args) {
+        return QProcess::startDetached(program, args);
+    };
     productionScanRunner_ = [](const ScanOptions &options,
                                const QList<QHostAddress> &hosts,
                                const std::shared_ptr<std::atomic_bool> &cancellation,
@@ -514,7 +524,7 @@ void ScannerWindow::setupMenuBar()
     });
 
     QMenu *helpMenu = menuBar()->addMenu("Help");
-    QAction *diagnosticsAction = helpMenu->addAction("Hostname Diagnostics...");
+    QAction *diagnosticsAction = helpMenu->addAction("Diagnostics...");
     connect(diagnosticsAction,
             &QAction::triggered,
             this,
@@ -644,9 +654,19 @@ QList<ScannerWindow::AdapterInfo> ScannerWindow::buildAdapters() const
         domainQuery.exitStatus() == QProcess::NormalExit &&
         domainQuery.exitCode() == 0) {
         dnsDomains = parseAdapterDnsDomains(domainQuery.readAllStandardOutput());
-    } else if (domainQuery.state() != QProcess::NotRunning) {
-        domainQuery.kill();
-        domainQuery.waitForFinished(100);
+    } else {
+        if (domainQuery.state() != QProcess::NotRunning) {
+            domainQuery.kill();
+            domainQuery.waitForFinished(100);
+        }
+        DiagnosticsStore::instance().record(diagnosticEvent(
+            DiagnosticSeverity::Warning,
+            "dns_suffix.query_failed",
+            "adapter_discovery",
+            "Install or repair systemd-resolved, or configure DNS suffixes manually.",
+            domainQuery.errorString(),
+            domainQuery.exitCode(),
+            domainQuery.exitStatus() == QProcess::NormalExit));
     }
 #endif
     const auto interfaces = QNetworkInterface::allInterfaces();
@@ -976,6 +996,7 @@ void ScannerWindow::startScan()
         return;
     }
     if (isDebugScanFixtureTarget(rawTargetText)) {
+        DiagnosticsStore::instance().beginScan();
         startDebugScan();
         return;
     }
@@ -991,6 +1012,7 @@ void ScannerWindow::startScan()
         showStatusMessage("No scan targets resolved.");
         return;
     }
+    DiagnosticsStore::instance().beginScan();
     const int selectedAdapterData = adapterCombo_->currentData().toInt();
     int adapterIdx = selectedAdapterData;
     if (selectedAdapterData == -1) {
@@ -1014,6 +1036,12 @@ void ScannerWindow::startScan()
     {
         QTcpSocket bindProbe;
         if (!bindProbe.bind(bindAddress, 0)) {
+            DiagnosticsStore::instance().record(diagnosticEvent(
+                DiagnosticSeverity::Error,
+                "socket.bind_failed",
+                "scan_start",
+                "Refresh adapters and select an active IPv4 adapter.",
+                bindProbe.errorString()));
             showStatusMessage(QString("Adapter binding failed on '%1' (%2).")
                                   .arg(adapter.interfaceLabel, adapter.localIp));
             return;
@@ -1201,7 +1229,7 @@ bool ScannerWindow::openPreferredTerminal(const QStringList &args, QString *erro
         if (resolved.isEmpty()) {
             return false;
         }
-        if (QProcess::startDetached(resolved, args)) {
+        if (detachedLauncher_(resolved, args)) {
             return true;
         }
         if (error != nullptr) {
@@ -1223,6 +1251,12 @@ bool ScannerWindow::openPreferredTerminal(const QStringList &args, QString *erro
     if (error != nullptr && error->isEmpty()) {
         *error = QString("No runnable terminal command found (tried: %1, konsole, x-terminal-emulator).").arg(preferred);
     }
+    DiagnosticsStore::instance().record(diagnosticEvent(
+        DiagnosticSeverity::Error,
+        "launcher.terminal_failed",
+        "launcher",
+        "Configure an installed terminal in Settings.",
+        error == nullptr ? QString() : *error));
     return false;
 }
 
@@ -1231,10 +1265,16 @@ void ScannerWindow::openService(const QString &ip, const ServiceHit &service)
     if (service.isWeb) {
         const QString scheme = (service.id == "https") ? "https" : "http";
         const QUrl url(QString("%1://%2").arg(scheme, ip));
-        if (!QDesktopServices::openUrl(url)) {
+        if (!urlLauncher_(url)) {
             const QString message = QString("Failed to open URL: %1").arg(url.toString());
             QMessageBox::warning(this, "Open Service", message);
             showStatusMessage(message);
+            DiagnosticsStore::instance().record(diagnosticEvent(
+                DiagnosticSeverity::Error,
+                "launcher.url_failed",
+                "launcher",
+                "Configure a desktop handler for this service.",
+                "The desktop URL handler rejected the request."));
         }
         return;
     }
@@ -1280,14 +1320,26 @@ void ScannerWindow::openService(const QString &ip, const ServiceHit &service)
                                     .arg(programToken, command);
         QMessageBox::warning(this, "Open Service", message);
         showStatusMessage(QString("Service launch failed: missing executable '%1'.").arg(programToken));
+        DiagnosticsStore::instance().record(diagnosticEvent(
+            DiagnosticSeverity::Error,
+            "launcher.executable_missing",
+            "launcher",
+            "Install the configured program or update its command in Settings.",
+            programToken));
         return;
     }
 
-    if (!QProcess::startDetached(resolvedProgram, args)) {
+    if (!detachedLauncher_(resolvedProgram, args)) {
         const QString message = QString("Failed to run command:\n%1\nResolved executable: %2")
                                     .arg(command, resolvedProgram);
         QMessageBox::warning(this, "Open Service", message);
         showStatusMessage(QString("Service launch failed: %1").arg(command));
+        DiagnosticsStore::instance().record(diagnosticEvent(
+            DiagnosticSeverity::Error,
+            "launcher.start_failed",
+            "launcher",
+            "Verify the configured service command in Settings.",
+            programToken));
     }
 }
 
@@ -1338,14 +1390,38 @@ void ScannerWindow::completeScanPresentation()
 
     statusProgressBar_->setVisible(false);
 
+    QMap<QString, int> discoveryCounts;
+    for (int row = 0; row < resultModel_->rowCount(); ++row) {
+        const QString label = discoveryMethodLabel(
+            resultModel_->resultAt(row).discoveryMethod);
+        discoveryCounts[label] = discoveryCounts.value(label) + 1;
+    }
+    QStringList discoveryParts;
+    for (auto it = discoveryCounts.cbegin(); it != discoveryCounts.cend(); ++it) {
+        discoveryParts << QString("%1 %2").arg(it.key()).arg(it.value());
+    }
+    const QMap<QString, int> failureCounts =
+        DiagnosticsStore::instance().failureCountsByStage();
+    QStringList failureParts;
+    for (auto it = failureCounts.cbegin(); it != failureCounts.cend(); ++it) {
+        failureParts << QString("%1 %2").arg(it.key()).arg(it.value());
+    }
+    const QString failureSummary = failureParts.isEmpty()
+                                       ? QStringLiteral("none")
+                                       : failureParts.join(", ");
+    const QString summarySuffix = discoveryParts.isEmpty()
+                                      ? QString(" Failures: %1.").arg(failureSummary)
+                                      : QString(" Discovery: %1. Failures: %2.")
+                                            .arg(discoveryParts.join(", "))
+                                            .arg(failureSummary);
     if (resultModel_->rowCount() == 0) {
         showStatusMessage(completedScanWasCanceled_
-                              ? "Scan stopped. No responding hosts detected."
-                              : "Scan complete. No responding hosts detected.");
+                              ? "Scan stopped. No responding hosts detected." + summarySuffix
+                              : "Scan complete. No responding hosts detected." + summarySuffix);
     } else {
         showStatusMessage(completedScanWasCanceled_
-                              ? QString("Scan stopped. %1 host(s) detected.").arg(resultModel_->rowCount())
-                              : QString("Scan complete. %1 host(s) detected.").arg(resultModel_->rowCount()));
+                              ? QString("Scan stopped. %1 host(s) detected.").arg(resultModel_->rowCount()) + summarySuffix
+                              : QString("Scan complete. %1 host(s) detected.").arg(resultModel_->rowCount()) + summarySuffix);
     }
 
 }
@@ -1719,12 +1795,30 @@ void ScannerWindow::exportCsv()
     const CsvExportData exportData = CsvExporter::selectTable(
         headers, rows, rowVisible, columns, filteredRows->isChecked());
 
-    const CsvExportOutcome outcome = CsvExporter::exportFile(path, exportData);
-    if (outcome.status != CsvExportStatus::Success) {
-        QMessageBox::warning(this, "Export CSV", outcome.error);
+    if (!exportCsvToPath(path, exportData)) {
+        QMessageBox::warning(
+            this,
+            "Export CSV",
+            "Could not export the CSV file. Check the destination and retry.");
         return;
     }
     showStatusMessage(QString("Exported CSV to %1").arg(path));
+}
+
+bool ScannerWindow::exportCsvToPath(const QString &path,
+                                    const CsvExportData &exportData)
+{
+    const CsvExportOutcome outcome = CsvExporter::exportFile(path, exportData);
+    if (outcome.status != CsvExportStatus::Success) {
+        DiagnosticsStore::instance().record(diagnosticEvent(
+            DiagnosticSeverity::Error,
+            "export.csv_failed",
+            "export",
+            "Choose a writable destination and retry the export.",
+            outcome.error));
+        return false;
+    }
+    return true;
 }
 
 void ScannerWindow::printTable()
@@ -1786,7 +1880,7 @@ void ScannerWindow::showSettingsDialog()
     auto *categories = new QListWidget(body);
     categories->setObjectName("settingsCategories");
     categories->setFixedWidth(settingslayout::kNavigationWidth);
-    categories->addItems({"Appearance", "Services", "Performance", "Programs", "OUI Prefixes", "Toolbar"});
+    categories->addItems({"Appearance", "Services", "Performance", "Diagnostics", "Programs", "OUI Prefixes", "Toolbar"});
 
     auto *pages = new QStackedWidget(body);
     const auto addSettingsPage = [pages](QWidget *page) {
@@ -1936,6 +2030,27 @@ void ScannerWindow::showSettingsDialog()
     performanceLayout->addWidget(accuracyHelp, 3, 0, 1, 3);
     performanceLayout->setRowStretch(4, 1);
     addSettingsPage(performancePage);
+
+    auto *diagnosticsPage = new QWidget(pages);
+    auto *diagnosticsLayout = new QVBoxLayout(diagnosticsPage);
+    diagnosticsLayout->setContentsMargins(settingslayout::kOuterMargin,
+                                           settingslayout::kOuterMargin,
+                                           settingslayout::kOuterMargin,
+                                           settingslayout::kOuterMargin);
+    diagnosticsLayout->setSpacing(settingslayout::kControlSpacing);
+    auto *diagnosticLogCheck = new QCheckBox(
+        "Enable rotating local diagnostic log", diagnosticsPage);
+    diagnosticLogCheck->setObjectName("settingsDiagnosticLog");
+    diagnosticLogCheck->setChecked(diagnosticLoggingEnabled_);
+    auto *diagnosticPrivacy = new QLabel(
+        "Logs stay on this computer and are limited to three 1 MiB files. "
+        "Default support exports omit targets, hostnames, service payloads, and raw error text.",
+        diagnosticsPage);
+    diagnosticPrivacy->setWordWrap(true);
+    diagnosticsLayout->addWidget(diagnosticLogCheck);
+    diagnosticsLayout->addWidget(diagnosticPrivacy);
+    diagnosticsLayout->addStretch(1);
+    addSettingsPage(diagnosticsPage);
 
     auto *programsPage = new QWidget(pages);
     auto *programsLayout = new QFormLayout(programsPage);
@@ -2245,6 +2360,8 @@ void ScannerWindow::showSettingsDialog()
 
     updateWorkerLabel(workerSlider->value());
     accuracyLevel_ = std::clamp(accuracySlider->value(), 0, 3);
+    diagnosticLoggingEnabled_ = diagnosticLogCheck->isChecked();
+    DiagnosticsStore::instance().setLoggingEnabled(diagnosticLoggingEnabled_);
 
     table_->setColumnHidden(ColIp, !ipCheck->isChecked());
     table_->setColumnHidden(ColHostname, !hostCheck->isChecked());
@@ -2373,8 +2490,9 @@ void ScannerWindow::showHelpDialog()
         "confirms it.</p>"
         "<p><b>Details:</b> The details pane lists detected hostnames and services with short "
         "source labels. Opening it does not send extra network requests.</p>"
-        "<p><b>Hostname diagnostics:</b> Help &rarr; Hostname Diagnostics shows resolver and "
-        "Avahi health counts and can save a redacted JSON support bundle.</p>"
+        "<p><b>Diagnostics:</b> Help &rarr; Diagnostics shows local capability and failure "
+        "counts with remediation and can save a redacted JSON support bundle. Optional "
+        "rotating local logs can be enabled in Settings &rarr; Diagnostics.</p>"
         "<p><b>Filtering:</b> Use Find to filter by IP, hostname, MAC, vendor, services, or OUI prefix.</p>"
         "<p><b>Privacy:</b> Target history is off by default. Settings can enable local history, "
         "optionally restore its last target on launch, or clear retained targets immediately.</p>"
@@ -2621,6 +2739,8 @@ void ScannerWindow::loadSettings()
 
     maxParallelProbes_ = std::clamp(settings.value("performance/max_parallel_probes", 4).toInt(), 1, kMaxParallelProbes);
     accuracyLevel_ = std::clamp(settings.value("performance/accuracy_level", 1).toInt(), 0, 3);
+    diagnosticLoggingEnabled_ = settings.value("diagnostics/log_enabled", false).toBool();
+    DiagnosticsStore::instance().setLoggingEnabled(diagnosticLoggingEnabled_);
     saveTargetHistory_ = settings.value("targets/save_history", false).toBool();
     rememberLastTargetOnLaunch_ =
         saveTargetHistory_ && settings.value("targets/remember_last", false).toBool();
@@ -2769,6 +2889,7 @@ void ScannerWindow::saveSettings() const
     settings.setValue("window/size", size());
     settings.setValue("performance/max_parallel_probes", maxParallelProbes_);
     settings.setValue("performance/accuracy_level", accuracyLevel_);
+    settings.setValue("diagnostics/log_enabled", diagnosticLoggingEnabled_);
     settings.setValue("toolbar/display_mode", toolbarDisplayMode_);
     settings.setValue("toolbar/order", toolbarOrder_);
     for (const QString &id : kToolbarButtonIds) {
@@ -3176,21 +3297,62 @@ QByteArray ScannerWindow::resolverSupportBundle() const
     const QString version = QCoreApplication::applicationVersion().isEmpty()
                                 ? QString(OPEN_IP_SCANNER_VERSION)
                                 : QCoreApplication::applicationVersion();
-    return resolverSupportBundleJson(resolverEventsForDisplayedResults(),
-                                     version,
-                                     QSysInfo::prettyProductName());
+    const DiagnosticsStore &store = DiagnosticsStore::instance();
+    return diagnosticsSupportBundleJson(store.latestEvents(),
+                                        store.counts(),
+                                        diagnosticCapabilities(),
+                                        version,
+                                        QString(OPEN_IP_SCANNER_VERSION),
+                                        QSysInfo::prettyProductName());
+}
+
+bool ScannerWindow::saveSupportBundleToPath(const QString &path)
+{
+    QSaveFile file(path);
+    const QByteArray payload = resolverSupportBundle();
+    if (!file.open(QIODevice::WriteOnly) ||
+        file.write(payload) != payload.size() ||
+        !file.commit()) {
+        DiagnosticsStore::instance().record(diagnosticEvent(
+            DiagnosticSeverity::Error,
+            "export.support_bundle_failed",
+            "export",
+            "Choose a writable destination and retry the export.",
+            file.errorString()));
+        return false;
+    }
+    return true;
+}
+
+QMap<QString, bool> ScannerWindow::diagnosticCapabilities() const
+{
+    const QDBusConnection systemBus = QDBusConnection::systemBus();
+    QDBusConnectionInterface *busInterface = systemBus.interface();
+    const QDBusReply<bool> avahiRegistered = busInterface == nullptr
+                                                 ? QDBusReply<bool>()
+                                                 : busInterface->isServiceRegistered(
+                                                       "org.freedesktop.Avahi");
+    return {{"Avahi service", avahiRegistered.isValid() && avahiRegistered.value()},
+            {"DNS resolver", true},
+            {"ip neighbor tool", !QStandardPaths::findExecutable("ip").isEmpty()},
+            {"ping tool", !QStandardPaths::findExecutable("ping").isEmpty()}};
 }
 
 void ScannerWindow::showResolverDiagnostics()
 {
     QDialog dialog(this);
-    dialog.setWindowTitle("Hostname Diagnostics");
+    dialog.setWindowTitle("Diagnostics");
     dialog.resize(520, 360);
     auto *layout = new QVBoxLayout(&dialog);
     auto *summary = new QPlainTextEdit(&dialog);
     summary->setReadOnly(true);
-    summary->setPlainText(resolverDiagnosticsText(
-        resolverEventsForDisplayedResults()));
+    summary->setPlainText(diagnosticsSummaryText(
+        DiagnosticsStore::instance().latestEvents(),
+        DiagnosticsStore::instance().counts(),
+        diagnosticCapabilities()) +
+        QString("\n\nDiagnostic log: %1\nLog directory: %2")
+            .arg(DiagnosticsStore::instance().loggingStatusText(),
+                 DiagnosticsStore::instance().logDirectory()));
     layout->addWidget(summary, 1);
 
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Save |
@@ -3210,16 +3372,11 @@ void ScannerWindow::showResolverDiagnostics()
                 if (path.isEmpty()) {
                     return;
                 }
-                QSaveFile file(path);
-                const QByteArray payload = resolverSupportBundle();
-                if (!file.open(QIODevice::WriteOnly) ||
-                    file.write(payload) != payload.size() ||
-                    !file.commit()) {
+                if (!saveSupportBundleToPath(path)) {
                     QMessageBox::warning(
                         &dialog,
                         "Support Bundle",
-                        QString("Could not save support bundle:\n%1")
-                            .arg(file.errorString()));
+                        "Could not save the support bundle. Check the destination and retry.");
                 }
             });
     layout->addWidget(buttons);

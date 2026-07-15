@@ -2,7 +2,7 @@
 
 This file is the single source of truth for unfinished product, engineering, documentation, and release work. Detailed evidence for why each 1.0 item exists is in [the production-readiness audit](production-readiness-audit.md). New ideas belong here rather than in a second backlog.
 
-The audited baseline is `0.2.0` at commit `91e0a7a`; `0.5.2` is the latest manually tested version, versions from `0.5.3` onward are being adversarially reviewed and merged under the explicit waiver for remaining pre-1.0 work, and `0.6.2` is the active PLATFORM-SUPPORT branch. Version 1.0 is not ready. Every unchecked item under “Required for 1.0” is a release gate; the post-1.0 section is explicitly outside the first production release.
+The audited baseline is `0.2.0` at commit `91e0a7a`; `0.5.2` is the latest manually tested version, and versions from `0.5.3` onward are being adversarially reviewed and merged under the explicit waiver for remaining pre-1.0 work. Version 1.0 is not ready. Every unchecked item under “Required for 1.0” is a release gate; the post-1.0 section is explicitly outside the first production release.
 
 ## Delivered implementation increments
 
@@ -24,6 +24,14 @@ The unchecked milestone boxes below mean their complete acceptance criteria are 
 - `0.5.4` — **SETTINGS-MIGRATIONS:** made schema upgrades lossless, preserved empty service sets and toolbar inheritance, validated OUI input atomically, and debounced remembered-target writes.
 - `0.5.5` — **CSV-EXPORT:** added explicit filtered/all scope, spreadsheet-safe UTF-8, immutable snapshots, and checked atomic replacement.
 - `0.5.6` — **SCAN-PRIVACY:** added disabled-by-default checked retention, first-scan authorization, and an exact immutable active-probe summary.
+- `0.6.0` and `0.6.1` — **QUALITY-GATE:** added the local normal, strict,
+  sanitizer, lint, release, and package gate plus Ubuntu 24.04 and Debian 13
+  hosted full-gate jobs and deterministic production snapshot/budget coverage.
+- `0.6.2` — **PLATFORM-SUPPORT:** enforced the Linux x86-64, 64-bit, IPv4,
+  Qt 6.4+ support contract in CMake, documentation, About, packaging, and CI.
+- `0.6.3` — **DIAGNOSTICS:** added privacy-preserving structured failures,
+  truthful scan summaries, redacted support export, and opt-in bounded local
+  logging with explicit health and remediation.
 
 **RESULT-SCALING** is human-verified on version `0.4.4`. DUPLICATE-IP-CONFLICTS remains Post-1.0.
 
@@ -223,10 +231,28 @@ Priority matches the most severe audit finding an item closes. All items in the 
 
 #### DIAGNOSTICS
 
-- [ ] **Add actionable diagnostics without collecting user data.** `High`
+- [x] **Add actionable diagnostics without collecting user data.** `High`
   - Record structured local events for missing or failed `ping`, `ip`, resolver, socket-bind, DNS, Avahi, export, and launcher operations. Include command exit status and bounded error text, but redact target history and service payloads from default support output.
   - Give the UI a scan summary with counts by discovery method and failure category instead of collapsing all problems into “no responding hosts.”
   - Done when every external dependency failure has a visible remediation, logs can be enabled/exported locally, and tests assert both useful content and redaction.
+  - Completion evidence on `0.6.3`: a thread-safe 500-event ring and independent
+    aggregate counts cover ping, neighbor-tool, resolver, bind, adapter-DNS,
+    export, and launcher failures with stable codes, remediation, bounded local
+    error text, and available command exit status. Help now exposes capability
+    and failure counts, redacted JSON export, log state and location; Settings
+    enables a three-by-one-MiB rotating owner-only local log whose batched
+    writer never performs filesystem I/O on scan workers. Scan completion reports
+    discovery counts by local, gateway, ping, service, and neighbor evidence and
+    groups non-informational failures by stage. Direct contracts cover event
+    bounds, owner-only permissions, rotation and I/O failure health, generation-
+    safe overflow recovery, shutdown draining, useful remediation/status fields,
+    sensitive-data redaction, concrete ping/ip/export/launcher failures, and
+    discovery attribution. Final Normal and strict suites pass 29/29,
+    ASan/UBSan passes 28/28, and ThreadSanitizer passes 27/27. Review findings
+    covering empty-neighbor handling, uncapped summaries, permissions,
+    asynchronous I/O, reset/remediation retention, producer coverage, truthful
+    logger failures, overlapping recovery, and shutdown draining were repaired;
+    the final fresh adversarial review found no actionable issue.
 
 #### VENDOR-DATABASE
 

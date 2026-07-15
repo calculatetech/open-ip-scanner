@@ -6,6 +6,19 @@
 
 #include <utility>
 
+QString discoveryMethodLabel(DiscoveryMethod method)
+{
+    switch (method) {
+    case DiscoveryMethod::Local: return "local";
+    case DiscoveryMethod::Gateway: return "gateway";
+    case DiscoveryMethod::Ping: return "ping";
+    case DiscoveryMethod::Service: return "service";
+    case DiscoveryMethod::Neighbor: return "neighbor";
+    case DiscoveryMethod::Unknown: return "unknown";
+    }
+    return "unknown";
+}
+
 ProductionHostScanBackend::ProductionHostScanBackend(
     ScanOptions options,
     QString gatewayIp,
@@ -38,6 +51,7 @@ HostScanOutcome ProductionHostScanBackend::scan(
                                 return TargetBudget::Clock::now();
                             }));
     bool alive = false;
+    DiscoveryMethod discoveryMethod = DiscoveryMethod::Unknown;
     QString discoveredMac;
     NeighborObservation neighbor;
     QList<ServiceHit> discoveredServices;
@@ -45,11 +59,16 @@ HostScanOutcome ProductionHostScanBackend::scan(
 
     if (ipString == options_.localIp) {
         alive = true;
+        discoveryMethod = DiscoveryMethod::Local;
         discoveredMac = options_.localMac;
     } else if (ipString == gatewayIp_) {
         alive = true;
+        discoveryMethod = DiscoveryMethod::Gateway;
     } else {
         alive = dependencies_.ping(host, options_, budget, cancellation);
+        if (alive) {
+            discoveryMethod = DiscoveryMethod::Ping;
+        }
         if (isCancelled(cancellation)) {
             return {};
         }
@@ -63,6 +82,9 @@ HostScanOutcome ProductionHostScanBackend::scan(
                 return {};
             }
             alive = !discoveredServices.isEmpty();
+            if (alive) {
+                discoveryMethod = DiscoveryMethod::Service;
+            }
         }
         if (!alive) {
             neighbor = dependencies_.neighbor(
@@ -83,6 +105,9 @@ HostScanOutcome ProductionHostScanBackend::scan(
                 discoveredMac = neighbor.mac;
             }
             alive = neighbor.establishesLiveness();
+            if (alive) {
+                discoveryMethod = DiscoveryMethod::Neighbor;
+            }
         }
     }
     if (!alive) {
@@ -92,6 +117,7 @@ HostScanOutcome ProductionHostScanBackend::scan(
     ScanResult result;
     result.ip = ipString;
     result.interfaceName = options_.interfaceName;
+    result.discoveryMethod = discoveryMethod;
     for (const AliveHostStage stage : kAliveHostStageOrder) {
         if (isCancelled(cancellation)) {
             return {};

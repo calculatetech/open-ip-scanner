@@ -1,6 +1,7 @@
 #include "serviceprobe.h"
 
 #include "cancellablewait.h"
+#include "diagnostics.h"
 
 #include <QElapsedTimer>
 #include <QHostAddress>
@@ -99,6 +100,12 @@ ServiceProbeResult ServiceProbe::probePlain(
             if (!bindAddress.setAddress(localBindIp) ||
                 bindAddress.protocol() != QAbstractSocket::IPv4Protocol ||
                 !socket.bind(bindAddress, 0)) {
+                DiagnosticsStore::instance().record(diagnosticEvent(
+                    DiagnosticSeverity::Error,
+                    "socket.bind_failed",
+                    "service_probe",
+                    "Refresh adapters and select an active IPv4 adapter.",
+                    socket.errorString()));
                 return {};
             }
         }
@@ -184,6 +191,12 @@ ServiceProbeResult ServiceProbe::probeTls(
             if (!bindAddress.setAddress(localBindIp) ||
                 bindAddress.protocol() != QAbstractSocket::IPv4Protocol ||
                 !socket.bind(bindAddress, 0)) {
+                DiagnosticsStore::instance().record(diagnosticEvent(
+                    DiagnosticSeverity::Error,
+                    "socket.bind_failed",
+                    "service_probe",
+                    "Refresh adapters and select an active IPv4 adapter.",
+                    socket.errorString()));
                 return {};
             }
         }

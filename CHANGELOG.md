@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.6.3] - 2026-07-14
+
+### Added
+
+- Added privacy-preserving local diagnostics with actionable capability and
+  failure summaries, an opt-in rotating log, and redacted support export.
+- Added scan completion counts by discovery method and failure category.
+
 ## [0.6.2] - 2026-07-14
 
 ### Changed

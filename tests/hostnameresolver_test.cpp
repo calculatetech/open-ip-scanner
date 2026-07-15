@@ -1,4 +1,5 @@
 #include "hostnameresolver.h"
+#include "diagnostics.h"
 
 #include <QCoreApplication>
 #include <QDnsLookup>
@@ -57,6 +58,7 @@ ResolverOutcome requiredOutcomeFor(const HostnameScanResolution &resolution,
 int main(int argc, char **argv)
 {
     QCoreApplication application(argc, argv);
+    DiagnosticsStore::instance().clear();
     const auto noRecordSystem = [](const QString &, int, const auto &) {
         return systemResult(cancellable::WaitResult::Completed,
                             QHostInfo::HostNotFound);
@@ -201,6 +203,15 @@ int main(int argc, char **argv)
         const HostnameScanResolution result = resolver.resolve(
             "192.0.2.50", {}, {}, 1, TargetBudget(5000), {});
         REQUIRE(requiredOutcomeFor(result, ResolverKind::Mdns) == test.second);
+    }
+    const QMap<QString, int> diagnosticCounts =
+        DiagnosticsStore::instance().counts();
+    REQUIRE(diagnosticCounts.value("dns_ptr.timeout") == 1);
+    REQUIRE(diagnosticCounts.value("dns_ptr.invalid_response") == 1);
+    REQUIRE(diagnosticCounts.value("system_resolver.backend_unavailable") == 1);
+    REQUIRE(diagnosticCounts.value("mdns.daemon_unavailable") == 1);
+    for (const DiagnosticEvent &event : DiagnosticsStore::instance().latestEvents()) {
+        REQUIRE(!event.remediation.isEmpty());
     }
 
     {

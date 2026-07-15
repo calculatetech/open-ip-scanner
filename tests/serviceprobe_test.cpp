@@ -1,4 +1,5 @@
 #include "serviceprobe.h"
+#include "diagnostics.h"
 
 #include <QCoreApplication>
 #include <QEventLoop>
@@ -409,6 +410,7 @@ int main(int argc, char **argv)
     const ServiceDefinition unreachable{"ssh", "SSH", 9, false, false};
     const auto canceled = std::make_shared<std::atomic_bool>(true);
     const ServiceProbe probe;
+    DiagnosticsStore::instance().clear();
     if (probe.probe(unreachable,
                     "127.0.0.1",
                     {},
@@ -431,6 +433,10 @@ int main(int argc, char **argv)
                     TargetBudget(1500),
                     {}).open) {
         std::cerr << "service cutoff or bind contract failed\n";
+        return 1;
+    }
+    if (DiagnosticsStore::instance().counts().value("socket.bind_failed") != 1) {
+        std::cerr << "service bind diagnostics contract failed\n";
         return 1;
     }
     return 0;

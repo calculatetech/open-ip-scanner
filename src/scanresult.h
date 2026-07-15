@@ -7,6 +7,15 @@
 #include <QList>
 #include <QString>
 
+enum class DiscoveryMethod {
+    Unknown,
+    Local,
+    Gateway,
+    Ping,
+    Service,
+    Neighbor
+};
+
 struct ScanResult {
     QString ip;
     QString interfaceName;
@@ -18,4 +27,7 @@ struct ScanResult {
     QList<ResolverEvent> resolverEvents;
     QList<ServiceHit> services;
     QString detailsText;
+    DiscoveryMethod discoveryMethod = DiscoveryMethod::Unknown;
 };
+
+QString discoveryMethodLabel(DiscoveryMethod method);

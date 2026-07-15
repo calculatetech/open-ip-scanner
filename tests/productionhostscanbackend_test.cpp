@@ -113,6 +113,7 @@ int main(int argc, char **argv)
         serviceOutcome.result.mac != "00:11:22:33:44:55" ||
         serviceOutcome.result.vendor != "Fixture Vendor" ||
         serviceOutcome.result.hostname != "fixture.example.test" ||
+        serviceOutcome.result.discoveryMethod != DiscoveryMethod::Service ||
         serviceOutcome.result.resolverEvents.size() != 1 ||
         serviceOutcome.result.detailsText != "fixture details" ||
         serviceFixture.calls != expectedServiceCalls) {
@@ -135,6 +136,7 @@ int main(int argc, char **argv)
         "ping", "services", "neighbor", "confirm", "vendor", "hostname", "details"};
     if (!neighborOutcome.discovered ||
         neighborOutcome.result.mac != "00:11:22:33:44:55" ||
+        neighborOutcome.result.discoveryMethod != DiscoveryMethod::Neighbor ||
         neighborFixture.calls != expectedNeighborCalls) {
         std::cerr << "confirmed-neighbor discovery contract failed\n";
         return 1;
@@ -147,7 +149,9 @@ int main(int argc, char **argv)
         baseOptions(), "192.0.2.1", dependenciesFor(pingFixture));
     const HostScanOutcome pingOutcome = pingBackend.scan(
         QHostAddress("192.0.2.24"), cancellation);
-    if (!pingOutcome.discovered || pingFixture.calls.contains("confirm") ||
+    if (!pingOutcome.discovered ||
+        pingOutcome.result.discoveryMethod != DiscoveryMethod::Ping ||
+        pingFixture.calls.contains("confirm") ||
         pingFixture.calls.first() != "ping" ||
         pingFixture.calls.indexOf("services") > pingFixture.calls.indexOf("neighbor")) {
         std::cerr << "ping-positive discovery contract failed\n";
@@ -171,6 +175,7 @@ int main(int argc, char **argv)
     const HostScanOutcome gatewayOutcome = gatewayBackend.scan(
         QHostAddress("192.0.2.1"), cancellation);
     if (!gatewayOutcome.discovered || gatewayFixture.calls.contains("ping") ||
+        gatewayOutcome.result.discoveryMethod != DiscoveryMethod::Gateway ||
         gatewayOutcome.result.mac != "Unknown" ||
         gatewayOutcome.result.vendor != "Unknown" ||
         gatewayOutcome.result.hostname != "Unknown" ||
@@ -201,6 +206,7 @@ int main(int argc, char **argv)
     const HostScanOutcome localOutcome = localBackend.scan(
         QHostAddress("192.0.2.10"), cancellation);
     if (!localOutcome.discovered ||
+        localOutcome.result.discoveryMethod != DiscoveryMethod::Local ||
         localOutcome.result.mac != "00:11:22:33:44:55" ||
         localFixture.calls.contains("ping") || localFixture.calls.contains("neighbor") ||
         localFixture.preliminary.hostname.isEmpty() ||

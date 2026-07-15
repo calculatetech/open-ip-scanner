@@ -1,4 +1,5 @@
 #include "linuxneighborprobe.h"
+#include "diagnostics.h"
 
 #include <QCoreApplication>
 #include <QElapsedTimer>
@@ -56,6 +57,7 @@ bool productionLookupContract(const QString &ip, const QString &interfaceName)
         "case \"$OIS_NEIGH_MODE\" in\n"
         "  success) printf '%s\\n' '[{\"dst\":\"192.0.2.99\",\"dev\":\"fixture0\",\"lladdr\":\"02:00:00:00:00:99\",\"state\":\"REACHABLE\"},{\"dst\":\"192.0.2.55\",\"dev\":\"wrong0\",\"lladdr\":\"02:00:00:00:00:66\",\"state\":\"REACHABLE\"},{\"dst\":\"192.0.2.55\",\"dev\":\"fixture0\",\"lladdr\":\"02:00:00:00:00:55\",\"state\":\"REACHABLE\"}]' ;;\n"
         "  wrong-ip) printf '%s\\n' '[{\"dst\":\"192.0.2.99\",\"dev\":\"fixture0\",\"lladdr\":\"02:00:00:00:00:99\",\"state\":\"REACHABLE\"}]' ;;\n"
+        "  empty) printf '%s\\n' '[]' ;;\n"
         "  malformed) printf '%s\\n' 'not-json' ;;\n"
         "  nonzero) exit 7 ;;\n"
         "  slow) sleep 5 ;;\n"
@@ -72,6 +74,7 @@ bool productionLookupContract(const QString &ip, const QString &interfaceName)
     qputenv("PATH", tools.path().toUtf8() + ':' + qgetenv("PATH"));
     qputenv("OIS_NEIGH_ARGS", argumentsPath.toUtf8());
     const LinuxNeighborProbe productionProbe;
+    DiagnosticsStore::instance().clear();
 
     qputenv("OIS_NEIGH_MODE", "success");
     const NeighborObservation selected = productionProbe.lookup(
@@ -95,11 +98,18 @@ bool productionLookupContract(const QString &ip, const QString &interfaceName)
     qputenv("OIS_NEIGH_MODE", "malformed");
     const NeighborObservation malformed = productionProbe.lookup(
         ip, interfaceName, TargetBudget(1200), {});
+    qputenv("OIS_NEIGH_MODE", "empty");
+    const NeighborObservation empty = productionProbe.lookup(
+        ip, interfaceName, TargetBudget(1200), {});
     qputenv("OIS_NEIGH_MODE", "nonzero");
     const NeighborObservation nonzero = productionProbe.lookup(
         ip, interfaceName, TargetBudget(1200), {});
-    if (!wrongIp.ip.isEmpty() || !malformed.ip.isEmpty() ||
+    if (!wrongIp.ip.isEmpty() || !malformed.ip.isEmpty() || !empty.ip.isEmpty() ||
         !nonzero.ip.isEmpty()) {
+        return false;
+    }
+    if (DiagnosticsStore::instance().counts().value("ip.invalid_response") != 1 ||
+        DiagnosticsStore::instance().counts().value("ip.failed") != 1) {
         return false;
     }
 
@@ -109,6 +119,9 @@ bool productionLookupContract(const QString &ip, const QString &interfaceName)
     const NeighborObservation deadline = productionProbe.lookup(
         ip, interfaceName, TargetBudget(120), {});
     if (!deadline.ip.isEmpty() || deadlineTimer.elapsed() >= 1000) {
+        return false;
+    }
+    if (DiagnosticsStore::instance().counts().value("ip.timeout") != 1) {
         return false;
     }
 
