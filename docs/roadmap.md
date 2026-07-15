@@ -404,13 +404,13 @@ Priority matches the most severe audit finding an item closes. All items in the 
     also passed from the clean committed 0.7.9 candidate. GitHub OIDC
     attestations and their independent verification remained gated to the
     separately authorized final `1.0.0` candidate.
-  - Completed for `1.0.0`: the exact clean candidate passed the full release
-    gate locally and on GitHub. Its Ubuntu-built package, deterministic source
-    archive, complete SHA-256 manifest, and SPDX inventory were downloaded into
-    a separate clean directory; every checksum, build-provenance attestation,
-    and the package's SPDX attestation verified against the immutable candidate
-    identity. Exact-tag publication remains the final release procedure, not an
-    open implementation milestone.
+  - Completed for `1.0.0`: the release branch exercised the full local and
+    hosted release gates. Its Ubuntu-built package, deterministic source
+    archive, complete SHA-256 manifest, SPDX inventory, build provenance, and
+    SBOM attestation were independently verifiable. The exact-tag procedure
+    repeats those checks for the final immutable commit and records that
+    commit-specific evidence externally; it is publication, not an open
+    implementation milestone.
   - Done when hardening inspection meets the documented baseline, two clean builds produce matching artifacts after normalization, and users can verify signed checksums and provenance.
 
 #### PREFIX-SAFETY

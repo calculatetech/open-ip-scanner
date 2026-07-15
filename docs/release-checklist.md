@@ -14,21 +14,21 @@ and verification item below.
 - [x] The version agrees in CMake-generated application, package, manual page,
   AppStream, changelog, and About output. The owner approved the final 1.0
   candidate before the version changed to `1.0.0`.
-- [x] The candidate commit is on a reviewed branch, the worktree is clean, and
+- [ ] The candidate commit is on a reviewed branch, the worktree is clean, and
   main has only the intended reviewed commits.
 - [x] Default-branch protection and required checks are configured at the
   release-candidate stage and verified against the documented workflow names.
 
 ## Automated validation
 
-- [x] `./scripts/quality-gate.sh release` passes from the exact clean candidate
+- [ ] `./scripts/quality-gate.sh release` passes from the exact clean candidate
   commit.
-- [x] Main CI passes the Ubuntu 24.04 compatibility-floor gate, Debian 13 newer
+- [ ] Main CI passes the Ubuntu 24.04 compatibility-floor gate, Debian 13 newer
   gate, isolated mDNS responder, and downstream tested-package job.
 - [x] Strict project warnings, metadata lint, ASan/UBSan, ThreadSanitizer's
   supported scenarios, package lifecycle, and Lintian all pass with documented
   exclusions only.
-- [x] The release package is built on Ubuntu 24.04 and is the exact package that
+- [ ] The release package is built on Ubuntu 24.04 and is the exact package that
   passed the downstream lifecycle and policy audit.
 - [x] Hardening inspection confirms stack protection, fortification where
   supported, PIE, full RELRO, and immediate binding against the agreed baseline.
@@ -59,11 +59,11 @@ complete Kubuntu 26.04 checklist passed without exception.
 
 ## Artifacts and provenance
 
-- [x] Produce one Debian package, source archive, SHA-256 checksum file, and
+- [ ] Produce one Debian package, source archive, SHA-256 checksum file, and
   SPDX JSON SBOM from the clean candidate commit.
-- [x] Generate keyless GitHub build-provenance and SBOM attestations with the
+- [ ] Generate keyless GitHub build-provenance and SBOM attestations with the
   least required OIDC permissions and the immutable candidate commit identity.
-- [x] Verify checksums and run `gh attestation verify` for the package and SPDX
+- [ ] Verify checksums and run `gh attestation verify` for the package and SPDX
   file against `calculatetech/open-ip-scanner` from a separate clean
   environment. Confirm that the package also has the SPDX document as its SBOM
   attestation predicate.
