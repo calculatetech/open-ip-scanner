@@ -146,14 +146,18 @@ def main() -> int:
     jobs = quality.get("jobs", {})
     newest = jobs.get("quality-newest", {})
     newest_steps = newest.get("steps", [])
-    git_step = step_with(newest, "name", "Install Git for checkout")
+    checkout_dependencies = step_with(newest, "name", "Install checkout dependencies")
     checkout_step = step_with(newest, "name", "Check out source")
     dependency_step = step_with(newest, "name", "Install build dependencies")
-    require("git" in git_step.get("run", "").split(),
-            "Debian quality must install Git for checkout")
-    require(newest_steps.index(git_step) < newest_steps.index(checkout_step) <
+    checkout_command = checkout_dependencies.get("run", "")
+    require("apt-get install -y --no-install-recommends ca-certificates git" in
+            " ".join(checkout_command.split()),
+            "Debian quality must install CA certificates and Git for checkout")
+    require(checkout_step.get("uses") == "actions/checkout@v5",
+            "Debian quality must use the audited checkout action")
+    require(newest_steps.index(checkout_dependencies) < newest_steps.index(checkout_step) <
             newest_steps.index(dependency_step),
-            "Debian quality must install Git before checkout and the full gate")
+            "Debian quality must install HTTPS Git dependencies before checkout and the full gate")
     release = jobs.get("release-artifact", {})
     require(release.get("needs") == ["quality", "quality-newest"],
             "release artifact must depend on both supported quality jobs")

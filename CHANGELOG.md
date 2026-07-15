@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.7.5] - 2026-07-15
+
+### Fixed
+
+- Install the CA certificate bundle with Git before Debian 13 checkout so the
+  quality job can authenticate GitHub over HTTPS.
+
 ## [0.7.4] - 2026-07-15
 
 ### Fixed
