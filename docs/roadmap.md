@@ -191,7 +191,7 @@ Priority matches the most severe audit finding an item closes. All items in the 
 - [x] **Define target-history privacy and safe-scan behavior.** `Medium`
   - Explain that target history is persisted even when “Remember Last Target On Launch” is off, or change the behavior so the control governs retention. Provide clear-history and disable-history controls.
   - Document exactly which ICMP, TCP, HTTP, and name-resolution traffic each mode sends. Put the authorization warning where a first-time user sees it before scanning, not only in Help and README.
-  - Current progress on `0.5.6`: schema 3 separates Save Target History from Remember Last Target On Launch, keeps retention disabled on clean installs, preserves an explicit schema-2 opt-in, and prevents the dependent restore choice unless retention is enabled. Disabling retention or choosing Clear removes both saved history and last-input keys immediately. A versioned first-real-scan authorization dialog appears after validation and local bind checks but before history recording or network traffic, states the authorization requirement, and lists exact active ICMP attempts, enabled TCP ports, application payload/banner behavior, neighbor-cache reads, reverse-name lookups, and retention state. The main status bar continuously shows a concise active summary with the exact detail in its tooltip; Help documents the same behavior.
+  - Current progress on `0.5.6`: schema 3 separates Save Target History from Remember Last Target On Launch, keeps retention disabled on clean installs, preserves an explicit schema-2 opt-in, and prevents the dependent restore choice unless retention is enabled. Disabling retention or choosing Clear removes both saved history and last-input keys immediately. A versioned first-real-scan authorization dialog appears after validation and local bind checks but before history recording or network traffic, states the authorization requirement, and lists exact active ICMP attempts, enabled TCP ports, application payload/banner behavior, neighbor-cache reads, reverse-name lookups, and retention state. UI-CLEANUP later reduced the persistent status surface to Accuracy mode while retaining exact disclosure in authorization and Help.
   - Completion evidence: deterministic contracts cover schemas 0–2, clean-install non-retention, explicit retention and restore, immediate clear, disable-and-delete, dependent control state, mode/port/application/resolver summary content, active-scan policy and actual-retention pinning, acknowledged authorization without a modal prompt, and injected settings deletion/migration/history-write failures. Normal and strict-warning suites pass 12/12, all eleven non-rendering tests pass under ThreadSanitizer, and package metadata reports version 0.5.6. Adversarial review findings covering checked persistence, migration failure, and immutable active summaries were repaired; focused normal and strict builds/tests pass after the final repair.
   - Done when retention controls have tests, disabling retention removes saved target data, and the in-app scan summary describes the active probe set before launch.
 
@@ -283,7 +283,7 @@ Priority matches the most severe audit finding an item closes. All items in the 
 
 - [x] **Add actionable diagnostics without collecting user data.** `High`
   - Record structured local events for missing or failed `ping`, `ip`, resolver, socket-bind, DNS, Avahi, export, and launcher operations. Include command exit status and bounded error text, but redact target history and service payloads from default support output.
-  - Give the UI a scan summary with counts by discovery method and failure category instead of collapsing all problems into “no responding hosts.”
+  - Give the Diagnostics UI counts by discovery method and failure category instead of collapsing operational evidence into the main scan status.
   - Done when every external dependency failure has a visible remediation, logs can be enabled/exported locally, and tests assert both useful content and redaction.
   - Completion evidence on `0.6.3`: a thread-safe 500-event ring and independent
     aggregate counts cover ping, neighbor-tool, resolver, bind, adapter-DNS,
@@ -291,9 +291,10 @@ Priority matches the most severe audit finding an item closes. All items in the 
     error text, and available command exit status. Help now exposes capability
     and failure counts, redacted JSON export, log state and location; Settings
     enables a three-by-one-MiB rotating owner-only local log whose batched
-    writer never performs filesystem I/O on scan workers. Scan completion reports
+    writer never performs filesystem I/O on scan workers. Diagnostics retains
     discovery counts by local, gateway, ping, service, and neighbor evidence and
-    groups non-informational failures by stage. Direct contracts cover event
+    groups non-informational failures by stage, while UI-CLEANUP later reduced
+    post-scan status to completion state and detected-host count. Direct contracts cover event
     bounds, owner-only permissions, rotation and I/O failure health, generation-
     safe overflow recovery, shutdown draining, useful remediation/status fields,
     sensitive-data redaction, concrete ping/ip/export/launcher failures, and
@@ -462,6 +463,36 @@ Priority matches the most severe audit finding an item closes. All items in the 
     inactive/alternate palette, delegate-test, and release-metadata findings;
     the final fresh adversarial review found no actionable issue.
   - Done when automated delegate tests prove stable geometry and sufficient text/background contrast in representative light, dark, high-contrast, selected, and disabled palettes, and the 768-device fixture retains responsive scrolling and correct concise labels.
+
+#### UI-CLEANUP
+
+- [x] **Polish compact interaction and secondary-window behavior.** `Medium`
+  - Give clickable service pills a pointing-hand hover affordance and make every
+    Help and About hyperlink actionable through the external URL launcher.
+  - Keep the status bar to scan state, host count, progress, and Accuracy mode;
+    retain detailed traffic and failure evidence in authorization, Help, and
+    Diagnostics instead of the main status surface.
+  - Make Settings resizable from a 600-by-440 minimum without horizontal page
+    scrolling. Keep service evidence inline in Details and persist a useful
+    Details pane height between sessions.
+  - Done when direct UI contracts cover hit-tested cursors, external links,
+    concise completion text, minimum-size Settings pages, inline evidence, and
+    details-height restoration.
+  - Current branch progress on `0.7.8`: service pills expose a hit-tested
+    pointing-hand cursor; Help and About share the tested external-link path;
+    the status bar retains only state, progress, host count, and Accuracy mode;
+    Settings prefers 720 by 520 while fitting every page horizontally at its
+    600-by-440 minimum; and inline service evidence plus Details height persist
+    without disturbing the table. Metadata lint, normal and strict 39/39,
+    ASan/UBSan 38/38, and ThreadSanitizer 37/37 pass. The first review's
+    fixture-mode snapshot finding was repaired, and the final fresh adversarial
+    review found no actionable issue. Human feedback then identified collapsed
+    Appearance selectors, clipped and inconsistently aligned Performance
+    labels, and an undesirable About redesign; fixes retain the compact
+    icon-led About layout with actionable links. The repaired candidate passes
+    metadata lint, normal and strict 39/39, ASan/UBSan 38/38, and
+    ThreadSanitizer 37/37. The renewed fresh adversarial review found no
+    actionable issue, and human verification passed.
 
 #### RELEASE-DOCS
 

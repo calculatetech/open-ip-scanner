@@ -15,10 +15,14 @@ void require(bool condition)
 
 int main()
 {
-    require(settingslayout::kDialogWidth == 600);
-    require(settingslayout::kDialogHeight == 440);
-    require(settingslayout::kDialogWidth <= 600);
-    require(settingslayout::kDialogHeight <= 440);
+    require(settingslayout::kMinimumDialogWidth == 600);
+    require(settingslayout::kMinimumDialogHeight == 440);
+    require(settingslayout::kPreferredDialogWidth == 720);
+    require(settingslayout::kPreferredDialogHeight == 520);
+    require(settingslayout::initialDialogDimension(640, 600, 720) == 600);
+    require(settingslayout::initialDialogDimension(480, 440, 520) == 440);
+    require(settingslayout::initialDialogDimension(1920, 600, 720) == 720);
+    require(settingslayout::initialDialogDimension(1080, 440, 520) == 520);
     require(settingslayout::kSliderWidth == 180);
     require(settingslayout::kValueWidth == 90);
     require(settingslayout::kDynamicDescriptionHeight == 44);

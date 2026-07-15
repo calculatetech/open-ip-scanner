@@ -3,12 +3,14 @@
 
 #include <QApplication>
 #include <QFont>
+#include <QHeaderView>
 #include <QImage>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPalette>
 #include <QStyle>
 #include <QStyleOptionViewItem>
+#include <QTableView>
 
 #include <algorithm>
 #include <cmath>
@@ -350,6 +352,49 @@ int main(int argc, char **argv)
     option.state = QStyle::State_Enabled;
     option.features.setFlag(QStyleOptionViewItem::Alternate, true);
     REQUIRE(delegate.sizeHint(option, serviceIndex) == baselineHint);
+
+    QTableView view;
+    view.setModel(&model);
+    auto *hoverDelegate = new ServiceTagDelegate(&view);
+    view.setItemDelegateForColumn(ResultTableModel::Services, hoverDelegate);
+    view.resize(720, 120);
+    for (int column = 0; column < ResultTableModel::ColumnCount; ++column) {
+        view.setColumnWidth(column, column == ResultTableModel::Services ? 300 : 80);
+    }
+    view.doItemsLayout();
+    const QRect serviceCell = view.visualRect(serviceIndex);
+    QStyleOptionViewItem hoverOption;
+    hoverOption.initFrom(view.viewport());
+    hoverOption.rect = serviceCell;
+    hoverOption.font = view.font();
+    const QList<QRect> hoverRects = ServiceTagDelegateTestAccess::rects(
+        *hoverDelegate,
+        hoverOption,
+        serviceIndex.data(ResultTableModel::ServiceTagsRole).toStringList());
+    REQUIRE(hoverRects.size() == 2);
+
+    const QPoint hoverPoint = hoverRects.first().center();
+    QMouseEvent hoverMove(QEvent::MouseMove,
+                          QPointF(hoverPoint),
+                          QPointF(hoverPoint),
+                          Qt::NoButton,
+                          Qt::NoButton,
+                          Qt::NoModifier);
+    QApplication::sendEvent(view.viewport(), &hoverMove);
+    REQUIRE(view.viewport()->cursor().shape() == Qt::PointingHandCursor);
+
+    const QPoint plainPoint = view.visualRect(model.index(0, 0)).center();
+    QMouseEvent plainMove(QEvent::MouseMove,
+                          QPointF(plainPoint),
+                          QPointF(plainPoint),
+                          Qt::NoButton,
+                          Qt::NoButton,
+                          Qt::NoModifier);
+    QApplication::sendEvent(view.viewport(), &plainMove);
+    REQUIRE(view.viewport()->cursor().shape() != Qt::PointingHandCursor);
+    QEvent leave(QEvent::Leave);
+    QApplication::sendEvent(view.viewport(), &leave);
+    REQUIRE(view.viewport()->cursor().shape() != Qt::PointingHandCursor);
 
     return EXIT_SUCCESS;
 }

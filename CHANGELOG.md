@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.7.8] - 2026-07-15
+
+### Changed
+
+- Simplify scan status presentation, make application links consistently
+  actionable, and improve service and details-pane interaction cues.
+- Make Settings resizable from a 600-by-440 minimum while keeping every page
+  free of horizontal scrolling, with visible Appearance selectors and aligned
+  Performance labels.
+- Keep About's compact icon-led presentation while making its links actionable.
+
 ## [0.7.7] - 2026-07-15
 
 ### Changed

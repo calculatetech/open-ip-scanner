@@ -36,6 +36,8 @@ class QSplitter;
 class QStringListModel;
 class QTableView;
 class QTextEdit;
+class QTextBrowser;
+class QLabel;
 class QTimer;
 class QAction;
 class QCloseEvent;
@@ -201,6 +203,11 @@ private:
                                              QString *error);
     void updateProbeSummary();
     void setDetailsPaneVisible(bool visible);
+    int defaultDetailsPaneHeight() const;
+    void applyDetailsPaneHeight();
+    void configureExternalLinks(QTextBrowser *browser);
+    void configureExternalLinks(QLabel *label);
+    void openExternalLink(const QUrl &url);
     void rebuildMainToolbar();
     void applyToolbarDisplayMode();
     bool openPreferredTerminal(const QStringList &args = {}, QString *error = nullptr) const;
@@ -238,6 +245,7 @@ private:
     QLineEdit *searchInput_ = nullptr;
     QSplitter *resultsSplitter_ = nullptr;
     QTextEdit *detailsPane_ = nullptr;
+    int detailsPaneHeight_ = 0;
 
     QLabel *statusTextLabel_ = nullptr;
     QProgressBar *statusProgressBar_ = nullptr;
