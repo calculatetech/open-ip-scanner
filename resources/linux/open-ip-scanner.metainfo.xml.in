@@ -28,7 +28,7 @@
   <releases>
     <release version="@PROJECT_VERSION@" date="2026-07-15">
       <description>
-        <p>Restores distinct palette-aware service colors while keeping unknown ports neutral.</p>
+        <p>Adds warning-free high-DPI startup and accessible keyboard and control metadata.</p>
       </description>
     </release>
   </releases>

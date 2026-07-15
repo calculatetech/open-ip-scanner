@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.6.9] - 2026-07-15
+
+### Changed
+
+- Use the supported pre-application high-DPI policy and add stable accessible
+  names, descriptions, focus buddies, and keyboard shortcuts to primary and
+  settings controls.
+
 ## [0.6.8] - 2026-07-15
 
 ### Changed

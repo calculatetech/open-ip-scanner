@@ -2,16 +2,14 @@
 #include <QCoreApplication>
 #include <QGuiApplication>
 #include <QIcon>
-#include <QByteArray>
+#include <QTimer>
 
 #include "scannerwindow.h"
 
 int main(int argc, char *argv[])
 {
-    // Set HiDPI rounding policy before creating the Qt application object.
-    if (qEnvironmentVariableIsEmpty("QT_SCALE_FACTOR_ROUNDING_POLICY")) {
-        qputenv("QT_SCALE_FACTOR_ROUNDING_POLICY", QByteArray("PassThrough"));
-    }
+    QGuiApplication::setHighDpiScaleFactorRoundingPolicy(
+        Qt::HighDpiScaleFactorRoundingPolicy::PassThrough);
     QCoreApplication::setOrganizationName("OpenIPScanner");
     QCoreApplication::setApplicationName("open-ip-scanner");
     QCoreApplication::setApplicationVersion(OPEN_IP_SCANNER_VERSION);
@@ -31,6 +29,10 @@ int main(int argc, char *argv[])
     ScannerWindow window;
     window.setWindowIcon(appIcon);
     window.show();
+
+    if (app.arguments().contains("--startup-smoke")) {
+        QTimer::singleShot(0, &app, &QCoreApplication::quit);
+    }
 
     return app.exec();
 }

@@ -9,6 +9,8 @@
 #include "resulttablemodel.h"
 
 #include <QApplication>
+#include <QAccessible>
+#include <QAbstractButton>
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDialog>
@@ -24,11 +26,13 @@
 #include <QPoint>
 #include <QPushButton>
 #include <QSettings>
+#include <QShortcut>
 #include <QSlider>
 #include <QStandardPaths>
 #include <QSysInfo>
 #include <QTableView>
 #include <QTemporaryDir>
+#include <QTextEdit>
 #include <QTimer>
 #include <QValidator>
 
@@ -62,6 +66,154 @@ bool writeFailingSettings(QIODevice &, const QSettings::SettingsMap &)
 } // namespace
 
 struct ScannerWindowTestAccess {
+    static bool accessibilityContract(ScannerWindow &window)
+    {
+        const auto fail = [](const char *message) {
+            std::fprintf(stderr, "accessibility contract: %s\n", message);
+            return false;
+        };
+        window.toolbarDisplayMode_ = 0;
+        window.applyToolbarDisplayMode();
+        const QList<QWidget *> controls = {
+            window.targetInput_,
+            window.defaultsButton_,
+            window.adapterCombo_,
+            window.refreshAdaptersButton_,
+            window.terminalButton_,
+            window.findButton_,
+            window.scanButton_,
+            window.table_,
+            window.searchScopeCombo_,
+            window.searchInput_,
+            window.findChild<QPushButton *>("searchClearButton"),
+            window.detailsPane_,
+        };
+        for (QWidget *control : controls) {
+            if (control == nullptr || control->focusPolicy() == Qt::NoFocus) {
+                return fail("missing or unfocusable primary control");
+            }
+            QAccessibleInterface *interface =
+                QAccessible::queryAccessibleInterface(control);
+            if (interface == nullptr ||
+                interface->text(QAccessible::Name).trimmed().isEmpty() ||
+                interface->role() == QAccessible::NoRole ||
+                control->accessibleDescription().trimmed().isEmpty()) {
+                if (control != nullptr) {
+                    std::fprintf(stderr,
+                                 "accessibility contract control=%s name=%s role=%d\n",
+                                 control->objectName().toUtf8().constData(),
+                                 interface == nullptr
+                                     ? "<null>"
+                                     : interface->text(QAccessible::Name)
+                                           .toUtf8().constData(),
+                                 interface == nullptr
+                                     ? -1
+                                     : static_cast<int>(interface->role()));
+                }
+                return false;
+            }
+        }
+        for (int mode = 0; mode <= 2; ++mode) {
+            window.toolbarDisplayMode_ = mode;
+            window.applyToolbarDisplayMode();
+            if (window.scanButton_->accessibleName() != "Scan" ||
+                window.defaultsButton_->accessibleName() != "Auto" ||
+                window.findButton_->accessibleName() != "Find" ||
+                window.terminalButton_->accessibleName() != "Terminal" ||
+                window.refreshAdaptersButton_->accessibleName() != "Refresh") {
+                return fail("toolbar mode changed an accessible name");
+            }
+        }
+        window.toolbarDisplayMode_ = 0;
+        window.applyToolbarDisplayMode();
+        if (!window.scanButton_->text().isEmpty() ||
+            !window.findButton_->text().isEmpty() ||
+            !window.refreshAdaptersButton_->text().isEmpty()) {
+            return fail("icon-only toolbar retained visible button text");
+        }
+
+        const QList<QKeySequence> primaryShortcuts = {
+            window.scanButton_->shortcut(),
+            window.defaultsButton_->shortcut(),
+            window.findButton_->shortcut(),
+            window.terminalButton_->shortcut(),
+            window.refreshAdaptersButton_->shortcut(),
+            QKeySequence("Ctrl+L"),
+        };
+        for (int left = 0; left < primaryShortcuts.size(); ++left) {
+            if (primaryShortcuts.at(left).isEmpty()) {
+                return fail("primary shortcut missing");
+            }
+            for (int right = left + 1; right < primaryShortcuts.size(); ++right) {
+                if (primaryShortcuts.at(left) == primaryShortcuts.at(right)) {
+                    return fail("primary shortcut conflict");
+                }
+            }
+        }
+        if (window.scanButton_->shortcut() != QKeySequence(Qt::Key_F5) ||
+            window.findButton_->shortcut() != QKeySequence("Ctrl+F") ||
+            window.refreshAdaptersButton_->shortcut() != QKeySequence("Ctrl+R")) {
+            return fail("documented primary shortcut mismatch");
+        }
+        if (window.targetsLabel_->buddy() != window.targetInput_ ||
+            window.adapterLabel_->buddy() != window.adapterCombo_) {
+            return fail("primary label buddy mismatch");
+        }
+
+        window.scanInProgress_ = true;
+        window.scanCompletionPending_ = false;
+        window.scanButton_->setToolTip("Stop scan");
+        window.applyToolbarDisplayMode();
+        if (window.scanButton_->accessibleName() != "Stop" ||
+            window.scanButton_->accessibleDescription() != "Stop scan") {
+            return fail("Stop accessibility state mismatch");
+        }
+        window.scanCompletionPending_ = true;
+        window.scanButton_->setToolTip("Finalizing results");
+        window.applyToolbarDisplayMode();
+        if (window.scanButton_->accessibleName() != "Finalizing results" ||
+            window.scanButton_->accessibleDescription() != "Finalizing results") {
+            return fail("Finalizing accessibility state mismatch");
+        }
+        window.scanInProgress_ = false;
+        window.scanCompletionPending_ = false;
+        window.scanButton_->setToolTip("Start scan");
+        window.applyToolbarDisplayMode();
+
+        window.showStatusMessage("Accessibility status fixture");
+        window.updateProbeSummary();
+        for (QLabel *label : {window.statusTextLabel_, window.probeSummaryLabel_}) {
+            QAccessibleInterface *interface =
+                QAccessible::queryAccessibleInterface(label);
+            if (interface == nullptr || label->text().trimmed().isEmpty() ||
+                interface->text(QAccessible::Name) != label->text() ||
+                label->accessibleDescription().trimmed().isEmpty()) {
+                return fail("dynamic status accessibility mismatch");
+            }
+        }
+
+        window.show();
+        window.activateWindow();
+        window.raise();
+        QApplication::processEvents();
+        window.findButton_->click();
+        QApplication::processEvents();
+        if (!window.searchBar_->isVisible() || !window.searchInput_->hasFocus()) {
+            return fail("Find action did not expose and focus search");
+        }
+        QShortcut *focusTargets =
+            window.findChild<QShortcut *>("focusTargetsShortcut");
+        if (focusTargets == nullptr ||
+            focusTargets->key() != QKeySequence("Ctrl+L")) {
+            return fail("target focus shortcut missing");
+        }
+        QMetaObject::invokeMethod(focusTargets, "activated", Qt::DirectConnection);
+        QApplication::processEvents();
+        return window.targetInput_->hasFocus()
+                   ? true
+                   : fail("Ctrl+L did not focus targets");
+    }
+
     static bool externalDiagnosticsContract(ScannerWindow &window)
     {
         DiagnosticsStore &store = DiagnosticsStore::instance();
@@ -1586,6 +1738,7 @@ int main(int argc, char **argv)
     REQUIRE(ScannerWindowTestAccess::scanPrivacyContract(window));
     REQUIRE(ScannerWindowTestAccess::customOuiValidationContract());
     REQUIRE(ScannerWindowTestAccess::debouncedTargetSaveContract(window));
+    REQUIRE(ScannerWindowTestAccess::accessibilityContract(window));
 
     const DefaultTargetPlan parserPlan =
         buildDefaultTargetPlan({{QHostAddress("10.2.3.4").toIPv4Address(),
@@ -1714,6 +1867,30 @@ int main(int argc, char **argv)
             dialog->reject();
             app.exit(EXIT_FAILURE);
             return;
+        }
+
+        for (QWidget *control : QList<QWidget *>{categories,
+                                                 workerSlider,
+                                                 accuracySlider,
+                                                 targetFormat,
+                                                 diagnosticLog}) {
+            QAccessibleInterface *interface =
+                QAccessible::queryAccessibleInterface(control);
+            REQUIRE(interface != nullptr);
+            REQUIRE(interface != nullptr &&
+                    !interface->text(QAccessible::Name).trimmed().isEmpty());
+            REQUIRE(interface != nullptr &&
+                    interface->role() != QAccessible::NoRole);
+            REQUIRE(!control->accessibleDescription().trimmed().isEmpty());
+        }
+        REQUIRE(workerRowLabel->buddy() == workerSlider);
+        REQUIRE(accuracyRowLabel->buddy() == accuracySlider);
+        for (QAbstractButton *button : buttons->buttons()) {
+            QAccessibleInterface *interface =
+                QAccessible::queryAccessibleInterface(button);
+            REQUIRE(interface != nullptr);
+            REQUIRE(interface != nullptr &&
+                    !interface->text(QAccessible::Name).trimmed().isEmpty());
         }
 
         categories->setCurrentRow(2);

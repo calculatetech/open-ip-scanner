@@ -40,8 +40,29 @@ The details pane is the on-demand surface for successful per-device evidence. Ho
 
 Changing selection or opening the details pane sends no network traffic. Resolver availability, timeout, malformed-response, and other operational failures belong in diagnostics, not in result cells or per-device prose. Dynamic evidence updates may replace the preferred table value and refresh details, but must preserve the existing ordering, selection, and viewport stability contracts.
 
+## Accessibility and scaling contract
+
+Interactive controls keep stable accessible names and descriptions independent
+of whether the toolbar shows icons, text, or both. Labels use focus buddies;
+icon-only actions retain keyboard shortcuts and descriptive tooltips. The main
+paths are F5 for Scan/Stop, Ctrl+F for result filtering, Ctrl+L for Targets,
+Ctrl+R for adapter refresh, Ctrl+Shift+A for automatic targets, and
+Ctrl+Shift+T for Terminal.
+
+High-DPI rounding policy is set through Qt's static API before constructing the
+application. Startup at 100% and 200% scaling must exit without policy-order
+warnings in the automated smoke. All sizes in this specification are logical
+pixels, so scaling must not change the Settings dialog's logical 600-by-440
+contract.
+
 ## Human verification
 
 Open Settings and switch through every category. On Performance, drag both sliders from minimum to maximum and confirm their tracks remain equal in length and position. The accuracy name and description may change, but neither slider, either row, the help paragraph, nor the dialog buttons may move. Confirm the dialog remains 600 by 440 and that pages with more content scroll internally.
 
 Run a fixture containing conflicting Local, PTR, System, and mDNS names. Confirm the table shows only the preferred first label for non-mDNS evidence, retains `.local` when mDNS is preferred, and elides long values at the cell boundary without wrapping at a word separator. Open Details and confirm `Hostname(s):` lists every genuine distinct detected FQDN with its short source labels immediately appended, collapses matching short and FQDN forms without repeating a source, and does not change the table layout or send new traffic.
+
+At 200% scale, repeat the primary workflow using only the keyboard. Confirm
+focus is visible, every control is announced with a useful name and role by the
+desktop accessibility inspector or screen reader, every Settings page remains
+reachable, and light, dark, and high-contrast themes retain legible selection
+and service colors.

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.28)
-project(OpenIpScanner VERSION 0.6.8 LANGUAGES CXX)
+project(OpenIpScanner VERSION 0.6.9 LANGUAGES CXX)
 
 set(OIS_APP_ID "io.github.calculatetech.OpenIpScanner")
 set(OIS_GENERATED_RESOURCE_DIR "${CMAKE_BINARY_DIR}/generated-resources")
@@ -228,6 +228,12 @@ if(BUILD_TESTING)
     add_test(NAME service_tag_theme_contract COMMAND service_tag_delegate_test)
     set_tests_properties(service_tag_theme_contract PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+    add_executable(startup_accessibility_test tests/startupaccessibility_test.cpp)
+    target_link_libraries(startup_accessibility_test PRIVATE Qt6::Core)
+    add_test(NAME startup_accessibility_smoke
+        COMMAND startup_accessibility_test $<TARGET_FILE:open_ip_scanner>)
+    set_tests_properties(startup_accessibility_smoke PROPERTIES TIMEOUT 20)
 
     add_executable(scan_cancellation_test tests/scancancellation_test.cpp)
     target_link_libraries(scan_cancellation_test PRIVATE ois_linux)

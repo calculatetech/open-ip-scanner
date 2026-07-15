@@ -209,6 +209,10 @@ ScannerWindow::ScannerWindow(QWidget *parent)
     layout->setSpacing(0);
 
     targetInput_ = new QLineEdit(central);
+    targetInput_->setObjectName("targetInput");
+    targetInput_->setAccessibleName("Scan targets");
+    targetInput_->setAccessibleDescription(
+        "IPv4 addresses, CIDR networks, or address ranges to scan");
     targetInput_->setPlaceholderText("Examples: 192.168.1.0/24, 10.0.0.10-10.0.0.50, 10.0.0.10-50, 10.0.1.20");
     targetInput_->setMaxLength(2048);
     targetInput_->setValidator(new QRegularExpressionValidator(
@@ -219,27 +223,36 @@ ScannerWindow::ScannerWindow(QWidget *parent)
     targetCompleter_->setFilterMode(Qt::MatchContains);
     targetInput_->setCompleter(targetCompleter_);
     defaultsButton_ = new QPushButton("Auto", central);
+    defaultsButton_->setObjectName("automaticTargetsButton");
     defaultsButton_->setIcon(style()->standardIcon(QStyle::SP_DriveNetIcon));
     defaultsButton_->setToolTip("Scan connected network(s) of selected adapter");
 
     findButton_ = new QPushButton("Find", central);
+    findButton_->setObjectName("findResultsButton");
     findButton_->setIcon(QIcon::fromTheme("edit-find", style()->standardIcon(QStyle::SP_FileDialogContentsView)));
     findButton_->setToolTip("Show search/filter bar");
     findButton_->setFixedWidth(32);
 
     adapterCombo_ = new QComboBox(central);
+    adapterCombo_->setObjectName("adapterCombo");
+    adapterCombo_->setAccessibleName("Network adapter");
+    adapterCombo_->setAccessibleDescription(
+        "Adapter and IPv4 route used for scan traffic");
     refreshAdaptersButton_ = new QPushButton(central);
+    refreshAdaptersButton_->setObjectName("refreshAdaptersButton");
     refreshAdaptersButton_->setIcon(style()->standardIcon(QStyle::SP_BrowserReload));
     refreshAdaptersButton_->setToolTip("Refresh adapters");
     refreshAdaptersButton_->setFixedWidth(32);
 
     terminalButton_ = new QPushButton("Terminal", central);
+    terminalButton_->setObjectName("terminalButton");
     terminalButton_->setIcon(QIcon::fromTheme("utilities-terminal", style()->standardIcon(QStyle::SP_ComputerIcon)));
     terminalButton_->setToolTip("Open default terminal");
 
     playIcon_ = createPlayIcon();
     stopIcon_ = createStopIcon();
     scanButton_ = new QPushButton(central);
+    scanButton_->setObjectName("scanButton");
     scanButton_->setIcon(playIcon_);
     scanButton_->setToolTip("Start scan");
     scanButton_->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Preferred);
@@ -250,6 +263,10 @@ ScannerWindow::ScannerWindow(QWidget *parent)
         return formatMacForDisplay(mac);
     });
     table_ = new QTableView(central);
+    table_->setObjectName("resultsTable");
+    table_->setAccessibleName("Scan results");
+    table_->setAccessibleDescription(
+        "Discovered devices ordered by the selected table column");
     table_->setModel(resultModel_);
     serviceTagDelegate_ = new ServiceTagDelegate(table_);
     table_->setItemDelegateForColumn(ColServices, serviceTagDelegate_);
@@ -292,8 +309,10 @@ ScannerWindow::ScannerWindow(QWidget *parent)
     mainToolbar_->setFloatable(false);
     mainToolbar_->setAllowedAreas(Qt::TopToolBarArea);
 
-    targetsLabel_ = new QLabel("Targets:", this);
-    adapterLabel_ = new QLabel("Adapter:", this);
+    targetsLabel_ = new QLabel("&Targets:", this);
+    targetsLabel_->setBuddy(targetInput_);
+    adapterLabel_ = new QLabel("&Adapter:", this);
+    adapterLabel_->setBuddy(adapterCombo_);
     targetInput_->setMinimumWidth(320);
     targetInput_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     adapterCombo_->setMinimumWidth(220);
@@ -313,6 +332,10 @@ ScannerWindow::ScannerWindow(QWidget *parent)
     searchLayout->setContentsMargins(4, 2, 4, 2);
     searchLayout->setSpacing(6);
     searchScopeCombo_ = new QComboBox(searchBar_);
+    searchScopeCombo_->setObjectName("searchScopeCombo");
+    searchScopeCombo_->setAccessibleName("Search field");
+    searchScopeCombo_->setAccessibleDescription(
+        "Device evidence field included in the result filter");
     searchScopeCombo_->addItem("All", "all");
     searchScopeCombo_->addItem("IP", "ip");
     searchScopeCombo_->addItem("Hostname", "hostname");
@@ -321,9 +344,19 @@ ScannerWindow::ScannerWindow(QWidget *parent)
     searchScopeCombo_->addItem("Services", "services");
     searchScopeCombo_->addItem("OUI Prefix", "oui");
     searchInput_ = new QLineEdit(searchBar_);
+    searchInput_->setObjectName("searchInput");
+    searchInput_->setAccessibleName("Filter scan results");
+    searchInput_->setAccessibleDescription(
+        "Text matched against normalized device evidence");
     searchInput_->setPlaceholderText("Filter (e.g. intel, ssh, 00:90:7F)");
     auto *searchClearButton = new QPushButton("Clear", searchBar_);
-    searchLayout->addWidget(new QLabel("Find:", searchBar_));
+    searchClearButton->setObjectName("searchClearButton");
+    searchClearButton->setAccessibleName("Clear result filter");
+    searchClearButton->setAccessibleDescription(
+        "Remove the current search text and field selection");
+    auto *searchLabel = new QLabel("&Find:", searchBar_);
+    searchLabel->setBuddy(searchInput_);
+    searchLayout->addWidget(searchLabel);
     searchLayout->addWidget(searchScopeCombo_);
     searchLayout->addWidget(searchInput_, 1);
     searchLayout->addWidget(searchClearButton);
@@ -341,6 +374,10 @@ ScannerWindow::ScannerWindow(QWidget *parent)
     resultsSplitter_->addWidget(tablePane);
 
     detailsPane_ = new QTextEdit(resultsSplitter_);
+    detailsPane_->setObjectName("deviceDetailsPane");
+    detailsPane_->setAccessibleName("Device details");
+    detailsPane_->setAccessibleDescription(
+        "Evidence and provenance for the selected device");
     detailsPane_->setReadOnly(true);
     detailsPane_->setPlaceholderText("Select a device to view details.");
     detailsPane_->setVisible(false);
@@ -353,9 +390,13 @@ ScannerWindow::ScannerWindow(QWidget *parent)
     setCentralWidget(central);
 
     statusTextLabel_ = new QLabel(this);
+    statusTextLabel_->setAccessibleDescription("Current scan status");
     probeSummaryLabel_ = new QLabel(this);
     probeSummaryLabel_->setObjectName("probeSummaryLabel");
+    probeSummaryLabel_->setAccessibleDescription(
+        "Probe families and retention policy for the next or active scan");
     statusProgressBar_ = new QProgressBar(this);
+    statusProgressBar_->setAccessibleName("Scan progress");
     statusProgressBar_->setMinimumWidth(240);
     statusProgressBar_->setVisible(false);
     statusBar()->addWidget(statusTextLabel_, 1);
@@ -450,6 +491,10 @@ ScannerWindow::ScannerWindow(QWidget *parent)
 
     auto *copyShortcut = new QShortcut(QKeySequence::Copy, table_);
     connect(copyShortcut, &QShortcut::activated, this, &ScannerWindow::copySelectedCell);
+    auto *targetShortcut = new QShortcut(QKeySequence("Ctrl+L"), this);
+    targetShortcut->setObjectName("focusTargetsShortcut");
+    connect(targetShortcut, &QShortcut::activated, targetInput_,
+            qOverload<>(&QWidget::setFocus));
     connect(searchInput_, &QLineEdit::textChanged, this, &ScannerWindow::applyTableFilters);
     connect(searchScopeCombo_, &QComboBox::currentIndexChanged, this, [this](int) {
         applyTableFilters();
@@ -473,17 +518,21 @@ void ScannerWindow::setupMenuBar()
 {
     QMenu *fileMenu = menuBar()->addMenu("File");
     QAction *exportAction = fileMenu->addAction("Export CSV...");
+    exportAction->setShortcut(QKeySequence("Ctrl+E"));
     connect(exportAction, &QAction::triggered, this, &ScannerWindow::exportCsv);
 
     QAction *printAction = fileMenu->addAction("Print...");
+    printAction->setShortcut(QKeySequence::Print);
     connect(printAction, &QAction::triggered, this, &ScannerWindow::printTable);
 
     fileMenu->addSeparator();
     QAction *quitAction = fileMenu->addAction("Quit");
+    quitAction->setShortcut(QKeySequence::Quit);
     connect(quitAction, &QAction::triggered, this, &QWidget::close);
 
     QMenu *settingsMenu = menuBar()->addMenu("Settings");
     QAction *settingsAction = settingsMenu->addAction("Preferences...");
+    settingsAction->setShortcut(QKeySequence::Preferences);
     connect(settingsAction, &QAction::triggered, this, &ScannerWindow::showSettingsDialog);
     settingsMenu->addSeparator();
     saveTargetHistoryAction_ = settingsMenu->addAction("Save Target History");
@@ -515,11 +564,13 @@ void ScannerWindow::setupMenuBar()
 
     QMenu *helpMenu = menuBar()->addMenu("Help");
     QAction *diagnosticsAction = helpMenu->addAction("Diagnostics...");
+    diagnosticsAction->setShortcut(QKeySequence("Ctrl+Shift+D"));
     connect(diagnosticsAction,
             &QAction::triggered,
             this,
             &ScannerWindow::showResolverDiagnostics);
     QAction *usageAction = helpMenu->addAction("Usage Guide");
+    usageAction->setShortcut(QKeySequence::HelpContents);
     connect(usageAction, &QAction::triggered, this, &ScannerWindow::showHelpDialog);
     QAction *aboutAction = helpMenu->addAction("About");
     connect(aboutAction, &QAction::triggered, this, &ScannerWindow::showAboutDialog);
@@ -1365,6 +1416,7 @@ void ScannerWindow::beginScanCompletionPresentation(
     scanCompletionPending_ = true;
     scanButton_->setEnabled(false);
     scanButton_->setToolTip("Finalizing results");
+    applyToolbarDisplayMode();
     if (pendingDisplayResults_.isEmpty()) {
         completeScanPresentation();
     } else {
@@ -1850,6 +1902,9 @@ void ScannerWindow::showSettingsDialog()
 
     auto *categories = new QListWidget(body);
     categories->setObjectName("settingsCategories");
+    categories->setAccessibleName("Settings categories");
+    categories->setAccessibleDescription(
+        "Select an application settings page");
     categories->setFixedWidth(settingslayout::kNavigationWidth);
     categories->addItems({"Appearance", "Services", "Performance", "Diagnostics", "Programs", "OUI Prefixes", "Toolbar"});
 
@@ -1878,6 +1933,7 @@ void ScannerWindow::showSettingsDialog()
     auto *vendorCheck = new QCheckBox("Show Vendor column", appearancePage);
     auto *svcCheck = new QCheckBox("Show Services column", appearancePage);
     auto *macFormatCombo = new QComboBox(appearancePage);
+    macFormatCombo->setAccessibleName("MAC display format");
     macFormatCombo->addItem("AA:BB:CC:DD:EE:FF (upper, colon)", MacColonUpper);
     macFormatCombo->addItem("aa:bb:cc:dd:ee:ff (lower, colon)", MacColonLower);
     macFormatCombo->addItem("AA-BB-CC-DD-EE-FF (upper, hyphen)", MacHyphenUpper);
@@ -1888,6 +1944,9 @@ void ScannerWindow::showSettingsDialog()
     macFormatCombo->setCurrentIndex(std::max(0, macFormatCombo->findData(macDisplayFormat_)));
     auto *targetFormatCombo = new QComboBox(appearancePage);
     targetFormatCombo->setObjectName("settingsTargetFormat");
+    targetFormatCombo->setAccessibleName("Generated target format");
+    targetFormatCombo->setAccessibleDescription(
+        "Choose CIDR or begin-and-end range text for generated targets");
     targetFormatCombo->addItem("CIDR (192.168.1.0/24)", "cidr");
     targetFormatCombo->addItem(
         "Begin/end range (192.168.1.1-192.168.1.254)", "range");
@@ -1940,6 +1999,9 @@ void ScannerWindow::showSettingsDialog()
     performanceLayout->setColumnMinimumWidth(0, settingslayout::kRowLabelWidth);
     auto *workerSlider = new QSlider(Qt::Horizontal, performancePage);
     workerSlider->setObjectName("settingsWorkerSlider");
+    workerSlider->setAccessibleName("Scan workers");
+    workerSlider->setAccessibleDescription(
+        "Maximum number of device probes run in parallel");
     workerSlider->setRange(1, kMaxParallelProbes);
     workerSlider->setFixedWidth(settingslayout::kSliderWidth);
     workerSlider->setTickInterval(1);
@@ -1952,15 +2014,19 @@ void ScannerWindow::showSettingsDialog()
     connect(workerSlider, &QSlider::valueChanged, &dialog, [workerLabel](int value) {
         workerLabel->setText(QString("%1 thread%2").arg(value).arg(value == 1 ? "" : "s"));
     });
-    auto *workerRowLabel = new QLabel("Scan workers:", performancePage);
+    auto *workerRowLabel = new QLabel("Scan &workers:", performancePage);
     workerRowLabel->setObjectName("settingsWorkerRowLabel");
     workerRowLabel->setFixedWidth(settingslayout::kRowLabelWidth);
+    workerRowLabel->setBuddy(workerSlider);
     performanceLayout->addWidget(workerRowLabel, 0, 0);
     performanceLayout->addWidget(workerSlider, 0, 1);
     performanceLayout->addWidget(workerLabel, 0, 2);
 
     auto *accuracySlider = new QSlider(Qt::Horizontal, performancePage);
     accuracySlider->setObjectName("settingsAccuracySlider");
+    accuracySlider->setAccessibleName("Scan accuracy");
+    accuracySlider->setAccessibleDescription(
+        "Retry depth and timeout level from Fast through Maximum");
     accuracySlider->setRange(0, 3);
     accuracySlider->setFixedWidth(settingslayout::kSliderWidth);
     accuracySlider->setTickInterval(1);
@@ -1985,9 +2051,10 @@ void ScannerWindow::showSettingsDialog()
         accuracyValueLabel->setText(labels[clamped]);
         accuracyDetailsLabel->setText(scanBudgetProfileSummary(clamped));
     });
-    auto *accuracyRowLabel = new QLabel("Accuracy:", performancePage);
+    auto *accuracyRowLabel = new QLabel("&Accuracy:", performancePage);
     accuracyRowLabel->setObjectName("settingsAccuracyRowLabel");
     accuracyRowLabel->setFixedWidth(settingslayout::kRowLabelWidth);
+    accuracyRowLabel->setBuddy(accuracySlider);
     performanceLayout->addWidget(accuracyRowLabel, 1, 0);
     performanceLayout->addWidget(accuracySlider, 1, 1);
     performanceLayout->addWidget(accuracyValueLabel, 1, 2);
@@ -2012,6 +2079,8 @@ void ScannerWindow::showSettingsDialog()
     auto *diagnosticLogCheck = new QCheckBox(
         "Enable rotating local diagnostic log", diagnosticsPage);
     diagnosticLogCheck->setObjectName("settingsDiagnosticLog");
+    diagnosticLogCheck->setAccessibleDescription(
+        "Store a bounded rotating diagnostic log on this computer");
     diagnosticLogCheck->setChecked(diagnosticLoggingEnabled_);
     auto *diagnosticPrivacy = new QLabel(
         "Logs stay on this computer and are limited to three 1 MiB files. "
@@ -2038,6 +2107,7 @@ void ScannerWindow::showSettingsDialog()
             continue;
         }
         auto *edit = new QLineEdit(programsPage);
+        edit->setAccessibleName(QString("%1 launch command").arg(def.label));
         edit->setText(customCommands_.value(def.id));
         edit->setPlaceholderText("Use {host} and optionally {port} / {url}");
         edit->setMaxLength(512);
@@ -2061,6 +2131,9 @@ void ScannerWindow::showSettingsDialog()
         ouiPage);
     ouiHelp->setWordWrap(true);
     auto *ouiEdit = new QPlainTextEdit(ouiPage);
+    ouiEdit->setAccessibleName("Custom OUI vendor overrides");
+    ouiEdit->setAccessibleDescription(
+        "One hexadecimal prefix and vendor name per line");
     QStringList customLines;
     for (auto it = customOuiVendors_.begin(); it != customOuiVendors_.end(); ++it) {
         customLines.append(QString("%1=%2").arg(it.key(), it.value()));
@@ -2084,6 +2157,7 @@ void ScannerWindow::showSettingsDialog()
     styleForm->setHorizontalSpacing(settingslayout::kSectionSpacing);
     styleForm->setVerticalSpacing(settingslayout::kControlSpacing);
     auto *displayModeCombo = new QComboBox(toolbarPage);
+    displayModeCombo->setAccessibleName("Default toolbar display style");
     displayModeCombo->addItem("Icon only", 0);
     displayModeCombo->addItem("Icon + Text", 1);
     displayModeCombo->addItem("Text only", 2);
@@ -2091,6 +2165,7 @@ void ScannerWindow::showSettingsDialog()
     styleForm->addRow("Default style:", displayModeCombo);
 
     auto *itemModeCombo = new QComboBox(toolbarPage);
+    itemModeCombo->setAccessibleName("Selected toolbar action display style");
     itemModeCombo->addItem("Default", -1);
     itemModeCombo->addItem("Icon only", 0);
     itemModeCombo->addItem("Icon + Text", 1);
@@ -2124,6 +2199,8 @@ void ScannerWindow::showSettingsDialog()
     listsLayout->setSpacing(settingslayout::kControlSpacing);
     auto *availableList = new QListWidget(listsRow);
     auto *currentList = new QListWidget(listsRow);
+    availableList->setAccessibleName("Available toolbar items");
+    currentList->setAccessibleName("Current toolbar items");
     availableList->setSelectionMode(QAbstractItemView::SingleSelection);
     currentList->setSelectionMode(QAbstractItemView::SingleSelection);
 
@@ -2149,6 +2226,11 @@ void ScannerWindow::showSettingsDialog()
     auto *upButton = new QPushButton("Up", moveButtons);
     auto *downButton = new QPushButton("Down", moveButtons);
     auto *defaultsButton = new QPushButton("Defaults", moveButtons);
+    addButton->setAccessibleName("Add toolbar item");
+    removeButton->setAccessibleName("Remove toolbar item");
+    upButton->setAccessibleName("Move toolbar item up");
+    downButton->setAccessibleName("Move toolbar item down");
+    defaultsButton->setAccessibleName("Restore default toolbar");
     moveButtonsLayout->addWidget(addButton);
     moveButtonsLayout->addWidget(removeButton);
     moveButtonsLayout->addWidget(upButton);
@@ -3165,6 +3247,8 @@ void ScannerWindow::applyToolbarDisplayMode()
         const bool iconOnly = (mode == 0);
         const bool textOnly = (mode == 2);
         button->setText(iconOnly ? QString() : label);
+        button->setAccessibleName(label);
+        button->setAccessibleDescription(button->toolTip());
         button->setIcon(textOnly ? QIcon() : icon);
         if (iconOnly && iconOnlyWidth > 0) {
             button->setFixedWidth(iconOnlyWidth);
@@ -3175,13 +3259,21 @@ void ScannerWindow::applyToolbarDisplayMode()
         }
     };
 
-    applyButton(scanButton_, scanInProgress_ ? "Stop" : "Scan",
+    applyButton(scanButton_, scanCompletionPending_
+                                 ? "Finalizing results"
+                                 : (scanInProgress_ ? "Stop" : "Scan"),
                 scanInProgress_ ? stopIcon_ : playIcon_, buttonMode("scan"), 32);
     applyButton(defaultsButton_, "Auto", style()->standardIcon(QStyle::SP_DriveNetIcon), buttonMode("auto"));
     applyButton(findButton_, "Find", QIcon::fromTheme("edit-find", style()->standardIcon(QStyle::SP_FileDialogContentsView)),
                 buttonMode("find"), 32);
     applyButton(terminalButton_, "Terminal", QIcon::fromTheme("utilities-terminal", style()->standardIcon(QStyle::SP_ComputerIcon)), buttonMode("terminal"));
     applyButton(refreshAdaptersButton_, "Refresh", style()->standardIcon(QStyle::SP_BrowserReload), buttonMode("refresh"), 32);
+
+    scanButton_->setShortcut(QKeySequence(Qt::Key_F5));
+    defaultsButton_->setShortcut(QKeySequence("Ctrl+Shift+A"));
+    findButton_->setShortcut(QKeySequence::Find);
+    terminalButton_->setShortcut(QKeySequence("Ctrl+Shift+T"));
+    refreshAdaptersButton_->setShortcut(QKeySequence("Ctrl+R"));
 }
 
 QString ScannerWindow::rowIdentityKey(int row) const

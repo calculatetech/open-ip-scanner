@@ -44,6 +44,9 @@ The unchecked milestone boxes below mean their complete acceptance criteria are 
   while preserving stable live-result order, selection, and viewport position.
 - `0.6.8` — **SERVICE-PILL-THEMING:** restored palette-aware service family
   colors, neutral unknown ports, and stable tag geometry.
+- `0.6.9` — **ACCESSIBILITY:** implemented warning-free scaled startup,
+  accessible control metadata, and conflict-free keyboard focus paths; the
+  final real-session smoke remains.
 
 **RESULT-SCALING** is human-verified on version `0.4.4`. DUPLICATE-IP-CONFLICTS remains Post-1.0.
 
@@ -361,6 +364,16 @@ Priority matches the most severe audit finding an item closes. All items in the 
   - Set the Qt high-DPI rounding policy through the supported pre-application API or remove the override; clean startup must not emit the current policy-order warning.
   - Give icon-only controls explicit accessible names and keyboard paths, avoid hard-coded selection/service colors that defeat system contrast, test screen-reader labels and high scaling, and add scrolling/responsive sizing to dense settings pages.
   - Current progress: the canonical [UI layout specification](ui-layout-spec.md) limits Settings to 600 by 440, standardizes spacing and aligned Performance controls, reserves stable geometry for dynamic descriptions, and requires internal page scrolling. An automated geometry contract protects the dimensions and row fit.
+  - Current progress on `0.6.9`: the supported static high-DPI policy runs
+    before application construction; primary and settings controls expose
+    stable names/descriptions and keyboard paths even in icon-only toolbar
+    mode. Startup smoke coverage runs at 100% and 200% scaling. Real-session
+    assistive-technology and keyboard smoke remains final-review evidence. The
+    first review's shortcut, dynamic-label, finalizing-state, sanitizer, and
+    test-strength findings were repaired. The full Release gate passes normal
+    and strict 36/36, ASan/UBSan 35/35, ThreadSanitizer 34/34, and Release
+    36/36 with a tested package. The final fresh adversarial review found no
+    actionable issue.
   - Done when offscreen and real-session startup are warning-free, automated accessibility inspection finds names/roles for interactive controls, and light, dark, high-contrast, 200% scale, and keyboard-only smoke tests pass.
 
 #### SEARCH-ENRICHMENT
