@@ -229,11 +229,18 @@ if(BUILD_TESTING)
     set_tests_properties(service_tag_theme_contract PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
-    add_executable(startup_accessibility_test tests/startupaccessibility_test.cpp)
-    target_link_libraries(startup_accessibility_test PRIVATE Qt6::Core)
-    add_test(NAME startup_accessibility_smoke
-        COMMAND startup_accessibility_test $<TARGET_FILE:open_ip_scanner>)
-    set_tests_properties(startup_accessibility_smoke PROPERTIES TIMEOUT 20)
+    foreach(scale_factor IN ITEMS 1 2)
+        add_test(NAME startup_accessibility_scale_${scale_factor}
+            COMMAND ${CMAKE_COMMAND} -E env
+                    --unset=QT_SCALE_FACTOR_ROUNDING_POLICY
+                    QT_QPA_PLATFORM=offscreen
+                    QT_SCALE_FACTOR=${scale_factor}
+                    $<TARGET_FILE:open_ip_scanner> --startup-smoke)
+        set_tests_properties(startup_accessibility_scale_${scale_factor} PROPERTIES
+            FAIL_REGULAR_EXPRESSION
+                "setHighDpiScaleFactorRoundingPolicy;must be called before creating"
+            TIMEOUT 10)
+    endforeach()
 
     add_executable(scan_cancellation_test tests/scancancellation_test.cpp)
     target_link_libraries(scan_cancellation_test PRIVATE ois_linux)

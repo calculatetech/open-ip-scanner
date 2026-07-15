@@ -370,10 +370,12 @@ Priority matches the most severe audit finding an item closes. All items in the 
     mode. Startup smoke coverage runs at 100% and 200% scaling. Real-session
     assistive-technology and keyboard smoke remains final-review evidence. The
     first review's shortcut, dynamic-label, finalizing-state, sanitizer, and
-    test-strength findings were repaired. The full Release gate passes normal
-    and strict 36/36, ASan/UBSan 35/35, ThreadSanitizer 34/34, and Release
-    36/36 with a tested package. The final fresh adversarial review found no
-    actionable issue.
+    test-strength findings were repaired. Direct CTest launches keep the
+    application sanitizer-instrumented at 100% and 200% scaling without an
+    instrumented process-launching harness. The full Release gate passes
+    normal and strict 37/37, ASan/UBSan 36/36, ThreadSanitizer 35/35, and
+    Release 37/37 with a tested package. The final fresh adversarial review
+    found no actionable issue.
   - Done when offscreen and real-session startup are warning-free, automated accessibility inspection finds names/roles for interactive controls, and light, dark, high-contrast, 200% scale, and keyboard-only smoke tests pass.
 
 #### SEARCH-ENRICHMENT
