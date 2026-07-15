@@ -94,8 +94,10 @@ Create and push `v1.0.0` at the already merged, clean candidate commit; do not
 allow a release command to create or move the tag implicitly. Wait for that
 tag's `Release artifacts` run to pass. In a new empty verification directory,
 download `open-ip-scanner-1.0.0` and
-`open-ip-scanner-1.0.0-verification` from that run. Verify `SHA256SUMS`, the
-package and SPDX attestations, and the package's SPDX predicate against
+`open-ip-scanner-1.0.0-verification` from that run into that same directory so
+the complete `SHA256SUMS` can verify the separately uploaded package together
+with the source archive and SPDX document. Verify the package and SPDX
+attestations, and the package's SPDX predicate, against
 `calculatetech/open-ip-scanner`.
 
 Only after those checks pass, create the GitHub Release with

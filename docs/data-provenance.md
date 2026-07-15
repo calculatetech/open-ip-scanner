@@ -44,7 +44,9 @@ binding, and x86-64 control-flow protection. Configure-time checks reject a
 toolchain that cannot apply the required stack-clash and hardening flags.
 
 The same gate creates a deterministic source archive, `SHA256SUMS`, and an
-SPDX 2.3 JSON document. The SBOM identifies the Debian package by SHA-256 and
+SPDX 2.3 JSON document. `SHA256SUMS` covers the Debian package, source archive,
+and SPDX document even though CI uploads the installable package separately.
+The SBOM identifies the Debian package by SHA-256 and
 lists every installed regular file with SHA-1 and SHA-256 checksums. License
 fields remain `NOASSERTION` where one expression cannot truthfully cover the
 application, IEEE-derived vendor data, and external runtime components.

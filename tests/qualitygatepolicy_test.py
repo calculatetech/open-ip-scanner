@@ -501,12 +501,14 @@ def main() -> int:
             "verification material must remain separate from installable packages")
     require("prepare_provenance_directory" in artifact_commands,
             "release builder must validate and own its provenance destination")
-    require(any('"open-ip-scanner-$version.tar.gz"' in command
+    require(any('"$bundle_dir/open-ip-scanner-$version.tar.gz"' in command
                 for command in artifact_commands) and
-            any('"open-ip-scanner_${version}_amd64.spdx.json"' in command
+            any('"$bundle_dir/open-ip-scanner_${version}_amd64.spdx.json"' in command
                 for command in artifact_commands) and
-            any("> SHA256SUMS" in command for command in artifact_commands),
-            "verification material must carry checksums for its own contents")
+            any('"$bundle_dir/SHA256SUMS"' in command
+                for command in artifact_commands) and
+            not any("> SHA256SUMS" in command for command in artifact_commands),
+            "verification material must preserve the complete bundle checksums")
 
     presets = json.loads((ROOT / "CMakePresets.json").read_text(encoding="utf-8"))
     preset_directories = {
