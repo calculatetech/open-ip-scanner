@@ -506,6 +506,170 @@ struct ScannerWindowTestAccess {
                options.customOuiVendors.value("DDEEFF") == "Custom fixture";
     }
 
+    static bool consecutiveProductionScanOptions(ScannerWindow &window)
+    {
+        const int originalAccuracy = window.accuracyLevel_;
+        const int originalWorkers = window.maxParallelProbes_;
+        const int originalMacFormat = window.macDisplayFormat_;
+        const bool originalSaveHistory = window.saveTargetHistory_;
+        const QSet<QString> originalServices = window.enabledServiceIds_;
+        const QHash<QString, QString> originalBuiltInVendors =
+            window.builtInOuiVendors_;
+        const QHash<QString, QString> originalCustomVendors =
+            window.customOuiVendors_;
+        const QList<ScannerWindow::AdapterInfo> originalAdapters = window.adapters_;
+        const QString originalTarget = window.targetInput_->text();
+        const ScannerWindow::ProductionScanRunner originalRunner =
+            window.productionScanRunner_;
+        QList<QPair<QString, QVariant>> originalAdapterItems;
+        for (int index = 0; index < window.adapterCombo_->count(); ++index) {
+            originalAdapterItems.append(
+                {window.adapterCombo_->itemText(index),
+                 window.adapterCombo_->itemData(index)});
+        }
+        const int originalAdapterIndex = window.adapterCombo_->currentIndex();
+
+        QSettings settings("OpenIPScanner", "OpenIPScanner");
+        const bool hadAuthorization =
+            settings.contains("safety/authorization_ack_version");
+        const QVariant originalAuthorization =
+            settings.value("safety/authorization_ack_version");
+        settings.setValue("safety/authorization_ack_version", 1);
+        settings.sync();
+
+        QList<ScanOptions> capturedScans;
+        window.productionScanRunner_ = [&capturedScans](
+                                           const ScanOptions &options,
+                                           const QList<QHostAddress> &hosts,
+                                           const std::shared_ptr<std::atomic_bool> &,
+                                           const std::function<void(int, int)> &progress,
+                                           const std::function<void(const ScanResult &)> &) {
+            capturedScans.append(options);
+            progress(static_cast<int>(hosts.size()), static_cast<int>(hosts.size()));
+            return QList<ScanResult>{};
+        };
+        ScannerWindow::AdapterInfo adapter;
+        adapter.interfaceName = "lo";
+        adapter.interfaceLabel = "Loopback fixture";
+        adapter.localIp = "127.0.0.1";
+        adapter.localMac = "02:00:00:00:00:01";
+        adapter.dnsSuffixes = {"first.example"};
+        window.adapters_ = {adapter};
+        window.adapterCombo_->clear();
+        window.adapterCombo_->addItem(adapter.interfaceLabel, 0);
+        window.adapterCombo_->setCurrentIndex(0);
+        window.targetInput_->setText("127.0.0.2");
+        window.saveTargetHistory_ = false;
+
+        const auto runAndWait = [&window]() {
+            window.startScan();
+            QElapsedTimer timer;
+            timer.start();
+            while ((window.scanInProgress_ || window.scanCompletionPending_ ||
+                    window.scanSession_->isRunning()) && timer.elapsed() < 2000) {
+                QApplication::processEvents(QEventLoop::AllEvents, 20);
+            }
+            return !window.scanInProgress_ && !window.scanCompletionPending_ &&
+                   !window.scanSession_->isRunning();
+        };
+
+        window.accuracyLevel_ = 0;
+        window.maxParallelProbes_ = 2;
+        window.macDisplayFormat_ = MacColonUpper;
+        window.enabledServiceIds_ = {"ssh"};
+        window.builtInOuiVendors_ = {{"020000", "First built in"}};
+        window.customOuiVendors_ = {{"020001", "First custom"}};
+        const bool firstCompleted = runAndWait();
+
+        window.accuracyLevel_ = 3;
+        window.maxParallelProbes_ = 9;
+        window.macDisplayFormat_ = MacPlainLower;
+        window.enabledServiceIds_ = {"http", "rdp"};
+        window.builtInOuiVendors_ = {{"020002", "Second built in"}};
+        window.customOuiVendors_ = {{"020003", "Second custom"}};
+        window.adapters_[0].interfaceName = "loopback-second";
+        window.adapters_[0].interfaceLabel = "Second loopback fixture";
+        window.adapters_[0].localIp = "127.0.0.2";
+        window.adapters_[0].localMac = "02:00:00:00:00:02";
+        window.adapters_[0].dnsSuffixes = {"second.example"};
+        window.targetInput_->setText("127.0.0.3");
+        const bool secondCompleted = runAndWait();
+
+        const bool passed = firstCompleted && secondCompleted &&
+                            capturedScans.size() == 2 &&
+                            capturedScans[0].accuracyLevel == 0 &&
+                            capturedScans[0].maxParallelProbes == 2 &&
+                            capturedScans[0].interfaceName == "lo" &&
+                            capturedScans[0].interfaceLabel == "Loopback fixture" &&
+                            capturedScans[0].localIp == "127.0.0.1" &&
+                            capturedScans[0].macDisplayFormat == MacColonUpper &&
+                            capturedScans[0].enabledServiceIds ==
+                                QSet<QString>{"ssh"} &&
+                            capturedScans[0].localMac == "02:00:00:00:00:01" &&
+                            capturedScans[0].dnsSuffixes ==
+                                QStringList{"first.example"} &&
+                            capturedScans[0].pingAttempts == 1 &&
+                            capturedScans[0].pingTimeoutSeconds == 1 &&
+                            capturedScans[0].serviceAttempts == 1 &&
+                            capturedScans[0].serviceTimeoutMs == 350 &&
+                            capturedScans[0].neighborConfirmationMs == 0 &&
+                            capturedScans[0].targetDeadlineMs == 5000 &&
+                            capturedScans[0].builtInOuiVendors ==
+                                QHash<QString, QString>{
+                                    {"020000", "First built in"}} &&
+                            capturedScans[0].customOuiVendors ==
+                                QHash<QString, QString>{
+                                    {"020001", "First custom"}} &&
+                            capturedScans[1].accuracyLevel == 3 &&
+                            capturedScans[1].maxParallelProbes == 9 &&
+                            capturedScans[1].interfaceName == "loopback-second" &&
+                            capturedScans[1].interfaceLabel ==
+                                "Second loopback fixture" &&
+                            capturedScans[1].localIp == "127.0.0.2" &&
+                            capturedScans[1].macDisplayFormat == MacPlainLower &&
+                            capturedScans[1].enabledServiceIds ==
+                                QSet<QString>({"http", "rdp"}) &&
+                            capturedScans[1].localMac == "02:00:00:00:00:02" &&
+                            capturedScans[1].dnsSuffixes ==
+                                QStringList{"second.example"} &&
+                            capturedScans[1].pingAttempts == 4 &&
+                            capturedScans[1].pingTimeoutSeconds == 3 &&
+                            capturedScans[1].serviceAttempts == 4 &&
+                            capturedScans[1].serviceTimeoutMs == 2000 &&
+                            capturedScans[1].neighborConfirmationMs == 8000 &&
+                            capturedScans[1].targetDeadlineMs == 59500 &&
+                            capturedScans[1].builtInOuiVendors ==
+                                QHash<QString, QString>{
+                                    {"020002", "Second built in"}} &&
+                            capturedScans[1].customOuiVendors ==
+                                QHash<QString, QString>{
+                                    {"020003", "Second custom"}};
+
+        window.productionScanRunner_ = originalRunner;
+        window.accuracyLevel_ = originalAccuracy;
+        window.maxParallelProbes_ = originalWorkers;
+        window.macDisplayFormat_ = originalMacFormat;
+        window.saveTargetHistory_ = originalSaveHistory;
+        window.enabledServiceIds_ = originalServices;
+        window.builtInOuiVendors_ = originalBuiltInVendors;
+        window.customOuiVendors_ = originalCustomVendors;
+        window.adapters_ = originalAdapters;
+        window.targetInput_->setText(originalTarget);
+        window.adapterCombo_->clear();
+        for (const auto &item : originalAdapterItems) {
+            window.adapterCombo_->addItem(item.first, item.second);
+        }
+        window.adapterCombo_->setCurrentIndex(originalAdapterIndex);
+        if (hadAuthorization) {
+            settings.setValue("safety/authorization_ack_version",
+                              originalAuthorization);
+        } else {
+            settings.remove("safety/authorization_ack_version");
+        }
+        settings.sync();
+        return passed;
+    }
+
     static bool parsesAdapterDnsDomains()
     {
         const QByteArray fixture = R"json([
@@ -1186,6 +1350,7 @@ int main(int argc, char **argv)
     REQUIRE(ScannerWindowTestAccess::targetFormatRoundTrips(window));
     REQUIRE(ScannerWindowTestAccess::preservesInterfaceIdentity(window));
     REQUIRE(ScannerWindowTestAccess::capturesAllScanOptions(window));
+    REQUIRE(ScannerWindowTestAccess::consecutiveProductionScanOptions(window));
     REQUIRE(ScannerWindowTestAccess::parsesAdapterDnsDomains());
     REQUIRE(ScannerWindowTestAccess::rendersConciseHostnameProvenance(window));
     REQUIRE(ScannerWindowTestAccess::rendersMergedHostnameEvidence(window));

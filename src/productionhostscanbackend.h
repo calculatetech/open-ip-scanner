@@ -10,6 +10,8 @@
 struct ProductionHostScanDependencies {
     using Cancellation = std::shared_ptr<std::atomic_bool>;
 
+    TargetBudget::NowFunction now;
+
     std::function<bool(const QHostAddress &,
                        const ScanOptions &,
                        const TargetBudget &,

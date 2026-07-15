@@ -29,3 +29,26 @@ jobs:
           OIS_TSAN_EXCLUDE: scan_cancellation_deadlines|linux_neighbor_probe_contract|linux_ping_probe_contract
           UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
         run: ./scripts/quality-gate.sh full
+
+  quality-newest:
+    name: quality-newest
+    runs-on: ubuntu-24.04
+    container: debian:13
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+      - name: Install build dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            build-essential clang-tidy cmake ninja-build \
+            qt6-base-dev qt6-base-dev-tools qt6-qpa-plugins
+      - name: Run full quality gate
+        env:
+          QT_QPA_PLATFORM: offscreen
+          ASAN_OPTIONS: detect_leaks=0
+          OIS_SKIP_HARDWARE_TIMING_ASSERTIONS: "1"
+          OIS_TSAN_EXCLUDE: scan_cancellation_deadlines|linux_neighbor_probe_contract|linux_ping_probe_contract
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: ./scripts/quality-gate.sh full

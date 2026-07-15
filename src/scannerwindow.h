@@ -11,6 +11,10 @@
 #include <QString>
 #include <QStringList>
 
+#include <atomic>
+#include <functional>
+#include <memory>
+
 #include "scanoptions.h"
 #include "devicepresentation.h"
 #include "scanresult.h"
@@ -116,6 +120,13 @@ private:
         int pixelOffset = 0;
         int scrollValue = 0;
     };
+
+    using ProductionScanRunner = std::function<QList<ScanResult>(
+        const ScanOptions &,
+        const QList<QHostAddress> &,
+        const std::shared_ptr<std::atomic_bool> &,
+        const std::function<void(int, int)> &,
+        const std::function<void(const ScanResult &)> &)>;
 
     // Detect routable IPv4 networks and build initial scan defaults.
     QList<NetworkTarget> detectDefaultNetworks() const;
@@ -248,6 +259,7 @@ private:
     QHash<QString, QString> customOuiVendors_;
 
     ScanSession *scanSession_ = nullptr;
+    ProductionScanRunner productionScanRunner_;
     QList<ScanResult> pendingDisplayResults_;
     QTimer *resultFlushTimer_ = nullptr;
     QTimer *settingsSaveTimer_ = nullptr;

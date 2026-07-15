@@ -31,7 +31,12 @@ HostScanOutcome ProductionHostScanBackend::scan(
     }
 
     const QString ipString = host.toString();
-    const TargetBudget budget(options_.targetDeadlineMs);
+    const TargetBudget budget(
+        options_.targetDeadlineMs,
+        dependencies_.now ? dependencies_.now
+                          : TargetBudget::NowFunction([]() {
+                                return TargetBudget::Clock::now();
+                            }));
     bool alive = false;
     QString discoveredMac;
     NeighborObservation neighbor;

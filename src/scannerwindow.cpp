@@ -165,6 +165,31 @@ bool isLikelyVirtualInterface(const QNetworkInterface &iface)
 ScannerWindow::ScannerWindow(QWidget *parent)
     : QMainWindow(parent)
 {
+    productionScanRunner_ = [](const ScanOptions &options,
+                               const QList<QHostAddress> &hosts,
+                               const std::shared_ptr<std::atomic_bool> &cancellation,
+                               const std::function<void(int, int)> &progress,
+                               const std::function<void(const ScanResult &)> &result) {
+        const ScanVendorResolver vendorResolver = [](const QString &mac,
+                                                     const ScanOptions &scanOptions) {
+            return OuiDatabase::lookup(mac,
+                                       scanOptions.customOuiVendors,
+                                       scanOptions.builtInOuiVendors);
+        };
+        const ScanDetailsFormatter detailsFormatter = [](
+                                                         const ScanResult &scanResult,
+                                                         const ScanOptions &scanOptions) {
+            return deviceDetailsHtml(scanResult, scanOptions.macDisplayFormat);
+        };
+        return runProductionScan(options,
+                                 hosts,
+                                 cancellation,
+                                 progress,
+                                 result,
+                                 vendorResolver,
+                                 detailsFormatter);
+    };
+
     setWindowTitle("Open IP Scanner");
     resize(1040, 620);
 
@@ -1051,28 +1076,14 @@ void ScannerWindow::startScan()
     statusProgressBar_->setValue(0);
     statusProgressBar_->setVisible(true);
 
-    const ScanVendorResolver vendorResolver = [](const QString &mac,
-                                                 const ScanOptions &options) {
-        return OuiDatabase::lookup(mac,
-                                   options.customOuiVendors,
-                                   options.builtInOuiVendors);
-    };
-    const ScanDetailsFormatter detailsFormatter = [](const ScanResult &result,
-                                                      const ScanOptions &options) {
-        return deviceDetailsHtml(result, options.macDisplayFormat);
-    };
+    const ProductionScanRunner productionScanRunner = productionScanRunner_;
     const bool launched = scanSession_->start(
-        [scanOptions, hosts, vendorResolver, detailsFormatter](
+        [scanOptions, hosts, productionScanRunner](
             const ScanSession::Cancellation &cancellation,
             const ScanSession::ProgressCallback &progress,
             const ScanSession::ResultCallback &result) {
-            return runProductionScan(scanOptions,
-                                     hosts,
-                                     cancellation,
-                                     progress,
-                                     result,
-                                     vendorResolver,
-                                     detailsFormatter);
+            return productionScanRunner(
+                scanOptions, hosts, cancellation, progress, result);
         });
     if (!launched) {
         completeScanPresentation();

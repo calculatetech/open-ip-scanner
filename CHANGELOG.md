@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.6.1] - 2026-07-14
+
+### Added
+
+- Added a newer Debian 13 quality-gate job alongside the Ubuntu 24.04
+  compatibility-floor check.
+- Added deterministic production regressions for consecutive window option
+  snapshots and a virtual-clock 4,096-target scan budget.
+
 ## [0.6.0] - 2026-07-14
 
 ### Added

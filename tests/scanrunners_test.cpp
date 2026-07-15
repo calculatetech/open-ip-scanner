@@ -5,6 +5,7 @@
 #include <QCoreApplication>
 
 #include <atomic>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <memory>
@@ -130,6 +131,141 @@ int main(int argc, char **argv)
         REQUIRE(results.size() == 1);
         REQUIRE(results.first().vendor == "Fixture Vendor");
         REQUIRE(results.first().detailsText == "fixture details");
+    }
+
+    {
+        ScanOptions options;
+        options.interfaceName = "fixture0";
+        options.maxParallelProbes = 1;
+        options.pingAttempts = 4;
+        options.pingTimeoutSeconds = 1;
+        options.targetDeadlineMs = 2500;
+        TargetBudget::TimePoint now{};
+        std::atomic_int pingAttempts{0};
+        std::atomic_int progressCalls{0};
+        ProductionRunnerEnvironment environment;
+        environment.gatewayLookup = [](const QString &) { return QString(); };
+        environment.dependencyFactory = [&](const ScanOptions &,
+                                            const ScanCancellation &) {
+            ProductionHostScanDependencies dependencies;
+            dependencies.now = [&]() { return now; };
+            dependencies.ping = [&](const QHostAddress &,
+                                    const ScanOptions &captured,
+                                    const TargetBudget &budget,
+                                    const auto &activeCancellation) {
+                for (int attempt = 0;
+                     attempt < captured.pingAttempts && !budget.expired() &&
+                     !(activeCancellation && activeCancellation->load());
+                     ++attempt) {
+                    ++pingAttempts;
+                    now += std::chrono::milliseconds(1000);
+                }
+                return false;
+            };
+            dependencies.services = [](const QString &, const QString &,
+                                       const TargetBudget &, const auto &,
+                                       const ScanOptions &) {
+                return QList<ServiceHit>{};
+            };
+            dependencies.neighbor = [](const QString &, const QString &,
+                                       const TargetBudget &, const auto &) {
+                return NeighborObservation{};
+            };
+            dependencies.confirmNeighbor = [](
+                                               const NeighborObservation &initial,
+                                               const QString &,
+                                               const QString &,
+                                               const ScanOptions &,
+                                               const TargetBudget &,
+                                               const auto &) { return initial; };
+            dependencies.hostname = [](const QString &, const HostnameEvidence &,
+                                       const QStringList &, int,
+                                       const TargetBudget &, const auto &) {
+                return HostnameScanResolution{};
+            };
+            return dependencies;
+        };
+        QList<QHostAddress> hosts;
+        hosts.reserve(4096);
+        for (int index = 0; index < 4096; ++index) {
+            hosts.append(QHostAddress(
+                QString("198.18.%1.%2").arg(index / 256).arg(index % 256)));
+        }
+        const QList<ScanResult> results = runProductionScan(
+            options,
+            hosts,
+            {},
+            [&](int, int total) {
+                REQUIRE(total == 4096);
+                ++progressCalls;
+            },
+            [](const ScanResult &) { REQUIRE(false); },
+            [](const QString &, const ScanOptions &) { return QString(); },
+            [](const ScanResult &, const ScanOptions &) { return QString(); },
+            environment);
+        REQUIRE(results.isEmpty());
+        REQUIRE(progressCalls.load() == 4096);
+        REQUIRE(pingAttempts.load() == 4096 * 3);
+
+        const auto cancellation = std::make_shared<std::atomic_bool>(false);
+        pingAttempts.store(0);
+        progressCalls.store(0);
+        now = {};
+        environment.dependencyFactory = [&](const ScanOptions &,
+                                            const ScanCancellation &) {
+            ProductionHostScanDependencies dependencies;
+            dependencies.now = [&]() { return now; };
+            dependencies.ping = [&](const QHostAddress &,
+                                    const ScanOptions &captured,
+                                    const TargetBudget &budget,
+                                    const auto &activeCancellation) {
+                for (int attempt = 0;
+                     attempt < captured.pingAttempts && !budget.expired() &&
+                     !activeCancellation->load();
+                     ++attempt) {
+                    if (++pingAttempts == 2) {
+                        activeCancellation->store(true);
+                    }
+                    now += std::chrono::milliseconds(1000);
+                }
+                return false;
+            };
+            dependencies.services = [](const QString &, const QString &,
+                                       const TargetBudget &, const auto &,
+                                       const ScanOptions &) {
+                return QList<ServiceHit>{};
+            };
+            dependencies.neighbor = [](const QString &, const QString &,
+                                       const TargetBudget &, const auto &) {
+                return NeighborObservation{};
+            };
+            dependencies.confirmNeighbor = [](
+                                               const NeighborObservation &initial,
+                                               const QString &,
+                                               const QString &,
+                                               const ScanOptions &,
+                                               const TargetBudget &,
+                                               const auto &) { return initial; };
+            dependencies.hostname = [](const QString &, const HostnameEvidence &,
+                                       const QStringList &, int,
+                                       const TargetBudget &, const auto &) {
+                return HostnameScanResolution{};
+            };
+            return dependencies;
+        };
+        const QList<ScanResult> canceledResults = runProductionScan(
+            options,
+            hosts,
+            cancellation,
+            [&](int, int) { ++progressCalls; },
+            [](const ScanResult &) { REQUIRE(false); },
+            [](const QString &, const ScanOptions &) { return QString(); },
+            [](const ScanResult &, const ScanOptions &) { return QString(); },
+            environment);
+        REQUIRE(canceledResults.isEmpty());
+        REQUIRE(cancellation->load());
+        REQUIRE(pingAttempts.load() == 2);
+        REQUIRE(progressCalls.load() == 0);
     }
 
     {
