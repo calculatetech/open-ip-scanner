@@ -400,9 +400,10 @@ Priority matches the most severe audit finding an item closes. All items in the 
     metadata lint, normal and strict 39/39, ASan/UBSan 38/38,
     ThreadSanitizer 37/37, zero-warning Lintian, install/remove, hardening, and
     two byte-identical packages. The externally staged source archive,
-    SHA-256 manifest, and SPDX inventory independently validate. GitHub OIDC
-    attestations and clean-environment verification remain gated to the
-    separately authorized final `1.0.0` candidate.
+    SHA-256 manifest, and SPDX inventory independently validate. The same gate
+    also passes from clean candidate commit `e4a53cd`. GitHub OIDC attestations
+    and their independent verification remain gated to the separately
+    authorized final `1.0.0` candidate.
   - Done when hardening inspection meets the documented baseline, two clean builds produce matching artifacts after normalization, and users can verify signed checksums and provenance.
 
 #### PREFIX-SAFETY

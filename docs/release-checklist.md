@@ -21,7 +21,7 @@ and final smoke evidence are complete.
 
 ## Automated validation
 
-- [ ] `./scripts/quality-gate.sh release` passes from a clean checkout.
+- [x] `./scripts/quality-gate.sh release` passes from a clean checkout.
 - [ ] Main CI passes the Ubuntu 24.04 compatibility-floor gate, Debian 13 newer
   gate, isolated mDNS responder, and downstream tested-package job.
 - [x] Strict project warnings, metadata lint, ASan/UBSan, ThreadSanitizer's
@@ -58,7 +58,7 @@ complete Kubuntu 26.04 checklist passed without exception.
 
 ## Artifacts and provenance
 
-- [ ] Produce one Debian package, source archive, SHA-256 checksum file, and
+- [x] Produce one Debian package, source archive, SHA-256 checksum file, and
   SPDX JSON SBOM from the clean candidate commit.
 - [ ] Generate keyless GitHub build-provenance and SBOM attestations with the
   least required OIDC permissions and the immutable candidate commit identity.
@@ -69,7 +69,8 @@ complete Kubuntu 26.04 checklist passed without exception.
 - [x] Confirm artifact names, versions, architecture, license/notices, manual
   page, support documents, dependencies, and retention policy.
 
-Local 0.7.9 evidence: the release gate passed normal and strict 39/39,
+Local 0.7.9 evidence from clean candidate commit `e4a53cd`: the release gate
+passed normal and strict 39/39,
 ASan/UBSan 38/38, ThreadSanitizer 37/37, zero-warning Lintian, package
 install/remove, hardening, two byte-identical package builds, source/checksum/
 SPDX validation, and external checksum verification. The installable candidate
