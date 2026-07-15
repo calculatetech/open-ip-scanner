@@ -180,6 +180,7 @@ private:
     void setTargetHistoryRetention(bool enabled);
     void clearTargetHistory();
     QString activeProbeSummary(bool detailed = false) const;
+    QString aboutText() const;
     QString probeSummary(const ScanOptions &options,
                          bool detailed,
                          bool targetRetained) const;

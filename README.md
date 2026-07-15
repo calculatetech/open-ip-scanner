@@ -1,6 +1,6 @@
 # Open IP Scanner
 
-A Qt-based desktop IP scanner for Linux (and Windows builds) focused on practical network discovery: live hosts, hostnames, MAC/vendor lookup, service probing, filtering, and export.
+A Qt-based desktop IPv4 scanner for Linux x86-64 focused on practical network discovery: live hosts, hostnames, MAC/vendor lookup, service probing, filtering, and export.
 
 Yes, this project is **100% vibe coded**.
 
@@ -29,6 +29,18 @@ Yes, this project is **100% vibe coded**.
 - Toolbar customization (Dolphin/Kate style: available/current actions, order, separators, style)
 - Settings persistence with schema versioning
 - Linux desktop integration assets (`.desktop`, icon, metainfo)
+
+## Supported platform
+
+The 1.0 support contract is Linux x86-64, IPv4, and Qt 6.4 or newer. Ubuntu
+24.04 is the compatibility floor and Debian 13 is the newer continuously tested
+environment. Kubuntu 26.04 is scheduled for the release-candidate desktop smoke
+test; it is not yet a completed support claim. Windows, macOS, Qt 5, ARM, and
+IPv6 scanning are not supported for 1.0 because they do not have complete
+discovery backends and release qualification.
+
+See [the canonical platform support contract](docs/platform-support.md) for the
+tested matrix and qualification boundaries.
 
 ## Prerequisites
 

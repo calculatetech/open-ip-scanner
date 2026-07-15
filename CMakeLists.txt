@@ -1,5 +1,10 @@
 cmake_minimum_required(VERSION 3.28)
-project(OpenIpScanner VERSION 0.6.1 LANGUAGES CXX)
+project(OpenIpScanner VERSION 0.6.2 LANGUAGES CXX)
+
+include(cmake/PlatformSupport.cmake)
+ois_validate_platform("${CMAKE_SYSTEM_NAME}"
+                      "${CMAKE_SYSTEM_PROCESSOR}"
+                      "${CMAKE_SIZEOF_VOID_P}")
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -115,6 +120,38 @@ option(OIS_MDNS_CONTROLLED_FIXTURE
 
 if(BUILD_TESTING)
     find_package(Qt6 6.4 REQUIRED COMPONENTS Test)
+    add_test(
+        NAME platform_supported_contract
+        COMMAND ${CMAKE_COMMAND}
+                -DOIS_TEST_SYSTEM_NAME=Linux
+                -DOIS_TEST_SYSTEM_PROCESSOR=x86_64
+                -DOIS_TEST_POINTER_SIZE=8
+                -P ${CMAKE_SOURCE_DIR}/cmake/platform_contract_test.cmake)
+    foreach(platform_case IN ITEMS non_linux non_x86_64 non_64_bit)
+        if(platform_case STREQUAL "non_linux")
+            set(test_system_name Windows)
+            set(test_system_processor x86_64)
+            set(test_pointer_size 8)
+        elseif(platform_case STREQUAL "non_x86_64")
+            set(test_system_name Linux)
+            set(test_system_processor aarch64)
+            set(test_pointer_size 8)
+        else()
+            set(test_system_name Linux)
+            set(test_system_processor x86_64)
+            set(test_pointer_size 4)
+        endif()
+        add_test(
+            NAME platform_${platform_case}_rejected
+            COMMAND ${CMAKE_COMMAND}
+                    -DOIS_TEST_SYSTEM_NAME=${test_system_name}
+                    -DOIS_TEST_SYSTEM_PROCESSOR=${test_system_processor}
+                    -DOIS_TEST_POINTER_SIZE=${test_pointer_size}
+                    -P ${CMAKE_SOURCE_DIR}/cmake/platform_contract_test.cmake)
+        set_tests_properties(platform_${platform_case}_rejected
+                             PROPERTIES WILL_FAIL TRUE)
+    endforeach()
+
     add_executable(csv_exporter_test tests/csvexporter_test.cpp)
     target_link_libraries(csv_exporter_test PRIVATE ois_core)
     add_test(NAME csv_exporter_contract COMMAND csv_exporter_test)
@@ -281,7 +318,8 @@ install(CODE [[
 set(CPACK_PACKAGE_NAME "open-ip-scanner")
 set(CPACK_PACKAGE_VENDOR "Open IP Scanner")
 set(CPACK_PACKAGE_CONTACT "mikebeutler84@gmail.com")
-set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Qt-based IP address scanner")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY
+    "Linux x86-64 IPv4 network scanner using Qt 6.4+")
 set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
 set(CPACK_GENERATOR "DEB")
 set(CPACK_DEBIAN_FILE_NAME DEB-DEFAULT)

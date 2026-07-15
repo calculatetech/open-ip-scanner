@@ -24,6 +24,7 @@
 #include <QSettings>
 #include <QSlider>
 #include <QStandardPaths>
+#include <QSysInfo>
 #include <QTableView>
 #include <QTemporaryDir>
 #include <QTimer>
@@ -686,6 +687,16 @@ struct ScannerWindowTestAccess {
                parsed.value("eth0") == QStringList({"example.test"}) &&
                parsed.value("wlan0") == QStringList({"local"}) &&
                ScannerWindow::parseAdapterDnsDomains("not json").isEmpty();
+    }
+
+    static bool aboutReportsRuntimeAndSupport(const ScannerWindow &window)
+    {
+        const QString text = window.aboutText();
+        return text.contains(QString("Qt runtime: %1").arg(qVersion())) &&
+               text.contains(QString("Running architecture: %1")
+                                 .arg(QSysInfo::currentCpuArchitecture())) &&
+               text.contains("Linux x86-64, IPv4, Qt 6.4 or newer") &&
+               text.contains("Ubuntu 24.04 and Debian 13");
     }
 
     static bool rendersConciseHostnameProvenance(ScannerWindow &window)
@@ -1352,6 +1363,7 @@ int main(int argc, char **argv)
     REQUIRE(ScannerWindowTestAccess::capturesAllScanOptions(window));
     REQUIRE(ScannerWindowTestAccess::consecutiveProductionScanOptions(window));
     REQUIRE(ScannerWindowTestAccess::parsesAdapterDnsDomains());
+    REQUIRE(ScannerWindowTestAccess::aboutReportsRuntimeAndSupport(window));
     REQUIRE(ScannerWindowTestAccess::rendersConciseHostnameProvenance(window));
     REQUIRE(ScannerWindowTestAccess::rendersMergedHostnameEvidence(window));
     REQUIRE(ScannerWindowTestAccess::tableHostnamePresentation(window));

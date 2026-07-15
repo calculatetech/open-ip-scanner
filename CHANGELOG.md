@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.6.2] - 2026-07-14
+
+### Changed
+
+- Declared the supported 1.0 platform as Linux x86-64, IPv4, and Qt 6.4 or
+  newer, with Ubuntu 24.04 as the compatibility floor and Debian 13 as the
+  newer continuously tested environment.
+- Updated About to report the actual Qt runtime and the supported platform
+  scope, and made unsupported OS/architecture configurations fail clearly.
+
 ## [0.6.1] - 2026-07-14
 
 ### Added

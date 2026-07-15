@@ -2319,14 +2319,22 @@ void ScannerWindow::showSettingsDialog()
 
 void ScannerWindow::showAboutDialog()
 {
+    QMessageBox::about(this, "About Open IP Scanner", aboutText());
+}
+
+QString ScannerWindow::aboutText() const
+{
     const QString version = QCoreApplication::applicationVersion().isEmpty()
                                 ? QString("Unknown")
                                 : QCoreApplication::applicationVersion();
-    QMessageBox::about(this,
-                       "About Open IP Scanner",
-                       QString("Open IP Scanner v%1\n\n").arg(version) +
-                       "Qt6 desktop IP scanner with adapter-aware scanning, custom target parsing,"
-                       " service probing, and CSV export.");
+    return QString("Open IP Scanner v%1\n"
+                   "Qt runtime: %2\n"
+                   "Running architecture: %3\n\n"
+                   "Supported for 1.0: Linux x86-64, IPv4, Qt 6.4 or newer.\n"
+                   "Tested on Ubuntu 24.04 and Debian 13.")
+        .arg(version,
+             QString::fromLatin1(qVersion()),
+             QSysInfo::currentCpuArchitecture());
 }
 
 void ScannerWindow::showHelpDialog()
