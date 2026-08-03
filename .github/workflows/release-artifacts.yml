@@ -4,7 +4,7 @@ name: Release artifacts
   workflow_dispatch:
   push:
     tags:
-      - v1.0.0
+      - 'v*.*.*'
 
 permissions:
   attestations: write
@@ -13,16 +13,38 @@ permissions:
 
 jobs:
   release-artifacts:
-    name: verified 1.0 release artifacts
+    name: build and attest release artifacts
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 40
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - name: Check out source
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
-      - name: Refuse non-1.0 or dirty source
+        with:
+          fetch-depth: 0
+      - name: Verify release source and version
+        id: version
         run: |
           test -z "$(git status --porcelain)"
-          grep -Fqx 'project(OpenIpScanner VERSION 1.0.0 LANGUAGES CXX)' CMakeLists.txt
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main; then
+            echo "release source $GITHUB_SHA is not merged into main" >&2
+            exit 1
+          fi
+          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch &&
+                ("$GITHUB_REF" != refs/heads/main ||
+                 "$GITHUB_SHA" != "$(git rev-parse refs/remotes/origin/main)") ]]; then
+            echo "manual release rehearsal must target the current main head" >&2
+            exit 1
+          fi
+          version=$(sed -nE 's/^project\(OpenIpScanner VERSION ([0-9]+\.[0-9]+\.[0-9]+).*/\1/p' CMakeLists.txt)
+          test -n "$version"
+          if [[ "$GITHUB_REF_TYPE" == tag && "$GITHUB_REF_NAME" != "v$version" ]]; then
+            echo "tag $GITHUB_REF_NAME does not match project version $version" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
       - name: Install release dependencies
         run: |
           sudo apt-get update
@@ -39,6 +61,8 @@ jobs:
           QT_QPA_PLATFORM: offscreen
           UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
         run: ./scripts/quality-gate.sh release
+      - name: Install exact package on supported systems
+        run: ./scripts/validate-supported-package.sh release/open-ip-scanner_*_amd64.deb
       - name: Attest package and source provenance
         uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a
         with:
@@ -51,16 +75,62 @@ jobs:
         uses: actions/attest-sbom@4651f806c01d8637787e274ac3bdf724ef169f34
         with:
           subject-path: release/*.deb
-          sbom-path: ${{ runner.temp }}/open-ip-scanner-provenance/open-ip-scanner_1.0.0_amd64.spdx.json
+          sbom-path: ${{ runner.temp }}/open-ip-scanner-provenance/open-ip-scanner_${{ steps.version.outputs.version }}_amd64.spdx.json
       - name: Upload verified installable package
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: open-ip-scanner-1.0.0
+          name: open-ip-scanner-${{ steps.version.outputs.version }}
           path: release/*.deb
           if-no-files-found: error
       - name: Upload verification material
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: open-ip-scanner-1.0.0-verification
+          name: open-ip-scanner-${{ steps.version.outputs.version }}-verification
           path: ${{ runner.temp }}/open-ip-scanner-provenance/*
           if-no-files-found: error
+
+  verify-release-artifacts:
+    name: verify release artifacts on a clean runner
+    needs: release-artifacts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      attestations: read
+      contents: read
+    steps:
+      - name: Download installable package
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: open-ip-scanner-${{ needs.release-artifacts.outputs.version }}
+          path: ${{ runner.temp }}/open-ip-scanner-release
+      - name: Download verification material
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: open-ip-scanner-${{ needs.release-artifacts.outputs.version }}-verification
+          path: ${{ runner.temp }}/open-ip-scanner-release
+      - name: Verify checksums and attestations
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_DIR: ${{ runner.temp }}/open-ip-scanner-release
+          RELEASE_VERSION: ${{ needs.release-artifacts.outputs.version }}
+        run: |
+          cd "$RELEASE_DIR"
+          sha256sum --check --strict SHA256SUMS
+          common_flags=(
+            --repo calculatetech/open-ip-scanner
+            --signer-workflow calculatetech/open-ip-scanner/.github/workflows/release-artifacts.yml
+            --source-ref "$GITHUB_REF"
+            --source-digest "$GITHUB_SHA"
+            --deny-self-hosted-runners
+          )
+          for artifact in \
+            "open-ip-scanner_${RELEASE_VERSION}_amd64.deb" \
+            "open-ip-scanner-${RELEASE_VERSION}.tar.gz" \
+            "open-ip-scanner_${RELEASE_VERSION}_amd64.spdx.json" \
+            SHA256SUMS; do
+            gh attestation verify "$artifact" "${common_flags[@]}"
+          done
+          gh attestation verify \
+            "open-ip-scanner_${RELEASE_VERSION}_amd64.deb" \
+            "${common_flags[@]}" \
+            --predicate-type https://spdx.dev/Document/v2.3

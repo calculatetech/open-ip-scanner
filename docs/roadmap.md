@@ -52,6 +52,10 @@ The unchecked milestone boxes below mean their complete acceptance criteria are 
   Details layouts, actionable service/link affordances, and human UI review.
 - `0.7.9` — **RELEASE-CANDIDATE-PREPARATION:** records enforced branch rules,
   Kubuntu 26.04 qualification, and final pre-1.0 documentation reconciliation.
+- `1.0.1` — **DEBIAN-DEPENDENCY-PORTABILITY:** retains automatically derived
+  ABI constraints while expressing Ubuntu 24.04 and Debian 13 Qt package names
+  as alternatives, and install-tests the exact package on both systems before
+  release publication.
 
 **RESULT-SCALING** is human-verified on version `0.4.4`. DUPLICATE-IP-CONFLICTS remains Post-1.0.
 

@@ -152,7 +152,9 @@ When ready to generate and fully validate a `.deb`:
 The installable package is written to `release/`. Rebuilding the same version
 atomically replaces only that version's package; other releases are retained
 until a human removes them. Direct CPack output is scratch data and is not a
-supported publication path.
+supported publication path. Release CI installs, launches, and removes that
+exact Ubuntu-floor package in clean Ubuntu 24.04 and Debian 13 environments
+before it can be published.
 
 ## Notes
 

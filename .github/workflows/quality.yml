@@ -66,9 +66,8 @@ jobs:
   release-artifact:
     name: tested release artifact
     needs: [quality, quality-newest]
-    if: github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 40
     steps:
       - name: Check out source
         uses: actions/checkout@v5
@@ -83,7 +82,10 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
         run: ./scripts/build-release-artifact.sh
+      - name: Install exact package on supported systems
+        run: ./scripts/validate-supported-package.sh release/open-ip-scanner_*_amd64.deb
       - name: Upload tested release artifact
+        if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4
         with:
           name: open-ip-scanner-${{ github.sha }}
