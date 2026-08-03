@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.28)
-project(OpenIpScanner VERSION 1.0.0 LANGUAGES CXX)
+project(OpenIpScanner VERSION 1.0.1 LANGUAGES CXX)
 
 include(cmake/Hardening.cmake)
 
@@ -328,6 +328,12 @@ if(BUILD_TESTING)
     add_test(NAME quality_gate_policy
         COMMAND ${Python3_EXECUTABLE}
                 ${CMAKE_SOURCE_DIR}/tests/qualitygatepolicy_test.py)
+    add_test(NAME debian_dependency_portability
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_SOURCE_DIR}/tests/debiandependency_test.py)
+    add_test(NAME supported_package_validation_policy
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_SOURCE_DIR}/tests/supportedpackage_test.py)
     add_test(NAME release_bundle_contract
         COMMAND ${Python3_EXECUTABLE}
                 ${CMAKE_SOURCE_DIR}/tests/releasebundle_test.py)
@@ -464,6 +470,8 @@ set(CPACK_DEBIAN_PACKAGE_HOMEPAGE
 set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
 set(CPACK_DEBIAN_PACKAGE_DEPENDS "iputils-ping, iproute2")
 set(CPACK_DEBIAN_PACKAGE_RECOMMENDS "avahi-daemon")
+set(CPACK_PROJECT_CONFIG_FILE
+    "${CMAKE_SOURCE_DIR}/cmake/CPackProjectConfig.cmake")
 set(CPACK_INSTALL_DEFAULT_DIRECTORY_PERMISSIONS
     OWNER_READ OWNER_WRITE OWNER_EXECUTE
     GROUP_READ GROUP_EXECUTE

@@ -51,8 +51,11 @@ lists every installed regular file with SHA-1 and SHA-256 checksums. License
 fields remain `NOASSERTION` where one expression cannot truthfully cover the
 application, IEEE-derived vendor data, and external runtime components.
 
-The dormant 1.0 workflow in `.github/workflows/release-artifacts.yml` accepts
-only version `1.0.0` from a clean checkout. When separately authorized at the
-release candidate, it uses GitHub's keyless OIDC identity to attest the package,
-source archive, checksums, and SBOM. The ordinary pre-1.0 CI artifact is a
-tested package, not a signed release or verification bundle.
+The release workflow in `.github/workflows/release-artifacts.yml` accepts a
+version-matched semantic tag only when its full commit graph proves the tagged
+commit is already merged into `main`. A manual rehearsal is restricted to the
+current `main` head. It uses GitHub's keyless OIDC identity to attest the
+package, source archive, checksums, and SBOM, then a separate clean runner
+downloads both artifact groups and verifies checksums, source identity,
+provenance, and the package's SPDX predicate. Ordinary Quality-workflow
+packages are tested artifacts, not signed releases or verification bundles.

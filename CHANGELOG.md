@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.0.1] - 2026-08-03
+
+### Fixed
+
+- Make the single Debian package installable on Ubuntu 24.04 and Debian 13 by
+  preserving generated ABI constraints while expressing distribution-specific
+  Qt runtime names as alternatives.
+- Install, launch, and remove the exact package in clean supported-system
+  containers before CI upload, release attestation, or publication.
+
 ## [1.0.0] - 2026-07-15
 
 ### Added

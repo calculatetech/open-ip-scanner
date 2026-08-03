@@ -2,6 +2,8 @@
 
 set -euo pipefail
 
+root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+
 basic=false
 if [[ ${1:-} == --basic ]]; then
     basic=true
@@ -29,7 +31,7 @@ if $basic; then
 fi
 
 package=${packages[0]}
-for command in dpkg file gzip lintian od readelf stat tar; do
+for command in dpkg file gzip lintian od python3 readelf stat tar; do
     if ! command -v "$command" >/dev/null 2>&1; then
         echo "release artifact validation requires $command" >&2
         exit 1
@@ -59,8 +61,9 @@ if [[ $description != *"Open IP Scanner discovers devices"* ||
 fi
 
 depends=$(dpkg-deb -f "$package" Depends)
-if [[ $depends != *libqt6dbus6* ]]; then
-    echo "Debian dependencies do not include the Qt DBus runtime" >&2
+if ! python3 "$root/scripts/portable-dpkg-shlibdeps.py" \
+    --ois-validate-depends "$depends"; then
+    echo "Debian dependencies are not portable across supported systems" >&2
     exit 1
 fi
 control=$(dpkg-deb -f "$package")

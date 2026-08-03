@@ -24,7 +24,9 @@ and verification item below.
 - [ ] `./scripts/quality-gate.sh release` passes from the exact clean candidate
   commit.
 - [ ] Main CI passes the Ubuntu 24.04 compatibility-floor gate, Debian 13 newer
-  gate, isolated mDNS responder, and downstream tested-package job.
+  gate, isolated mDNS responder, and downstream tested-package job. The exact
+  Ubuntu-floor package installs, starts offscreen, and removes successfully in
+  clean Ubuntu 24.04 and Debian 13 containers.
 - [x] Strict project warnings, metadata lint, ASan/UBSan, ThreadSanitizer's
   supported scenarios, package lifecycle, and Lintian all pass with documented
   exclusions only.
@@ -67,10 +69,12 @@ complete Kubuntu 26.04 checklist passed without exception.
   file against `calculatetech/open-ip-scanner` from a separate clean
   environment. Confirm that the package also has the SPDX document as its SBOM
   attestation predicate.
-- [ ] Create the GitHub Release only after the exact `v1.0.0` tag workflow
+- [ ] Create the GitHub Release only after the exact matching `v<version>` tag workflow
   passes, and attach only the files downloaded from that successful run.
 - [x] Confirm artifact names, versions, architecture, license/notices, manual
-  page, support documents, dependencies, and retention policy.
+  page, support documents, dependencies, and retention policy for 1.0.0.
+- [ ] Confirm generated Qt dependency relations resolve against both supported
+  repositories for the current candidate.
 
 Pre-1.0 candidate evidence: the release gate passed normal and strict 39/39,
 ASan/UBSan 38/38, ThreadSanitizer 37/37, zero-warning Lintian, package
@@ -87,23 +91,28 @@ it cannot change the packaged candidate after validation.
 - [x] Obtain final human product/accessibility approval.
 - [x] Only then authorize `1.0.0`, tag creation, release notes, GitHub release,
   and package publication as separate actions.
+- [x] On 2026-08-03 the owner authorized `1.0.1` tag and GitHub Release
+  publication after required CI and Debian 13 installation pass.
+- [ ] The owner has human-verified the `1.0.1` branch and explicitly authorized
+  its merge into `main`.
 
 ## Exact-tag publication procedure
 
-Create and push `v1.0.0` at the already merged, clean candidate commit; do not
-allow a release command to create or move the tag implicitly. Wait for that
-tag's `Release artifacts` run to pass. In a new empty verification directory,
-download `open-ip-scanner-1.0.0` and
-`open-ip-scanner-1.0.0-verification` from that run into that same directory so
-the complete `SHA256SUMS` can verify the separately uploaded package together
-with the source archive and SPDX document. Verify the package and SPDX
-attestations, and the package's SPDX predicate, against
-`calculatetech/open-ip-scanner`.
+Read the semantic version from `CMakeLists.txt`. Create and push the matching
+`v<version>` tag at the already merged, clean candidate commit; do not allow a
+release command to create or move the tag implicitly. Wait for that tag's
+`Release artifacts` run, including its separate clean-runner checksum,
+provenance, source-identity, and SPDX-predicate verification, to pass. In a new
+empty verification directory, download `open-ip-scanner-<version>` and
+`open-ip-scanner-<version>-verification` from that run into the same directory
+so the complete `SHA256SUMS` verifies the separately uploaded package together
+with the source archive and SPDX document.
 
-Only after those checks pass, create the GitHub Release with
-`gh release create v1.0.0 --verify-tag` and attach the downloaded Debian
-package, source archive, checksum file, and SPDX JSON file. This makes the
-published tag, attestations, and downloadable files refer to one immutable
-commit and prevents `gh release create` from silently creating an unvalidated
-tag. Record the workflow URL and verification result in the release notes or
-other external release record, not in a new tracked evidence commit.
+Only after those checks pass, create the GitHub Release with `gh release create
+v<version> --verify-tag` and attach the downloaded Debian package, source
+archive, checksum file, and SPDX JSON file. This makes the published tag,
+attestations, and downloadable files refer to one immutable commit and prevents
+`gh release create` from silently creating an unvalidated tag. Record the exact
+commit, workflow URL, Debian 13 install result, checksum result, and attestation
+result in the release notes or another external release record, not in a new
+tracked evidence commit.

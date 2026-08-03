@@ -384,17 +384,26 @@ def main() -> int:
     release = jobs.get("release-artifact", {})
     require(release.get("needs") == ["quality", "quality-newest"],
             "release artifact must depend on both supported quality jobs")
-    require(release.get("if") == "github.event_name != 'pull_request'",
-            "pull requests must not publish release artifacts")
+    require("if" not in release,
+            "pull requests must build and validate the exact release package")
     build_step = step_with(release, "name", "Build and test release artifact")
     require(build_step.get("run") == "./scripts/build-release-artifact.sh",
             "artifact job must execute the tested release builder")
+    compatibility_step = step_with(
+        release, "name", "Install exact package on supported systems"
+    )
+    require(compatibility_step.get("run") ==
+            "./scripts/validate-supported-package.sh "
+            "release/open-ip-scanner_*_amd64.deb",
+            "artifact job must install-test the exact supported package")
     dependency_step = step_with(release, "name", "Install build dependencies")
     dependency_command = dependency_step.get("run", "")
     for package in ("binutils", "devscripts", "file", "gzip", "lintian"):
         require(package in dependency_command.split(),
                 f"artifact job must install package validator dependency: {package}")
     upload = step_with(release, "uses", "actions/upload-artifact@v4")
+    require(upload.get("if") == "github.event_name != 'pull_request'",
+            "pull-request package artifacts must not be uploaded")
     upload_options = upload.get("with", {})
     require(upload_options.get("path") == "release/*.deb",
             "artifact upload path must match the validated package directory")
@@ -453,24 +462,48 @@ def main() -> int:
             "the reusable two-candidate builder must contain one CPack command")
 
     release_triggers = release_workflow.get("on", {})
-    require(release_triggers.get("push", {}).get("tags") == ["v1.0.0"],
-            "release workflow must be restricted to the 1.0.0 tag")
+    require(release_triggers.get("push", {}).get("tags") == ["v*.*.*"],
+            "release workflow must be restricted to semantic version tags")
     release_permissions = release_workflow.get("permissions", {})
     require(release_permissions == {
         "attestations": "write", "contents": "read", "id-token": "write"
     }, "release workflow has incorrect OIDC permissions")
     release_job = release_workflow.get("jobs", {}).get("release-artifacts", {})
-    refusal = step_with(release_job, "name", "Refuse non-1.0 or dirty source")
+    require(release_job.get("outputs", {}).get("version") ==
+            "${{ steps.version.outputs.version }}",
+            "release version must be exported to clean verification")
+    release_checkout = step_with(release_job, "name", "Check out source")
+    require(release_checkout.get("with", {}).get("fetch-depth") == 0,
+            "release source ancestry requires a complete commit graph")
+    refusal = step_with(release_job, "name", "Verify release source and version")
+    require(refusal.get("id") == "version",
+            "verified release version must have a stable step id")
     refusal_script = refusal.get("run", "")
     require("git status --porcelain" in refusal_script and
-            "VERSION 1.0.0" in refusal_script,
-            "release workflow must reject dirty or non-1.0 source")
+            "git merge-base --is-ancestor" in refusal_script and
+            "refs/remotes/origin/main" in refusal_script and
+            "GITHUB_EVENT_NAME" in refusal_script and
+            '"$GITHUB_REF" != refs/heads/main' in refusal_script and
+            '"$GITHUB_SHA" != "$(git rev-parse refs/remotes/origin/main)"' in
+            refusal_script and
+            "GITHUB_REF_NAME" in refusal_script and
+            '"v$version"' in refusal_script and
+            "GITHUB_OUTPUT" in refusal_script,
+            "release workflow must reject dirty, unmerged, non-main rehearsal, "
+            "or version-mismatched source")
     release_gate = step_with(release_job, "name", "Run full release gate")
     require(release_gate.get("run") == "./scripts/quality-gate.sh release",
             "attested artifacts must pass the exact full Release gate")
     require(release_gate.get("env", {}).get("OIS_PROVENANCE_DIR") ==
             "${{ runner.temp }}/open-ip-scanner-provenance",
             "release provenance must use the runner temporary directory")
+    release_compatibility = step_with(
+        release_job, "name", "Install exact package on supported systems"
+    )
+    require(release_compatibility.get("run") ==
+            "./scripts/validate-supported-package.sh "
+            "release/open-ip-scanner_*_amd64.deb",
+            "attested package must pass supported-system installation")
     provenance = step_with(
         release_job, "uses",
         "actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a",
@@ -491,15 +524,55 @@ def main() -> int:
             "SBOM subject must use the exact canonical package path")
     require(sbom_attestation.get("with", {}).get("sbom-path") ==
             "${{ runner.temp }}/open-ip-scanner-provenance/"
-            "open-ip-scanner_1.0.0_amd64.spdx.json",
+            "open-ip-scanner_${{ steps.version.outputs.version }}_amd64.spdx.json",
             "SBOM attestation must use the exact canonical SPDX path")
     package_upload = step_with(release_job, "name", "Upload verified installable package")
     require(package_upload.get("with", {}).get("path") == "release/*.deb",
             "verified release upload must contain only installable packages")
+    require(package_upload.get("with", {}).get("name") ==
+            "open-ip-scanner-${{ steps.version.outputs.version }}",
+            "installable artifact name must use the verified version")
     provenance_upload = step_with(release_job, "name", "Upload verification material")
     require(provenance_upload.get("with", {}).get("path") ==
             "${{ runner.temp }}/open-ip-scanner-provenance/*",
             "verification material must remain separate from installable packages")
+    require(provenance_upload.get("with", {}).get("name") ==
+            "open-ip-scanner-${{ steps.version.outputs.version }}-verification",
+            "verification artifact name must use the verified version")
+
+    verify_job = release_workflow.get("jobs", {}).get("verify-release-artifacts", {})
+    require(verify_job.get("needs") == "release-artifacts",
+            "clean release verification must depend on artifact attestation")
+    require(verify_job.get("permissions") == {
+        "attestations": "read", "contents": "read"
+    }, "clean release verification permissions are too broad or incomplete")
+    verify_steps = verify_job.get("steps", [])
+    downloads = [
+        step for step in verify_steps
+        if step.get("uses") ==
+        "actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093"
+    ]
+    require(len(downloads) == 2,
+            "clean verification must download both pinned artifact groups")
+    require({step.get("with", {}).get("name") for step in downloads} == {
+        "open-ip-scanner-${{ needs.release-artifacts.outputs.version }}",
+        "open-ip-scanner-${{ needs.release-artifacts.outputs.version }}-verification",
+    }, "clean verification downloads do not match the release outputs")
+    verification = step_with(verify_job, "name", "Verify checksums and attestations")
+    verification_script = verification.get("run", "")
+    for required_text in (
+        "sha256sum --check --strict SHA256SUMS",
+        "gh attestation verify",
+        "--repo calculatetech/open-ip-scanner",
+        "--signer-workflow calculatetech/open-ip-scanner/.github/workflows/"
+        "release-artifacts.yml",
+        '--source-ref "$GITHUB_REF"',
+        '--source-digest "$GITHUB_SHA"',
+        "--deny-self-hosted-runners",
+        "--predicate-type https://spdx.dev/Document/v2.3",
+    ):
+        require(required_text in verification_script,
+                f"clean release verification is missing: {required_text}")
     require("prepare_provenance_directory" in artifact_commands,
             "release builder must validate and own its provenance destination")
     require(any('"$bundle_dir/open-ip-scanner-$version.tar.gz"' in command
@@ -547,9 +620,24 @@ def main() -> int:
     )
     require("build-audit" not in audit_plan,
             "maintained audit reproduction paths must stay beneath build/")
+    cmake_text = (ROOT / "CMakeLists.txt").read_text(encoding="utf-8")
     require('set(CPACK_PACKAGE_DIRECTORY "${CMAKE_BINARY_DIR}/package-scratch")' in
-            (ROOT / "CMakeLists.txt").read_text(encoding="utf-8"),
+            cmake_text,
             "direct CPack scratch output must remain inside its build directory")
+    require("set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)" in cmake_text and
+            "cmake/CPackProjectConfig.cmake" in cmake_text,
+            "CPack must retain ABI discovery through the portable project config")
+    cpack_project = (ROOT / "cmake/CPackProjectConfig.cmake").read_text(
+        encoding="utf-8"
+    )
+    require("portable-dpkg-shlibdeps.py" in cpack_project and
+            "SHLIBDEPS_EXECUTABLE" in cpack_project,
+            "direct DEB packaging must select the portable shlibdeps wrapper")
+    artifact_validator = (
+        ROOT / "scripts/validate-release-artifacts.sh"
+    ).read_text(encoding="utf-8")
+    require("--ois-validate-depends" in artifact_validator,
+            "final package validation must enforce portable dependencies")
     maintained_paths = "\n".join(
         (ROOT / path).read_text(encoding="utf-8")
         for path in (
